@@ -4,6 +4,8 @@
 
 ---
 
+> **Status: approved by the owner on 24 October 2026**, with one change to Decision 4: the first wave covers 16 industries relevant to Egypt instead of 3. All other recommended answers are accepted.
+
 ## Executive summary
 
 **What Bonyan is.** Bonyan lets a small business build its own CRM (sales and customer system) and a simple ERP (invoicing, stock and accounts) through a guided set of questions. It is made for Egypt first. Today all the business logic runs inside the user's web browser. The whole company is saved as one data file in the cloud (Supabase).
@@ -826,7 +828,7 @@ Expected position **after this plan** is delivered.
 | 1 | **Pause new features until Phases 0–1 are done?** | **Yes.** Freeze new feature work; the whole team does Phase 0 first. No real company data until Phase 0 passes. |
 | 2 | **Launch scope for the first paying customers** | Pilot (M1) is CRM only. Paid launch (M2) is CRM + invoicing + basic stock + ETA. Full supply chain and AI arrive later as upgrades. |
 | 3 | **First markets** | Egypt only until M2. Then KSA and UAE, which need ZATCA / FTA e-invoicing and Arabic already built. Europe later, through the PDPL/GDPR trust work. |
-| 4 | **Which industries first** | Focus on 3 templates: Distribution / FMCG, Medical supplies, Services. Clearly label the other 6 as "basic" until Phases 2B/3 make them real. |
+| 4 | **Which industries first** | **Owner's decision (24 Oct 2026): launch with a wider set of industries chosen for Egypt, not just 3.** First wave, 16 templates in order of how many SMEs Egypt has in each sector: wholesale & FMCG distribution; retail shops & e-commerce; restaurants, cafés & catering; medical & pharma distribution; clinics & medical centres; building materials & finishing; construction & contracting; real estate; manufacturing & workshops; agriculture, agri-inputs & produce export; car spare parts & service centres; agency & professional services; logistics, freight & customs clearance; tourism, travel & Hajj/Umrah; training centres & schools; water treatment & industrial projects. Each must build with zero errors and keep sample books balanced (automated tests). Deeper features for each (for example batches and expiry for pharma and food) still arrive with Phases 2B and 3. |
 | 5 | **Pricing** (confirm against current competitor prices) | Free: 2 users, CRM only. Growth: about EGP 350–500 per user per month, with CRM + invoicing + stock + ETA. Pro: + AI doctor, WhatsApp API, multi-step approvals. AI usage metered above the plan allowance. 14-day full trial, then read-only; data is never deleted. |
 | 6 | **ETA signing method** | Support the company's USB token through a small local signer app first, which is what most SMEs already have. Add an approved signing service as an option. |
 | 7 | **Hosting region and data policy** | The closest Supabase region available to Egypt / Middle East. Publish the list of service providers that handle data. Start PDPC licensing now with Egyptian counsel. |
