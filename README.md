@@ -67,22 +67,30 @@ Egypt defaults: EGP, 14% VAT, the 27 governorates, a tax registration number on 
 ## Run it
 
 ```bash
-cd crm-builder
 npm install
 npm run dev      # http://localhost:5173
 npm test         # engine, validator, templates, formulas
 npm run build
 ```
 
-To deploy on Vercel, create a project with **Root Directory = `crm-builder`**. It is a static single-page app, and `vercel.json` handles the routes.
+To deploy on Vercel, import the repo with the **Root Directory left empty**. It is a static single-page app, and `vercel.json` handles the routes.
+
+## Cloud backend (Supabase)
+
+Accounts and data live in the Supabase project **my-crm0**. The URL and publishable key are in `.env`. Both are meant to be public; row-level security decides who can read and write what.
+
+- **Accounts:** Supabase Auth with e-mail and password. *Create workspace* (`/register`) makes a login and a new company workspace. *Join your team* (`/join`) makes a login for someone an admin added on the Team page.
+- **Data:** each workspace is one row in `workspaces`: the whole workspace as JSON, with a `version` number so two people saving at once never silently overwrite each other. `workspace_members` lists the e-mails that may open each workspace, and which of them are admins.
+- **Rules (`supabase/migrations/`):** only members can read or save a workspace, and only its admins can add, remove or promote members. Nobody else, signed in or not, can see it.
+- **Supabase settings to check:** under *Authentication → URL Configuration*, set *Site URL* to the live address (for example the Vercel domain) and add it under *Redirect URLs*, so confirmation e-mails link back to the app. Keep *Confirm email* on, because membership is matched by e-mail.
 
 ## What this version is, and what comes next
 
-This is a **working, local-first product**. Every workspace, schema and record is stored in the browser (`localStorage`), so anyone can try it with no setup. The data model maps one-to-one onto a hosted backend: a workspace becomes a tenant, the schema is stored as a versioned JSON document, and records go in a JSONB table. The engine is pure TypeScript and can run on the server unchanged.
+This is a **working product with real accounts and cloud save** (see above). The business rules (permissions, posting, stock, books) still run in the browser, on the workspace's JSON document. The engine is pure TypeScript and can move to the server unchanged.
 
 Before a public launch:
 
-- **Hosted backend & real accounts:** multi-tenant database (e.g. Postgres/Supabase with row-level security per workspace), server-side enforcement of the engine, e-mail invitations, password reset and SSO.
+- **Server-side enforcement:** run the engine on the server (e.g. Supabase Edge Functions), so that roles inside a workspace (sales vs. finance) are enforced by the database and not only by the app. Also password reset, e-mail invitations, SSO, and records split out of the single JSON document as workspaces grow.
 - **Egypt ETA e-invoicing / e-receipt** submission (the tax ID and VAT data are already captured).
 - **Integrations:** WhatsApp Business for leads and reminders, e-mail, and Excel/CSV **import** with field mapping.
 - **Arabic across the whole app** (the landing page, industry names and challenges are bilingual today).

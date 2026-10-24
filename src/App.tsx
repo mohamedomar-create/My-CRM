@@ -18,8 +18,10 @@ import { currentUser, currentWorkspace, useStore } from './lib/store'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
+  const ready = useStore((s) => s.ready)
   const ws = useStore((s) => currentWorkspace(s))
   const user = useStore((s) => currentUser(s))
+  if (!ready) return <div className="empty">Loading…</div>
   if (!ws || !user) return <Navigate to="/signin" replace />
   const isAdmin = user.roleId === 'role_admin'
   if (need === 'published' && !ws.published) return <Navigate to={ws.draft ? '/builder' : '/onboarding'} replace />
@@ -29,7 +31,9 @@ function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | '
 }
 
 function Home() {
+  const ready = useStore((s) => s.ready)
   const ws = useStore((s) => currentWorkspace(s))
+  if (!ready) return <div className="empty">Loading…</div>
   if (!ws) return <Landing />
   return <Navigate to={ws.published ? '/app' : ws.draft ? '/builder' : '/onboarding'} replace />
 }
@@ -42,6 +46,7 @@ export default function App() {
       <Route path="/welcome" element={<Landing />} />
       <Route path="/register" element={<Auth mode="register" />} />
       <Route path="/signin" element={<Auth mode="signin" />} />
+      <Route path="/join" element={<Auth mode="join" />} />
       <Route path="/onboarding" element={<Guard need="admin"><Onboarding /></Guard>} />
       <Route path="/suggest" element={<Guard need="admin"><Suggest /></Guard>} />
       <Route path="/builder" element={<Guard need="draft"><Builder /></Guard>} />

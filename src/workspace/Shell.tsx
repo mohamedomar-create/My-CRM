@@ -5,11 +5,13 @@ import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
 import { can, canApprove, canPost, list, recordTitle, runScheduled } from '../lib/engine'
-import { signOut, switchUser, update } from '../lib/store'
+import { selfUser, signOut, switchUser, update, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
 export default function Shell() {
   const { ws, user, schema, act } = useApp()
+  const self = useStore((s) => selfUser(s))
+  const sync = useStore((s) => s.sync)
   const nav = useNavigate()
   const toast = useToast()
   const { lang, setLang } = useLang()
@@ -82,10 +84,15 @@ export default function Shell() {
               </div>
             )}
           </div>
-          <select value={user.id} onChange={(e) => switchUser(e.target.value)} style={{ width: 'auto' }} title="Switch user (try the system as each role)">
-            {ws.users.map((u) => <option key={u.id} value={u.id}>{u.name} · {schema.roles.find((r) => r.id === u.roleId)?.name ?? 'No role'}</option>)}
-          </select>
-          <button className="ghost" onClick={() => { signOut(); nav('/') }} aria-label="Sign out"><LogOut size={18} /></button>
+          <span className={`pill tiny ${sync === 'error' ? 'red' : sync === 'reloaded' ? 'amber' : sync === 'saving' ? 'gray' : 'green'}`} title={sync === 'reloaded' ? 'Someone else saved changes at the same time, so the latest version was loaded' : undefined}>
+            {sync === 'error' ? 'Not saved, retrying…' : sync === 'reloaded' ? 'Reloaded latest' : sync === 'saving' ? 'Saving…' : 'Saved'}
+          </span>
+          {self?.roleId === 'role_admin' ? (
+            <select value={user.id} onChange={(e) => switchUser(e.target.value)} style={{ width: 'auto' }} title="Switch user (try the system as each role)">
+              {ws.users.map((u) => <option key={u.id} value={u.id}>{u.name} · {schema.roles.find((r) => r.id === u.roleId)?.name ?? 'No role'}</option>)}
+            </select>
+          ) : <span className="small">{user.name}</span>}
+          <button className="ghost" onClick={() => { void signOut().then(() => nav('/')) }} aria-label="Sign out"><LogOut size={18} /></button>
         </div>
         <Outlet />
       </div>

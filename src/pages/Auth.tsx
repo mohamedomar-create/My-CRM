@@ -4,7 +4,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { register, signIn } from '../lib/store'
 
-export default function Auth({ mode }: { mode: 'register' | 'signin' }) {
+export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' }) {
   const nav = useNavigate()
   const [company, setCompany] = useState('')
   const [name, setName] = useState('')
@@ -12,20 +12,23 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(false)
+  const creating = mode !== 'signin'
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (mode === 'register') {
-      if (company.trim().length < 2) return setError('Enter your company name')
+    if (creating) {
+      if (mode === 'register' && company.trim().length < 2) return setError('Enter your company name')
       if (name.trim().length < 2) return setError('Enter your name')
       if (password.length < 8) return setError('Use at least 8 characters for the password')
     }
     setBusy(true)
     try {
-      if (mode === 'register') {
-        await register(company, name, email, password)
-        nav('/onboarding')
+      if (creating) {
+        const result = await register(mode === 'register' ? company : '', name, email, password)
+        if (result === 'confirm') setSent(true)
+        else nav(mode === 'register' ? '/onboarding' : '/app')
       } else {
         await signIn(email, password)
         nav('/app')
@@ -53,24 +56,33 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' }) {
         <span className="small" style={{ color: '#8a8dc0' }}>Made in Egypt for the world</span>
       </div>
       <div className="auth-form">
+        {sent ? (
+          <div className="stack">
+            <h1>Check your e-mail</h1>
+            <p className="muted">We sent a confirmation link to <b>{email}</b>. Open it, then sign in{mode === 'register' ? ' and we will set up your workspace' : ''}.</p>
+            <Link to="/signin" className="btn glow big">Go to sign in</Link>
+          </div>
+        ) : (
         <form onSubmit={submit}>
-          <h1>{mode === 'register' ? 'Create your workspace' : 'Sign in'}</h1>
-          <p className="muted" style={{ marginTop: 0 }}>{mode === 'register' ? 'Free to start. Takes about 5 minutes to get a working system.' : 'Use the e-mail and password you registered with.'}</p>
-          {mode === 'register' && (
+          <h1>{mode === 'register' ? 'Create your workspace' : mode === 'join' ? 'Join your team' : 'Sign in'}</h1>
+          <p className="muted" style={{ marginTop: 0 }}>{mode === 'register' ? 'Free to start. Takes about 5 minutes to get a working system.' : mode === 'join' ? 'Use the e-mail your admin added on the Team page.' : 'Use the e-mail and password you registered with.'}</p>
+          {creating && (
             <>
-              <label className="field">Company name<input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Nile Water Solutions" autoFocus /></label>
+              {mode === 'register' && <label className="field">Company name<input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Nile Water Solutions" autoFocus /></label>}
               <label className="field">Your name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mohamed Omar" /></label>
             </>
           )}
           <label className="field">Work e-mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></label>
-          <label className="field">Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === 'register' ? 'At least 8 characters' : ''} /></label>
+          <label className="field">Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={creating ? 'At least 8 characters' : ''} /></label>
           {error && <div className="error-box">{error}</div>}
-          <button className="glow big" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create workspace' : 'Sign in'}</button>
+          <button className="glow big" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create workspace' : mode === 'join' ? 'Create my login' : 'Sign in'}</button>
           <p className="small muted center">
-            {mode === 'register' ? <>Already registered? <Link to="/signin">Sign in</Link></> : <>New here? <Link to="/register">Create a workspace</Link></>}
+            {creating ? <>Already registered? <Link to="/signin">Sign in</Link></> : <>New here? <Link to="/register">Create a workspace</Link></>}
           </p>
-          <p className="tiny muted center">This preview keeps your data in this browser only. Nothing is sent to a server.</p>
+          {mode === 'signin' && <p className="small muted center">Added by your team? <Link to="/join">Create your login</Link></p>}
+          <p className="tiny muted center">Your workspace is saved securely in the cloud, and only people your admin adds can open it.</p>
         </form>
+        )}
       </div>
     </div>
   )
