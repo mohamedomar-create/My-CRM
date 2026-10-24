@@ -103,7 +103,8 @@ export function suggest(a: Answers): Suggestion[] {
       score += 45
       reasons.push('Built for your industry')
     } else if (t.industries.some((k) => text.includes(k))) {
-      score += 35
+      // more matching words = a closer fit ("citrus export farm" is farming more than trading)
+      score += 30 + 5 * Math.min(3, t.industries.filter((k) => text.includes(k)).length)
       reasons.push(`Matches “${a.industryText || a.industry}”`)
     }
     for (const need of needs) {

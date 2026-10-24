@@ -161,10 +161,9 @@ async function createWorkspace(auth: AuthUser, company: string, name: string) {
     history: [],
     data: emptyData(),
   }
-  const created = await supabase.from('workspaces').insert({ id: ws.id, name: company.trim(), doc: ws })
+  // One server step creates the workspace and makes this person its owner.
+  const created = await supabase.rpc('create_workspace', { p_id: ws.id, p_name: company.trim(), p_doc: ws })
   if (created.error) throw new Error(friendly(created.error.message))
-  const member = await supabase.from('workspace_members').insert({ workspace_id: ws.id, email, is_admin: true })
-  if (member.error) throw new Error(friendly(member.error.message))
   // The company name only waited in the account for the first sign-in after confirming the e-mail.
   if (auth.user_metadata?.company) await supabase.auth.updateUser({ data: { company: null } })
   versions.set(ws.id, 1)
@@ -280,6 +279,37 @@ export async function addMember(workspaceId: string, email: string, isAdmin: boo
 export async function setMemberAdmin(workspaceId: string, email: string, isAdmin: boolean) {
   const { error } = await supabase.from('workspace_members').update({ is_admin: isAdmin }).eq('workspace_id', workspaceId).eq('email', email)
   if (error) throw new Error(friendly(error.message))
+}
+
+export interface Member {
+  email: string
+  is_admin: boolean
+  is_owner: boolean
+}
+
+/** Who may open the workspace, as the database sees it (the source of truth for owner and admin). */
+export async function listMembers(workspaceId: string): Promise<Member[]> {
+  const { data, error } = await supabase.from('workspace_members').select('email, is_admin, is_owner').eq('workspace_id', workspaceId)
+  if (error) throw new Error(friendly(error.message))
+  return data
+}
+
+/** Hands the workspace to another admin. Only the current owner can do this. */
+export async function transferOwnership(workspaceId: string, email: string) {
+  const { error } = await supabase.rpc('transfer_ownership', { p_workspace: workspaceId, p_email: email })
+  if (error) throw new Error(friendly(error.message))
+}
+
+/** The whole workspace as a JSON file, so the owner always has their own copy. */
+export function downloadBackup() {
+  const ws = currentWorkspace()
+  if (!ws) return
+  const blob = new Blob([JSON.stringify(ws, null, 2)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `bonyan-backup-${(ws.answers.companyName || ws.id).replace(/[^\w-]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
 }
 
 export async function removeMember(workspaceId: string, email: string) {

@@ -46,6 +46,27 @@ describe('templates', () => {
     const s = suggest({ ...emptyAnswers('X'), industry: 'medical', aftersales: true, channels: ['tenders'] })
     expect(s[0].template.id).toBe('medical')
   })
+
+  it('ranks the chosen industry first for every template', () => {
+    for (const t of TEMPLATES.filter((x) => x.id !== 'blank')) {
+      expect(suggest({ ...emptyAnswers('X'), industry: t.id })[0].template.id).toBe(t.id)
+    }
+  })
+
+  it('matches common Egyptian businesses described in their own words', () => {
+    const cases: [string, string][] = [
+      ['coffee shop and bakery', 'food'],
+      ['online clothes store', 'retail'],
+      ['dental clinic', 'clinics'],
+      ['ceramic and sanitary showroom', 'building'],
+      ['citrus export farm', 'agriculture'],
+      ['car spare parts', 'automotive'],
+      ['customs clearance', 'logistics'],
+      ['umrah trips', 'travel'],
+      ['fmcg wholesale', 'distribution'],
+    ]
+    for (const [text, id] of cases) expect(suggest({ ...emptyAnswers('X'), industry: 'other', industryText: text })[0].template.id).toBe(id)
+  })
 })
 
 describe('documents', () => {
