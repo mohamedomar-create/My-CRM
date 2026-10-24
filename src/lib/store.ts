@@ -176,8 +176,16 @@ export function getState() {
   return state
 }
 
+/** “View as” shows the app with another person's permissions, but nothing can be changed in their name. */
+function assertSelf() {
+  if (state.session && state.session.userId !== state.session.selfId) {
+    throw new Error('You are viewing the app as someone else, which is read-only. Switch back to yourself to make changes.')
+  }
+}
+
 /** Mutate the state in place, re-render, and save the workspace to the cloud. */
 export function update(fn: (s: State) => void, label = 'A change') {
+  assertSelf()
   publish(fn)
   pending.push({ label, run: fn })
   save()
@@ -191,6 +199,7 @@ export function update(fn: (s: State) => void, label = 'A change') {
 export function transact<T>(fn: (ws: Workspace) => T, label = 'A change'): T {
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
+  assertSelf()
   const copy = structuredClone(ws)
   const [result, ids] = recordIds(() => fn(copy))
   if (JSON.stringify(copy) === JSON.stringify(ws)) return result

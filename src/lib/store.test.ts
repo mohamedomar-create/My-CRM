@@ -163,6 +163,15 @@ describe('cloud store', () => {
     db.workspaces.push(doc)
   })
 
+  it('“View as” another person is read-only', async () => {
+    store.switchUser('u2')
+    expect(() => store.transact((ws) => ws.data.notes.unshift(note('n1', 'as Karim')))).toThrow(/read-only/)
+    store.switchUser('u1')
+    store.transact((ws) => ws.data.notes.unshift(note('n1', 'as me')))
+    await store.flush()
+    expect(serverNotes()).toEqual(['as me'])
+  })
+
   it('signs out even when the last save fails', async () => {
     store.transact((ws) => ws.data.notes.unshift(note('n1', 'mine')), 'Add note')
     net.down = true

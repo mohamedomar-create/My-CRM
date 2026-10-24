@@ -7,7 +7,7 @@ import { Icon } from '../components/Icon'
 import {
   EngineError, can, canPost, convertLead, createRecord, deleteRecord, displayValue, findRecord, lineNet, lineTax, list, money, moveStage, onHand,
   postDocument, quoteToInvoice, recordTitle, registerPayment, setLines, setQuoteStatus, todayISO, totals, updateRecord, voidDocument, defaultValues, type Ctx,
-  addComment, approvalNeeded, canApprove, fieldValue, isVisible, requestApproval, rotting, score,
+  addComment, approvalNeeded, canApprove, canSeeCosts, COST_KEYS, fieldValue, isVisible, requestApproval, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -16,10 +16,11 @@ import type { AppSchema } from '../lib/schema'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
-  const { ws, schema } = useApp()
+  const { ws, schema, user } = useApp()
   const rec = id ? findRecord(ws, id) : undefined
   const mod = moduleById(schema, rec?.module ?? moduleId ?? '')
   if (!mod || (id && !rec)) return <div className="page">This record no longer exists. <Link to="/app">Back to dashboard</Link></div>
+  if (!can({ schema, user }, mod.id, rec ? 'view' : 'create')) return <div className="page">Your role doesn’t have access to {mod.name.toLowerCase()}. <Link to="/app">Back to dashboard</Link></div>
   return <Editor key={rec?.id ?? `new-${mod.id}`} mod={mod} rec={rec} ws={ws} schema={schema} />
 }
 
@@ -88,7 +89,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     if (ok) settle()
   }
 
-  const related = rec ? relatedRecords(ws, schema, rec) : []
+  const related = rec ? relatedRecords(ws, schema, rec).filter(({ m }) => can({ schema, user }, m.id, 'view')) : []
+  const costs = canSeeCosts({ schema, user })
   const history = rec ? ws.data.activity.filter((a) => a.record === rec.id).slice(0, 15) : []
   const payments = rec ? ws.data.payments.filter((p) => p.doc === rec.id) : []
 
@@ -153,7 +155,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           <div className="card">
             {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? 'This quotation was turned into an invoice.' : 'Posted documents are locked to keep your books correct. Void it and create a new one to make changes.'}</div>}
             <div className="form-grid">
-              {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && isVisible(mod, f, values)).map((f) => (
+              {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && !(mod.role === 'products' && !costs && COST_KEYS.includes(f.key)) && isVisible(mod, f, values)).map((f) => (
                 <div key={f.id} className={f.width === 2 || f.type === 'longtext' ? 'w2' : ''}>
                   <label className="field">
                     <span>{f.label}{f.required && !f.readOnly && <span style={{ color: 'var(--danger)' }}> *</span>}</span>

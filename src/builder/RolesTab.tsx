@@ -43,7 +43,10 @@ export default function RolesTab() {
                 <input value={role.name} onChange={(e) => setRole(role.id, (r) => (r.name = e.target.value))} style={{ fontWeight: 700, maxWidth: 260 }} disabled={role.admin} />
                 <span className="pill gray">{members} member{members === 1 ? '' : 's'}</span>
                 {role.admin ? <span className="pill green">Full access</span> : (
-                  <label className="inline small"><input type="checkbox" checked={Boolean(role.finance)} onChange={(e) => setRole(role.id, (r) => (r.finance = e.target.checked))} /> Post & collect (finance)</label>
+                  <>
+                    <label className="inline small"><input type="checkbox" checked={Boolean(role.finance)} onChange={(e) => setRole(role.id, (r) => (r.finance = e.target.checked))} /> Post & collect (finance)</label>
+                    <label className="inline small" title="Purchase cost, stock value and margins. Finance roles always see them."><input type="checkbox" checked={Boolean(role.costs || role.finance)} disabled={role.finance} onChange={(e) => setRole(role.id, (r) => (r.costs = e.target.checked))} /> See costs & margins</label>
+                  </>
                 )}
                 <span className="grow" />
                 {!role.admin && <button className="ghost icon" disabled={members > 0} title={members ? 'Move its members to another role first' : 'Delete role'} onClick={() => edit((s) => { s.roles = s.roles.filter((r) => r.id !== role.id) })}><Trash2 size={16} /></button>}

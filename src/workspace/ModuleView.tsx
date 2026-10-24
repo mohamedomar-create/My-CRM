@@ -5,7 +5,7 @@ import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Fla
 import { ImportModal } from './ImportModal'
 import { useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { can, canSeeCosts, COST_KEYS, csvSafe, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -41,7 +41,9 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
     if (!name) return
     addView({ id: uid('v'), module: mod.id, user: user.id, name, q, stage, sort, view })
   }
-  const cols = mod.fields.filter((f) => f.inList).slice(0, 7)
+  const costs = canSeeCosts({ schema, user })
+  const hidden = (key: string) => mod.role === 'products' && !costs && COST_KEYS.includes(key)
+  const cols = mod.fields.filter((f) => f.inList && !hidden(f.key)).slice(0, 7)
   const all = list(ws, mod.id)
   const rows = all
     .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())))
@@ -59,9 +61,10 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
     })
 
   function exportCsv() {
-    const header = ['Title', ...(mod.stages ? ['Stage'] : []), ...(mod.lines ? ['Status'] : []), ...mod.fields.map((f) => f.label)]
-    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [r.status ?? ''] : []), ...mod.fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key]))])
-    const csv = [header, ...lines].map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const fields = mod.fields.filter((f) => !hidden(f.key))
+    const header = ['Title', ...(mod.stages ? ['Stage'] : []), ...(mod.lines ? ['Status'] : []), ...fields.map((f) => f.label)]
+    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [r.status ?? ''] : []), ...fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key]))])
+    const csv = [header, ...lines].map((l) => l.map((c) => `"${csvSafe(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
