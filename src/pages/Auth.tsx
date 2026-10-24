@@ -21,7 +21,7 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
     if (creating) {
       if (mode === 'register' && company.trim().length < 2) return setError('Enter your company name')
       if (name.trim().length < 2) return setError('Enter your name')
-      if (password.length < 8) return setError('Use at least 8 characters for the password')
+      if (password.length < 10) return setError('Use at least 10 characters for the password')
     }
     setBusy(true)
     try {
@@ -59,7 +59,7 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
         {sent ? (
           <div className="stack">
             <h1>Check your e-mail</h1>
-            <p className="muted">We sent a confirmation link to <b>{email}</b>. Open it, then sign in{mode === 'register' ? ' and we will set up your workspace' : ''}.</p>
+            <p className="muted">If <b>{email}</b> can be used, we sent it a confirmation link. Open it, then sign in{mode === 'register' ? ' and we will set up your workspace' : ''}. Already have an account? Sign in or reset your password.</p>
             <Link to="/signin" className="btn glow big">Go to sign in</Link>
           </div>
         ) : (
@@ -73,13 +73,13 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
             </>
           )}
           <label className="field">Work e-mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></label>
-          <label className="field">Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={creating ? 'At least 8 characters' : ''} /></label>
+          <label className="field">Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={creating ? 'At least 10 characters' : ''} /></label>
           {error && <div className="error-box">{error}</div>}
           <button className="glow big" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create workspace' : mode === 'join' ? 'Create my login' : 'Sign in'}</button>
           <p className="small muted center">
             {creating ? <>Already registered? <Link to="/signin">Sign in</Link></> : <>New here? <Link to="/register">Create a workspace</Link></>}
           </p>
-          {mode === 'signin' && <p className="small muted center">Added by your team? <Link to="/join">Create your login</Link></p>}
+          {mode === 'signin' && <p className="small muted center"><Link to="/forgot">Forgot password?</Link> · Added by your team? <Link to="/join">Create your login</Link></p>}
           <p className="tiny muted center">Your workspace is saved securely in the cloud, and only people your admin adds can open it.</p>
         </form>
         )}
