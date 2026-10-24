@@ -29,7 +29,7 @@ export default function Accounting() {
         <div className="card"><h2>Revenue</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
         <div className="card"><h2>Gross profit</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0}% margin</div></div>
         <div className="card"><h2>Customers owe you</h2><div className="kpi-value">{money(bal('1200'), cur)}</div></div>
-        <div className="card"><h2>VAT payable (output − input)</h2><div className="kpi-value">{money(vatDue, cur)}</div></div>
+        <div className="card"><h2>{vatDue >= 0 ? 'VAT payable (output − input)' : 'VAT credit (input more than output)'}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success, #047857)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
       </div>
       <div className={dr === cr ? 'ok-box row' : 'error-box row'} style={{ marginBottom: 14 }}>
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}

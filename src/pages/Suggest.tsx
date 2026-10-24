@@ -14,7 +14,7 @@ export default function Suggest() {
   const { lang } = useLang()
   const ranked = useMemo(() => (ws ? suggest(ws.answers) : []), [ws])
   const [chosen, setChosen] = useState(ranked[0]?.template.id)
-  const [sample, setSample] = useState(true)
+  const [sample, setSample] = useState(false)
   const pick = ranked.find((r) => r.template.id === chosen) ?? ranked[0]
   const preview = useMemo(() => (ws && pick ? generateSchema(pick.template, ws.answers) : null), [ws, pick])
   if (!ws || !pick || !preview) return null
@@ -94,7 +94,7 @@ export default function Suggest() {
             ))}
             <label className="inline card" style={{ padding: 14 }}>
               <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
-              <span><b>Fill with sample data</b><br /><span className="muted small">See dashboards and pipelines working right away. Remove it any time from Settings.</span></span>
+              <span><b>Try it with sample data</b><br /><span className="muted small">See dashboards and pipelines working right away. Sample documents get their own SAMPLE- numbers and stay out of your real numbering. Remove them in one click (banner at the top) before your first real invoice.</span></span>
             </label>
           </div>
         </div>

@@ -3,7 +3,7 @@
 import type { AppSchema, FieldDef, ModuleDef } from './schema'
 import { moduleByRole, uid } from './schema'
 import type { Rec, User, Workspace } from './types'
-import { createRecord, list, moveStage, postDocument, registerPayment, round2, type Ctx } from './engine'
+import { createRecord, list, moveStage, postDocument, registerPayment, round2, todayISO, type Ctx } from './engine'
 
 function rng(seed: number) {
   return () => {
@@ -20,11 +20,7 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
   const r = rng(42)
   const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]
   const int = (a: number, b: number) => Math.floor(a + r() * (b - a + 1))
-  const day = (offset: number) => {
-    const d = new Date()
-    d.setDate(d.getDate() + offset)
-    return d.toISOString().slice(0, 10)
-  }
+  const day = (offset: number) => todayISO(new Date(Date.now() + offset * 86_400_000))
 
   // Demo team members, one or two per team role, so owner and assignee fields have real people.
   const demoUsers: User[] = []
@@ -37,7 +33,8 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
   }
   ws.users.push(...demoUsers)
   const people = [admin, ...demoUsers]
-  const ctx: Ctx = { ws, schema, user: admin }
+  // Everything below is tagged as sample data, so “Remove sample data” can take it all out before the company goes live.
+  const ctx: Ctx = { ws, schema, user: admin, sample: true }
 
   const value = (m: ModuleDef, f: FieldDef, i: number): unknown => {
     if (f.readOnly || f.type === 'formula') return undefined
@@ -150,28 +147,29 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
   if (purchases && suppliers && tracked.length && list(ws, suppliers.id).length) {
     for (let b = 0; b < 2; b++) {
       const bill = createRecord(ctx, purchases.id, { supplier: pick(list(ws, suppliers.id)).id, date: day(-150 + b * 40), due_date: day(-120 + b * 40) }, {
-        lines: tracked.map((p) => ({ id: uid('l'), product: p.id, description: String(p.values.name), qty: int(40, 120), price: round2(Number(p.values.price) * 0.6), discount: 0, vat: schema.company.vatRate })),
+        lines: tracked.map((p) => ({ id: uid('l'), product: p.id, description: String(p.values.name), qty: int(12, 30), price: round2(Number(p.values.price) * 0.55), discount: 0, vat: schema.company.vatRate })),
       })
       backdate(bill, 150 - b * 40)
       postDocument(ctx, bill)
-      registerPayment(ctx, bill, round2(Number(bill.values.total) * (b === 0 ? 1 : 0.5)), String(bill.values.date), 'bank')
+      registerPayment(ctx, bill, round2(Number(bill.values.total) * (b === 0 ? 0.35 : 0.15)), String(bill.values.date), 'bank')
     }
   }
 
   if (invoices && accounts && products.length && list(ws, accounts.id).length) {
-    for (let i = 0; i < 12; i++) {
-      const ago = 170 - i * 14
+    for (let i = 0; i < 18; i++) {
+      const ago = 170 - i * 9
       const lines = Array.from({ length: int(1, 3) }, () => {
         const p = pick(products)
         const stock = Number(p.values.stock ?? 0)
-        const qty = p.values.track_stock ? Math.max(1, Math.min(int(1, 8), Math.floor(stock / 6))) : int(1, 3)
+        const qty = p.values.track_stock ? Math.max(1, Math.min(int(2, 10), Math.floor(stock / 4))) : int(1, 4)
         return { id: uid('l'), product: p.id, description: String(p.values.name), qty, price: Number(p.values.price), discount: pick([0, 0, 5, 10]), vat: Number(p.values.vat_rate ?? schema.company.vatRate) }
       })
       const inv = createRecord(ctx, invoices.id, { customer: pick(list(ws, accounts.id)).id, date: day(-ago), due_date: day(-ago + 30) }, { lines })
       backdate(inv, ago)
       try {
         postDocument(ctx, inv)
-        const share = pick([1, 1, 0.5, 0])
+        // Older invoices are mostly collected; the newest ones are still open, as in a healthy business.
+        const share = ago > 45 ? pick([1, 1, 1, 1, 0.5]) : pick([1, 0.5, 0, 0])
         if (share) registerPayment(ctx, inv, round2(Number(inv.values.total) * share), day(Math.min(0, -ago + 10)), pick(['bank', 'cash', 'instapay']))
       } catch {
         /* not enough stock for this sample: keep as a draft */
@@ -182,7 +180,8 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
   if (quotes && accounts && products.length) {
     for (let i = 0; i < 4; i++) {
       const p = pick(products)
-      createRecord(ctx, quotes.id, { customer: pick(list(ws, accounts.id)).id, date: day(-i * 5) }, { lines: [{ id: uid('l'), product: p.id, description: String(p.values.name), qty: int(1, 10), price: Number(p.values.price), discount: 0, vat: schema.company.vatRate }] })
+      const q = createRecord(ctx, quotes.id, { customer: pick(list(ws, accounts.id)).id, date: day(-i * 5) }, { lines: [{ id: uid('l'), product: p.id, description: String(p.values.name), qty: int(1, 10), price: Number(p.values.price), discount: 0, vat: schema.company.vatRate }] })
+      backdate(q, i * 5)
     }
   }
 }

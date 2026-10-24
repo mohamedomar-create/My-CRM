@@ -196,7 +196,8 @@ describe('competitor-grade features', () => {
     const inv = createRecord(ctx, moduleByRole(schema, 'invoices')!.id, { customer: acc.id, date: '2026-01-01' }, { lines: [{ id: uid('l'), product: svc.id, description: 'Svc', qty: 2, price: 1000, discount: 0, vat: 14 }] })
     postDocument(ctx, inv)
     const accounts = moduleByRole(schema, 'accounts')!
-    expect(fieldValue(ws, schema, acc, accounts.fields.find((f) => f.key === 'total_invoiced')!)).toBe(2280)
+    // “Invoiced” is revenue, so it excludes the 14% VAT (2 × 1,000), matching account 4000.
+    expect(fieldValue(ws, schema, acc, accounts.fields.find((f) => f.key === 'total_invoiced')!)).toBe(2000)
     const deals = moduleByRole(schema, 'deals')!
     const deal = createRecord(ctx, deals.id, { title: 'D', account: acc.id, amount: 5, close_date: '2026-02-01' })
     expect(fieldValue(ws, schema, deal, deals.fields.find((f) => f.key === 'customer_governorate')!)).toBe('giza')

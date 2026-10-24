@@ -412,7 +412,8 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
 }
 
 function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void }) {
-  const { schema, edit, recordCount } = useDraft()
+  const { ws, schema, edit, recordCount } = useDraft()
+  const posted = (ws.data.records[mod.id] ?? []).filter((r) => r.number && !r.sample).length
   const [msg, setMsg] = useState('')
   const set = (patch: Partial<ModuleDef>) => edit((s) => Object.assign(s.modules.find((m) => m.id === mod.id)!, patch))
   function remove() {
@@ -441,7 +442,12 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
           {mod.fields.filter((f) => f.type === 'text' || f.type === 'relation').map((f) => <option key={f.id} value={f.key}>{f.label}</option>)}
         </select>
       </label>
-      {mod.numberPrefix && <label className="field">Number prefix<input value={mod.numberPrefix} onChange={(e) => set({ numberPrefix: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) })} /><span className="tiny muted">Numbers look like {mod.numberPrefix}-{new Date().getFullYear()}-0001 and are given when a document is posted, without gaps.</span></label>}
+      {mod.numberPrefix !== undefined && (
+        <label className="field">Number prefix
+          <input value={mod.numberPrefix} disabled={posted > 0} title={posted > 0 ? `Locked: ${posted} documents already carry this prefix` : undefined} onChange={(e) => set({ numberPrefix: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) })} />
+          <span className="tiny muted">{posted > 0 ? `Locked, because ${posted} numbered documents already use it. Changing it would break your numbering series.` : `Numbers look like ${mod.numberPrefix || 'INV'}-${new Date().getFullYear()}-0001 and are given when a document is posted, without gaps.`}</span>
+        </label>
+      )}
       <div className="info small">{mod.role === 'custom' ? ROLES.custom.description : ROLES[mod.role].description}</div>
       {msg && <div className="error-box small">{msg}</div>}
       <button className="danger" onClick={remove}><Trash2 size={16} /> Delete module</button>

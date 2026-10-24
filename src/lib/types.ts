@@ -28,6 +28,8 @@ export interface Rec {
   postedAt?: string
   /** journal / stock rows created when this document was posted */
   links?: { source?: string }
+  /** created by "Try with sample data"; removed in one click before going live */
+  sample?: boolean
 }
 
 export interface StockMove {
@@ -38,6 +40,9 @@ export interface StockMove {
   doc: string
   ref: string
   date: string
+  /** exact change in the product's stock value (moving average), so a void reverses it to the cent */
+  value?: number
+  sample?: boolean
 }
 
 export type AccountCode = '1100' | '1200' | '1300' | '1400' | '2100' | '2200' | '4000' | '5000' | '5100'
@@ -61,6 +66,7 @@ export interface JournalEntry {
   memo: string
   doc?: string
   lines: { account: AccountCode; debit: number; credit: number }[]
+  sample?: boolean
 }
 
 export interface Payment {
@@ -72,6 +78,7 @@ export interface Payment {
   method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
   direction: 'in' | 'out'
   ref: string
+  sample?: boolean
 }
 
 export interface Note {
@@ -83,6 +90,7 @@ export interface Note {
   /** addressed to one person (mentions, approvals) */
   user?: string
   record?: string
+  sample?: boolean
 }
 
 export interface Approval {
@@ -133,7 +141,7 @@ export interface WorkspaceData {
   notes: Note[]
   sequences: Record<string, number>
   workflowRuns: Record<string, string>
-  activity: { id: string; at: string; user: string; text: string; record?: string; module?: string }[]
+  activity: { id: string; at: string; user: string; text: string; record?: string; module?: string; sample?: boolean }[]
   approvals?: Approval[]
   comments?: Comment[]
   views?: SavedView[]

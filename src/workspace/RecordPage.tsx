@@ -6,7 +6,7 @@ import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
   EngineError, can, canPost, convertLead, createRecord, deleteRecord, displayValue, findRecord, lineNet, lineTax, list, money, moveStage, onHand,
-  postDocument, quoteToInvoice, recordTitle, registerPayment, setLines, totals, updateRecord, voidDocument, type Ctx,
+  postDocument, quoteToInvoice, recordTitle, registerPayment, setLines, setQuoteStatus, todayISO, totals, updateRecord, voidDocument, defaultValues, type Ctx,
   addComment, approvalNeeded, canApprove, fieldValue, isVisible, requestApproval, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -26,10 +26,11 @@ export default function RecordPage() {
 function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Workspace; schema: AppSchema }) {
   const nav = useNavigate()
   const { user, act } = useApp()
-  const [values, setValues] = useState<Record<string, unknown>>(() => ({ ...(rec?.values ?? {}) }))
+  // A new record starts with the same defaults the engine would save (today's date, VAT rate, stock tracking…).
+  const [values, setValues] = useState<Record<string, unknown>>(() => (rec ? { ...rec.values } : defaultValues({ schema, user }, mod)))
   const [lines, setLinesState] = useState<Line[]>(() => rec?.lines ?? [])
   // What the form started from. Only fields that differ from it are saved, so a colleague's change to another field is never undone.
-  const [base, setBase] = useState<Record<string, unknown>>(() => ({ ...(rec?.values ?? {}) }))
+  const [base, setBase] = useState<Record<string, unknown>>(() => (rec ? { ...rec.values } : {}))
   const [baseLines, setBaseLines] = useState<Line[]>(() => rec?.lines ?? [])
   const sync = useStore((s) => s.sync)
   const [paying, setPaying] = useState(false)
@@ -110,9 +111,10 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
-              {rec.status === 'draft' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, rec.id, 'sent'), 'Marked as sent')}><Send size={15} /> Mark sent</button>}
-              <button className="success" disabled={!rec.lines?.length} onClick={() => { const inv = act((ctx) => quoteToInvoice(ctx, findRecord(ctx.ws, rec.id)!), 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Accept & invoice</button>
-              {rec.status !== 'declined' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, rec.id, 'declined'), 'Marked as declined')}><X size={15} /> Declined</button>}
+              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? 'Save first' : undefined} onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'sent'), 'Marked as sent and numbered')}><Send size={15} /> Mark sent</button>}
+              {rec.status === 'sent' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'accepted'), 'The customer accepted the quotation')}><CheckCircle2 size={15} /> Mark accepted</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act((ctx) => quoteToInvoice(ctx, findRecord(ctx.ws, rec.id)!), 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Create invoice</button>}
+              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'declined'), 'Marked as declined')}><X size={15} /> Declined</button>}
             </>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
@@ -206,13 +208,6 @@ function voidDoc(ctx: Ctx, id: string) {
   if (!r) throw new EngineError('Not found')
   voidDocument(ctx, r)
   return true
-}
-
-function setQuoteStatus(ctx: Ctx, id: string, status: 'sent' | 'declined') {
-  const r = findRecord(ctx.ws, id)
-  if (!r) throw new EngineError('Not found')
-  if (!can(ctx, r.module, 'edit')) throw new EngineError('Your role can’t edit quotations')
-  r.status = status
 }
 
 function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
@@ -349,7 +344,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
 
 function PaymentModal({ rec, currency, onClose, onPay }: { rec: Rec; currency: string; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') => void }) {
   const [amount, setAmount] = useState(Number(rec.values.balance))
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(todayISO())
   const [method, setMethod] = useState<'cash' | 'bank' | 'cheque' | 'instapay' | 'card'>('bank')
   return (
     <>
@@ -373,14 +368,17 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const party = findRecord(ws, partyId)
   const t = totals(rec.lines ?? [])
   const cur = schema.company.currency
-  const title = mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
+  const draft = rec.status === 'draft' && mod.role !== 'quotes'
+  // A draft is not a tax document: it says so in the title and across the page.
+  const title = draft ? (mod.role === 'invoices' ? 'Proforma / draft – not a tax invoice' : 'Draft – not posted') : mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
   return (
     <div className="page">
       <div className="row no-print" style={{ marginBottom: 12 }}>
         <button className="secondary" onClick={onClose}><ArrowLeft size={16} /> Back</button>
         <button onClick={() => window.print()}><Printer size={16} /> Print / save as PDF</button>
       </div>
-      <div className="print-doc">
+      <div className="print-doc" style={{ position: 'relative' }}>
+        {draft && <div aria-hidden style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', fontSize: '5rem', fontWeight: 800, color: 'rgba(220, 38, 38, 0.12)', transform: 'rotate(-24deg)' }}>DRAFT</div>}
         <div className="row between" style={{ alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ marginBottom: 4 }}>{schema.company.name}</h1>
