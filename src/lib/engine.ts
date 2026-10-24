@@ -12,10 +12,31 @@ export interface Ctx {
   schema: AppSchema
   user: User
   today?: string
+  /** set while generating sample data: everything created is tagged so it can be removed in one click */
+  sample?: boolean
 }
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
-const todayISO = () => new Date().toISOString().slice(0, 10)
+/** Business dates follow Egypt's clock (UTC+2/+3), not UTC, so an invoice keyed at 1 a.m. in Cairo gets today's date. */
+export const BUSINESS_TZ = 'Africa/Cairo'
+export const todayISO = (at = new Date(), tz = BUSINESS_TZ) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000
+
+/** Arabic-Indic and Persian digits and the Arabic decimal/thousands separators, as plain ASCII. */
+export function asciiDigits(text: string) {
+  return text
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/\u066b/g, '.')
+    .replace(/\u066c/g, ',')
+}
+
+/** Tags what sample data creates, and what follows from a sample document (its payments, its reversal). */
+function tag<T extends object>(ctx: Ctx, item: T, from?: { sample?: boolean }): T {
+  if (ctx.sample || from?.sample) (item as { sample?: boolean }).sample = true
+  return item
+}
 const nowISO = () => new Date().toISOString()
 const addDays = (iso: string, days: number) => {
   const d = new Date(iso + 'T00:00:00Z')
@@ -136,7 +157,10 @@ export function fieldValue(ws: Workspace, schema: AppSchema, rec: Rec, field: Fi
   if (field.type === 'rollup' && field.rollup) {
     const { module, via, op, field: key } = field.rollup
     const src = fieldByKey(moduleById(schema, module), key)
-    const children = list(ws, module).filter((r) => r.values[via] === rec.id && r.status !== 'void')
+    const srcMod = moduleById(schema, module)
+    // Documents count once they are real: posted, part-paid or paid (not drafts, not voided).
+    const counts = (r: Rec) => (srcMod?.lines && srcMod.role !== 'quotes' ? r.status === 'posted' || r.status === 'partial' || r.status === 'paid' : r.status !== 'void')
+    const children = list(ws, module).filter((r) => r.values[via] === rec.id && counts(r))
     return aggregate(op, children.map((c) => Number(src ? fieldValue(ws, schema, c, src, depth + 1) : 0) || 0))
   }
   return rec.values[field.key]
@@ -178,7 +202,8 @@ function cleanValues(ctx: Ctx, mod: ModuleDef, input: Record<string, unknown>, e
     if (!(f.key in input)) continue
     let v = input[f.key]
     if (typeof v === 'string') v = v.trim()
-    if (['number', 'currency', 'percent', 'rating'].includes(f.type)) v = v === '' || v === undefined || v === null ? undefined : Number(v)
+    if (typeof v === 'string' && ['number', 'currency', 'percent', 'rating', 'phone'].includes(f.type)) v = asciiDigits(v)
+    if (['number', 'currency', 'percent', 'rating'].includes(f.type)) v = v === '' || v === undefined || v === null ? undefined : Number(typeof v === 'string' ? v.replace(/,/g, '') : v)
     if (f.type === 'checkbox') v = Boolean(v)
     out[f.key] = v
   }
@@ -214,23 +239,32 @@ function cleanValues(ctx: Ctx, mod: ModuleDef, input: Record<string, unknown>, e
 }
 
 function log(ctx: Ctx, text: string, rec?: Rec) {
-  ctx.ws.data.activity.unshift({ id: uid('a'), at: nowISO(), user: ctx.user.name, text, record: rec?.id, module: rec?.module })
+  ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: ctx.user.name, text, record: rec?.id, module: rec?.module }, rec))
   if (ctx.ws.data.activity.length > 500) ctx.ws.data.activity.length = 500
+}
+
+/**
+ * The values a new record starts with. The form shows exactly these, so what you see is what gets saved.
+ * Stock tracking is on by default only when the company buys stock (it has a Purchases module); services companies start with it off.
+ */
+export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'>, mod: ModuleDef, values: Record<string, unknown> = {}) {
+  const defaults: Record<string, unknown> = {}
+  for (const f of mod.fields) {
+    if (f.type === 'user' && (f.key === 'owner' || f.key === 'assignee') && values[f.key] === undefined) defaults[f.key] = ctx.user.id
+    if (f.key === 'vat_rate' && values[f.key] === undefined) defaults[f.key] = ctx.schema.company.vatRate
+    if (f.key === 'track_stock' && values[f.key] === undefined) defaults[f.key] = Boolean(moduleByRole(ctx.schema, 'purchases'))
+    if (f.type === 'date' && ['date', 'visit_date', 'survey_date'].includes(f.key) && values[f.key] === undefined) defaults[f.key] = todayISO()
+  }
+  if (mod.lines && values.due_date === undefined && mod.role !== 'quotes') defaults.due_date = addDays(String(values.date ?? defaults.date ?? todayISO()), 30)
+  if (mod.role === 'quotes' && values.valid_until === undefined) defaults.valid_until = addDays(String(values.date ?? defaults.date ?? todayISO()), 15)
+  return defaults
 }
 
 export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, unknown>, opts: { stage?: string; lines?: Line[]; silent?: boolean } = {}): Rec {
   const mod = moduleById(ctx.schema, moduleId)
   if (!mod) throw new EngineError('This module no longer exists')
   if (!opts.silent) need(ctx, moduleId, 'create')
-  const defaults: Record<string, unknown> = {}
-  for (const f of mod.fields) {
-    if (f.type === 'user' && (f.key === 'owner' || f.key === 'assignee') && values[f.key] === undefined) defaults[f.key] = ctx.user.id
-    if (f.key === 'vat_rate' && values[f.key] === undefined) defaults[f.key] = ctx.schema.company.vatRate
-    if (f.key === 'track_stock' && values[f.key] === undefined) defaults[f.key] = true
-    if (f.type === 'date' && ['date', 'visit_date', 'survey_date'].includes(f.key) && values[f.key] === undefined) defaults[f.key] = todayISO()
-  }
-  if (mod.lines && values.due_date === undefined && mod.role !== 'quotes') defaults.due_date = addDays(String(values.date ?? todayISO()), 30)
-  if (mod.role === 'quotes' && values.valid_until === undefined) defaults.valid_until = addDays(String(values.date ?? todayISO()), 15)
+  const defaults = defaultValues(ctx, mod, values)
   const rec: Rec = {
     id: uid('r'),
     module: moduleId,
@@ -239,6 +273,7 @@ export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, 
     createdBy: ctx.user.id,
     values: {},
   }
+  tag(ctx, rec)
   rec.values = cleanValues(ctx, mod, { ...defaults, ...values }, rec)
   if (mod.stages) {
     const st = mod.stages.find((s) => s.id === opts.stage) ?? mod.stages[0]
@@ -254,6 +289,7 @@ export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, 
   if (mod.role === 'products') {
     rec.values.stock = 0
     rec.values.cost = 0
+    rec.values.stock_value = 0
   }
   list(ctx.ws, moduleId).unshift(rec)
   log(ctx, `created ${mod.singular} “${recordTitle(ctx.ws, ctx.schema, rec)}”`, rec)
@@ -265,6 +301,10 @@ export function updateRecord(ctx: Ctx, rec: Rec, values: Record<string, unknown>
   const mod = moduleById(ctx.schema, rec.module)!
   if (!opts.silent) need(ctx, rec.module, 'edit')
   if (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') throw new EngineError('Posted documents can’t be changed. Void it and create a new one.')
+  if (mod.role === 'quotes' && rec.status === 'invoiced') throw new EngineError('This quotation was turned into an invoice and can’t be changed.')
+  if (mod.role === 'products' && 'track_stock' in values && Boolean(values.track_stock) !== Boolean(rec.values.track_stock) && ctx.ws.data.stock.some((m) => m.product === rec.id)) {
+    throw new EngineError('“Track stock” can’t be changed once this product has stock movements. Create a new product instead.')
+  }
   const before = rec.values
   const after = cleanValues(ctx, mod, values, rec)
   if (rec.stage) checkGate(mod, rec.stage, after)
@@ -396,19 +436,48 @@ function checkLines(lines: Line[]) {
   }
 }
 
-function nextNumber(ctx: Ctx, prefix: string, date: string) {
-  const key = `${prefix}-${date.slice(0, 4)}`
+function nextNumber(ctx: Ctx, prefix: string, date: string, sample = false) {
+  // Sample documents use their own series, so the first real invoice is always …-0001.
+  const series = `${prefix}-${date.slice(0, 4)}`
+  const key = sample ? `sample:${series}` : series
   const n = (ctx.ws.data.sequences[key] ?? 0) + 1
   ctx.ws.data.sequences[key] = n
-  return `${key}-${String(n).padStart(4, '0')}`
+  return `${sample ? 'SAMPLE-' : ''}${series}-${String(n).padStart(4, '0')}`
 }
 
-function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>) {
+/** True while sample documents are in the books. */
+export function hasSampleData(ws: Workspace) {
+  return ws.data.journal.some((j) => j.sample) || Object.values(ws.data.records).some((rs) => rs.some((r) => r.sample)) || ws.users.some((u) => u.demo)
+}
+
+function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: boolean }) {
+  if (entry.lines.some((l) => round2(l.debit) < 0 || round2(l.credit) < 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has a negative amount`)
   const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => ({ ...l, debit: round2(l.debit), credit: round2(l.credit) }))
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
   if (dr !== cr) throw new EngineError(`Internal check failed: journal ${entry.ref} does not balance (${dr} ≠ ${cr})`)
-  ctx.ws.data.journal.unshift({ ...entry, lines, id: uid('j') })
+  ctx.ws.data.journal.unshift(tag(ctx, { ...entry, lines, id: uid('j') }, from))
+}
+
+/** A debit or credit of `amount` on one account, whichever way round the sign says. */
+function side(account: AccountCode, amount: number) {
+  return amount >= 0 ? { account, debit: amount, credit: 0 } : { account, debit: 0, credit: -amount }
+}
+
+/* ---------------- stock valuation (moving average) ---------------- */
+
+/** The product's stock value in the books (account 1300 holds the sum of these). */
+export function stockValue(ws: Workspace, p: Rec) {
+  const v = p.values.stock_value
+  return typeof v === 'number' ? v : round2(onHand(ws, p.id) * Number(p.values.cost ?? 0))
+}
+
+/** Stores the new value and re-derives on-hand and average cost from it. */
+function setValuation(ws: Workspace, p: Rec, value: number) {
+  const qty = onHand(ws, p.id)
+  p.values.stock_value = round2(value)
+  p.values.stock = qty
+  if (qty > 0) p.values.cost = round4(value / qty)
 }
 
 function productRec(ctx: Ctx, id?: string) {
@@ -442,6 +511,11 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     if (p && p.values.track_stock) qtyBy.set(p.id, (qtyBy.get(p.id) ?? 0) + l.qty)
   }
 
+  const sample = Boolean(ctx.sample || rec.sample)
+  if (!sample && ctx.ws.data.journal.some((j) => j.sample)) {
+    throw new EngineError('Remove the sample data before posting real documents, so your books start clean (use “Remove sample data” at the top of the app).')
+  }
+
   if (mod.role === 'invoices' && !ctx.schema.company.allowNegativeStock) {
     const short = [...qtyBy].filter(([pid, q]) => onHand(ctx.ws, pid) < q)
     if (short.length) throw new EngineError(`Not enough stock: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${onHand(ctx.ws, pid)})`).join(', ')}`)
@@ -449,16 +523,20 @@ export function postDocument(ctx: Ctx, rec: Rec) {
 
   // Every check is done, so the number is only taken when posting succeeds: numbering stays gapless.
   const t = totals(lines)
-  const number = nextNumber(ctx, mod.numberPrefix ?? 'DOC', date)
+  const number = nextNumber(ctx, mod.numberPrefix || 'DOC', date, sample)
 
   if (mod.role === 'invoices') {
     let cogs = 0
     for (const [pid, q] of qtyBy) {
       const p = productRec(ctx, pid)!
       const cost = Number(p.values.cost ?? 0)
-      cogs += q * cost
-      ctx.ws.data.stock.unshift({ id: uid('s'), product: pid, qty: -q, cost, doc: rec.id, ref: number, date })
-      p.values.stock = onHand(ctx.ws, pid)
+      const oldQty = onHand(ctx.ws, pid)
+      const oldValue = stockValue(ctx.ws, p)
+      // Selling the last units takes exactly what is left, so no rounding cents stay behind in inventory.
+      const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
+      cogs += issue
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc: rec.id, ref: number, date }, rec))
+      setValuation(ctx.ws, p, oldValue - issue)
       reorderAlert(ctx, p)
     }
     journal(ctx, {
@@ -470,31 +548,36 @@ export function postDocument(ctx: Ctx, rec: Rec) {
         { account: '5000', debit: round2(cogs), credit: 0 },
         { account: '1300', debit: 0, credit: round2(cogs) },
       ],
-    })
+    }, rec)
   } else {
-    let stockValue = 0
+    let received = 0
+    let priceDiff = 0
     for (const l of lines) {
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
-      const unitCost = l.qty ? lineNet(l) / l.qty : 0
+      const lineValue = lineNet(l)
+      const unitCost = l.qty ? lineValue / l.qty : 0
       const oldQty = onHand(ctx.ws, p.id)
-      const oldCost = Number(p.values.cost ?? 0)
-      const newQty = oldQty + l.qty
-      p.values.cost = round2(newQty > 0 && oldQty > 0 ? (oldQty * oldCost + l.qty * unitCost) / newQty : unitCost)
-      ctx.ws.data.stock.unshift({ id: uid('s'), product: p.id, qty: l.qty, cost: round2(unitCost), doc: rec.id, ref: number, date })
-      p.values.stock = onHand(ctx.ws, p.id)
-      stockValue += lineNet(l)
+      const oldValue = stockValue(ctx.ws, p)
+      // If units were sold before they were bought (negative stock), they were costed at the old price.
+      // The difference to the real price goes to cost of sales now, so inventory ends at the right value.
+      const target = oldQty < 0 ? round2((oldQty + l.qty) * unitCost) : round2(oldValue + lineValue)
+      priceDiff = round2(priceDiff + (oldValue + lineValue - target))
+      received = round2(received + lineValue)
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(unitCost), value: round2(target - oldValue), doc: rec.id, ref: number, date }, rec))
+      setValuation(ctx.ws, p, target)
     }
-    stockValue = round2(stockValue)
     journal(ctx, {
       date, ref: number, memo: `Purchase bill ${number}`, doc: rec.id,
       lines: [
-        { account: '1300', debit: stockValue, credit: 0 },
-        { account: '5100', debit: round2(t.subtotal - stockValue), credit: 0 },
+        { account: '1300', debit: received, credit: 0 },
+        { account: '5100', debit: round2(t.subtotal - received), credit: 0 },
         { account: '1400', debit: t.tax, credit: 0 },
         { account: '2100', debit: 0, credit: t.total },
+        side('5000', priceDiff),
+        side('1300', -priceDiff),
       ],
-    })
+    }, rec)
   }
   rec.number = number
   rec.status = 'posted'
@@ -511,18 +594,35 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (rec.status === 'draft' || rec.status === 'void') throw new EngineError('Only posted documents can be voided')
   if (Number(rec.values.paid) > 0) throw new EngineError('This document has payments. Refund or reverse them before voiding.')
   const date = todayISO()
-  for (const mv of ctx.ws.data.stock.filter((s) => s.doc === rec.id)) {
+  const moves = ctx.ws.data.stock.filter((s) => s.doc === rec.id && !s.ref.startsWith('VOID'))
+  // A bill can only be voided while its goods are still in stock; otherwise they were sold and a purchase return is needed.
+  for (const mv of moves) {
     const p = productRec(ctx, mv.product)
-    if (mod.role === 'purchases' && p) {
-      const q = onHand(ctx.ws, p.id)
-      const remaining = q - mv.qty
-      if (remaining > 0) p.values.cost = round2((q * Number(p.values.cost) - mv.qty * mv.cost) / remaining)
+    if (!p || mv.qty <= 0) continue
+    const have = onHand(ctx.ws, p.id)
+    if (have < mv.qty) throw new EngineError(`Can’t void: ${round2(mv.qty - have)} of the ${mv.qty} ${p.values.name} on this bill were already sold. Record a purchase return for what is still in stock instead.`)
+    const left = round2(stockValue(ctx.ws, p) - (mv.value ?? round2(mv.qty * mv.cost)))
+    if (have - mv.qty > 0 && left < 0) throw new EngineError(`Can’t void: the cost of ${p.values.name} on this bill was already charged to sales. Record a purchase return instead.`)
+  }
+  let residual = 0
+  for (const mv of moves) {
+    const p = productRec(ctx, mv.product)
+    const delta = mv.value ?? round2(mv.qty * mv.cost)
+    ctx.ws.data.stock.unshift(tag(ctx, { ...mv, id: uid('s'), qty: -mv.qty, value: -delta, ref: `VOID ${rec.number}`, date }, rec))
+    if (!p) continue
+    let value = round2(stockValue(ctx.ws, p) - delta)
+    // Nothing left on hand must mean nothing left in inventory value: any cents left go to cost of sales.
+    if (onHand(ctx.ws, p.id) === 0 && value !== 0) {
+      residual = round2(residual + value)
+      value = 0
     }
-    ctx.ws.data.stock.unshift({ ...mv, id: uid('s'), qty: -mv.qty, ref: `VOID ${rec.number}`, date })
-    if (p) p.values.stock = onHand(ctx.ws, p.id)
+    setValuation(ctx.ws, p, value)
   }
   for (const je of ctx.ws.data.journal.filter((j) => j.doc === rec.id && !j.ref.startsWith('VOID'))) {
-    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+  }
+  if (residual !== 0) {
+    journal(ctx, { date, ref: `VOID ${rec.number} ADJ`, memo: `Inventory rounding after voiding ${rec.number}`, doc: rec.id, lines: [side('5000', residual), side('1300', -residual)] }, rec)
   }
   rec.status = 'void'
   rec.values.balance = 0
@@ -540,25 +640,48 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   if (date < String(rec.values.date)) throw new EngineError('Payment date can’t be before the document date')
   const incoming = mod.role === 'invoices'
   const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  ctx.ws.data.payments.unshift({ id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out', ref })
+  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref }, rec))
   const cash: AccountCode = '1100'
   journal(ctx, {
     date, ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}`, doc: rec.id,
     lines: incoming
       ? [{ account: cash, debit: amount, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
       : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }],
-  })
+  }, rec)
   rec.values.paid = round2(Number(rec.values.paid) + amount)
   rec.values.balance = round2(Number(rec.values.total) - Number(rec.values.paid))
   rec.status = Number(rec.values.balance) === 0 ? 'paid' : 'partial'
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
 }
 
+/**
+ * Quotation steps: draft → sent (gets its number) → accepted → invoiced, or declined.
+ * Only a sent or accepted quotation that hasn't expired can become an invoice.
+ */
+export function setQuoteStatus(ctx: Ctx, quote: Rec, status: 'sent' | 'accepted' | 'declined') {
+  need(ctx, quote.module, 'edit')
+  const mod = moduleById(ctx.schema, quote.module)!
+  if (mod.role !== 'quotes') throw new EngineError('Only quotations have these steps')
+  if (quote.status === 'invoiced') throw new EngineError('This quotation is already invoiced')
+  if (status === 'sent') {
+    if (!(quote.lines ?? []).length) throw new EngineError('Add at least one line before sending')
+    if (!quote.number) quote.number = nextNumber(ctx, mod.numberPrefix || 'QT', String(quote.values.date ?? todayISO()), Boolean(ctx.sample || quote.sample))
+  }
+  if (status === 'accepted' && quote.status !== 'sent') throw new EngineError('Send the quotation before marking it accepted')
+  quote.status = status
+  quote.updatedAt = nowISO()
+  log(ctx, `marked ${mod.singular} ${quote.number ?? ''} ${status}`, quote)
+}
+
 export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
   const invoices = moduleByRole(ctx.schema, 'invoices')
   if (!invoices) throw new EngineError('Add an Invoices module first')
   if (quote.status === 'invoiced') throw new EngineError('This quotation is already invoiced')
-  const inv = createRecord(ctx, invoices.id, { customer: quote.values.customer, date: todayISO() }, { lines: (quote.lines ?? []).map((l) => ({ ...l, id: uid('l') })) })
+  if (quote.status !== 'sent' && quote.status !== 'accepted') throw new EngineError(quote.status === 'declined' ? 'This quotation was declined, so it can’t be invoiced' : 'Send the quotation to the customer first')
+  if (quote.values.valid_until && String(quote.values.valid_until) < (ctx.today ?? todayISO())) {
+    throw new EngineError(`This quotation expired on ${quote.values.valid_until}. Extend “Valid until” or make a new quotation.`)
+  }
+  const inv = createRecord({ ...ctx, sample: ctx.sample || quote.sample }, invoices.id, { customer: quote.values.customer, date: todayISO() }, { lines: (quote.lines ?? []).map((l) => ({ ...l, id: uid('l') })) })
   quote.status = 'invoiced'
   quote.links = { source: inv.id }
   return inv
@@ -590,7 +713,7 @@ export function pseudoValue(schema: AppSchema, rec: Rec, key: string, ws?: Works
   if (key === '__stage') return rec.stage
   if (key === '__stagetype') return mod?.stages?.find((s) => s.id === rec.stage)?.type
   if (key === '__status') return rec.status
-  if (key === '__month') return rec.createdAt.slice(0, 7)
+  if (key === '__month') return (mod?.lines && rec.values.date ? String(rec.values.date) : rec.createdAt).slice(0, 7)
   if (key === '__owner') return rec.createdBy
   return rec.values[key]
 }
@@ -655,12 +778,22 @@ function execute(ctx: Ctx, w: WorkflowDef, rec: Rec) {
         createRecord(ctx, tasks.id, { title: fill(ctx, mod, rec, a.title), due_date: addDays(ctx.today ?? todayISO(), a.dueInDays), assignee: owner, done: false, related: recordTitle(ctx.ws, ctx.schema, rec), priority: a.dueInDays === 0 ? 'high' : 'normal' }, { silent: true })
       } else if (a.type === 'set_field') {
         const f = fieldByKey(mod, a.field)
-        if (f && !f.readOnly) {
+        const locked = (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') || (mod.role === 'quotes' && rec.status === 'invoiced')
+        if (locked) {
+          ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: 'Automation', text: `skipped “${w.name}”: ${rec.number ?? 'this document'} is posted and can’t be changed`, record: rec.id, module: rec.module }, rec))
+        } else if (f && !f.readOnly) {
           const value = f.type === 'checkbox' ? a.value === 'true' : a.value
+          const before = rec.values[f.key]
           rec.values = cleanValues(ctx, mod, { [a.field]: value }, rec)
+          if (mod.lines) applyTotals(rec)
+          // Counts as a change: earlier approvals no longer cover it, and the history says who did it.
+          rec.updatedAt = nowISO()
+          if (JSON.stringify(before ?? null) !== JSON.stringify(rec.values[f.key] ?? null)) {
+            ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: 'Automation', text: `changed ${f.label}: ${displayValue(ctx.ws, ctx.schema, f, before) || '—'} → ${displayValue(ctx.ws, ctx.schema, f, rec.values[f.key]) || '—'}`, record: rec.id, module: rec.module }, rec))
+          }
         }
       } else if (a.type === 'notify') {
-        ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: fill(ctx, mod, rec, a.message), read: false, role: a.role })
+        ctx.ws.data.notes.unshift(tag(ctx, { id: uid('n'), at: nowISO(), message: fill(ctx, mod, rec, a.message), read: false, role: a.role }, rec))
       }
     } catch (e) {
       ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `Automation “${w.name}” could not finish: ${(e as Error).message}`, read: false })
@@ -698,7 +831,7 @@ function reorderAlert(ctx: Ctx, p: Rec) {
   if (stock > Number(level)) return
   const tasks = moduleByRole(ctx.schema, 'tasks')
   const msg = `Reorder ${p.values.name}: ${stock} left (reorder level ${level})`
-  ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: msg, read: false, record: p.id })
+  ctx.ws.data.notes.unshift(tag(ctx, { id: uid('n'), at: nowISO(), message: msg, read: false, record: p.id }, p))
   if (tasks && !list(ctx.ws, tasks.id).some((t) => !t.values.done && t.values.title === msg.split(':')[0])) {
     createRecord(ctx, tasks.id, { title: msg.split(':')[0], due_date: todayISO(), assignee: ctx.user.id, done: false, related: String(p.values.name), priority: 'high' }, { silent: true })
   }
@@ -813,8 +946,9 @@ function convert(ctx: Ctx, f: FieldDef, raw: string): unknown {
     case 'currency':
     case 'percent':
     case 'rating': {
-      const n = Number(raw.replace(/[^0-9.-]/g, ''))
-      if (!Number.isFinite(n)) throw new EngineError(`${f.label}: “${raw}” is not a number`)
+      const digits = asciiDigits(raw).replace(/[^0-9.-]/g, '')
+      const n = Number(digits)
+      if (!/[0-9]/.test(digits) || !Number.isFinite(n)) throw new EngineError(`${f.label}: “${raw}” is not a number`)
       return n
     }
     case 'checkbox':
@@ -830,7 +964,10 @@ function convert(ctx: Ctx, f: FieldDef, raw: string): unknown {
         if (!o) throw new EngineError(`${f.label}: “${p}” is not one of the options`)
         return o.value
       })
+    case 'phone':
+      return asciiDigits(raw)
     case 'date': {
+      raw = asciiDigits(raw)
       const m = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
       const iso = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : raw.slice(0, 10)
       if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number.isNaN(Date.parse(iso))) throw new EngineError(`${f.label}: “${raw}” is not a date (use YYYY-MM-DD or DD/MM/YYYY)`)
@@ -849,6 +986,49 @@ function convert(ctx: Ctx, f: FieldDef, raw: string): unknown {
     default:
       return raw
   }
+}
+
+/* ---------------- sample data ---------------- */
+
+/**
+ * Removes everything “Try with sample data” created: records, their journal, stock and payment lines, sample users,
+ * notifications and the sample number series. Real numbering is untouched, so the first real invoice is …-0001.
+ */
+export function removeSampleData(ctx: Ctx) {
+  const role = ctx.schema.roles.find((r) => r.id === ctx.user.roleId)
+  if (!role?.admin) throw new EngineError('Only an admin can remove the sample data')
+  const ws = ctx.ws
+  const gone = new Set<string>()
+  for (const recs of Object.values(ws.data.records)) for (const r of recs) if (r.sample) gone.add(r.id)
+  const demo = new Set(ws.users.filter((u) => u.demo).map((u) => u.id))
+  // Real records that point at sample ones would break, so list them first.
+  const blockers: string[] = []
+  for (const m of ctx.schema.modules) {
+    const rels = m.fields.filter((f) => f.type === 'relation')
+    for (const r of list(ws, m.id)) {
+      if (r.sample) continue
+      if (rels.some((f) => gone.has(String(r.values[f.key] ?? ''))) || r.lines?.some((l) => l.product && gone.has(l.product))) blockers.push(`${m.singular} “${recordTitle(ws, ctx.schema, r)}”`)
+    }
+  }
+  if (blockers.length) throw new EngineError(`These real records use sample data. Change or delete them first: ${blockers.slice(0, 5).join(', ')}${blockers.length > 5 ? ` and ${blockers.length - 5} more` : ''}`)
+  for (const [mod, recs] of Object.entries(ws.data.records)) ws.data.records[mod] = recs.filter((r) => !r.sample)
+  ws.data.journal = ws.data.journal.filter((j) => !j.sample)
+  ws.data.stock = ws.data.stock.filter((m) => !m.sample)
+  ws.data.payments = ws.data.payments.filter((p) => !p.sample)
+  ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))
+  ws.data.activity = ws.data.activity.filter((a) => !a.sample && !gone.has(a.record ?? ''))
+  if (ws.data.approvals) ws.data.approvals = ws.data.approvals.filter((a) => !gone.has(a.record) && !demo.has(a.requestedBy))
+  if (ws.data.comments) ws.data.comments = ws.data.comments.filter((c) => !gone.has(c.record) && !demo.has(c.user))
+  for (const k of Object.keys(ws.data.sequences)) if (k.startsWith('sample:')) delete ws.data.sequences[k]
+  for (const k of Object.keys(ws.data.workflowRuns)) if (gone.has(k.split(':')[1] ?? '')) delete ws.data.workflowRuns[k]
+  ws.users = ws.users.filter((u) => !demo.has(u.id))
+  // Real records owned by a sample person go to whoever removed the sample data.
+  for (const m of ctx.schema.modules) {
+    const people = m.fields.filter((f) => f.type === 'user')
+    for (const r of list(ws, m.id)) for (const f of people) if (demo.has(String(r.values[f.key] ?? ''))) r.values[f.key] = ctx.user.id
+  }
+  log(ctx, `removed the sample data (${gone.size} records)`)
+  return gone.size
 }
 
 /* ---------------- ageing ---------------- */

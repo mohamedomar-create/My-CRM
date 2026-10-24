@@ -5,7 +5,7 @@ import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Fla
 import { ImportModal } from './ImportModal'
 import { useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score } from '../lib/engine'
+import { can, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -242,7 +242,7 @@ function Calendar({ rows, dateKey, ws, schema, color }: { rows: Rec[]; dateKey: 
     const v = String(r.values[dateKey] ?? '')
     if (v.slice(0, 7) === month) byDay.set(Number(v.slice(8, 10)), [...(byDay.get(Number(v.slice(8, 10))) ?? []), r])
   }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   return (
     <div className="card">
       <div className="row between" style={{ marginBottom: 10 }}>

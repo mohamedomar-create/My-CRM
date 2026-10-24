@@ -38,14 +38,14 @@ export function buildReports(schema: AppSchema, challenges: string[]): ReportDef
   const purchases = has('purchases')
   const c = (id: string) => challenges.includes(id)
 
-  if (invoices) out.push(R({ name: 'Invoiced revenue', module: invoices.id, chart: 'kpi', measure: { op: 'sum', field: 'total' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }], size: 1, color: '#10b981' }))
+  if (invoices) out.push(R({ name: 'Revenue (excl. VAT)', module: invoices.id, chart: 'kpi', measure: { op: 'sum', field: 'subtotal' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }], size: 1, color: '#10b981' }))
   if (deals) {
     out.push(R({ name: 'Open pipeline value', module: deals.id, chart: 'kpi', measure: { op: 'sum', field: 'amount' }, filters: [{ field: '__stagetype', op: 'eq', value: 'open' }], size: 1, color: '#8b5cf6' }))
     out.push(R({ name: 'Deals won', module: deals.id, chart: 'kpi', measure: { op: 'count' }, filters: [{ field: '__stagetype', op: 'eq', value: 'won' }], size: 1, color: '#f59e0b' }))
   }
-  if (invoices) out.push(R({ name: 'Receivables (balance due)', module: invoices.id, chart: 'kpi', measure: { op: 'sum', field: 'balance' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }], size: 1, color: '#ef4444' }))
+  if (invoices) out.push(R({ name: 'Receivables (balance due)', module: invoices.id, chart: 'kpi', measure: { op: 'sum', field: 'balance' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }, { field: '__status', op: 'neq', value: 'void' }], size: 1, color: '#ef4444' }))
   if (deals) out.push(R({ name: 'Pipeline by stage', module: deals.id, chart: 'funnel', groupBy: '__stage', measure: { op: 'sum', field: 'amount' }, filters: [], size: 2, color: '#8b5cf6' }))
-  if (invoices) out.push(R({ name: 'Sales by month', module: invoices.id, chart: 'line', groupBy: '__month', measure: { op: 'sum', field: 'total' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }], size: 2, color: '#10b981' }))
+  if (invoices) out.push(R({ name: 'Sales by month (excl. VAT)', module: invoices.id, chart: 'line', groupBy: '__month', measure: { op: 'sum', field: 'subtotal' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }], size: 2, color: '#10b981' }))
   if (leads) out.push(R({ name: 'Leads by source', module: leads.id, chart: 'pie', groupBy: 'source', measure: { op: 'count' }, filters: [], size: 1, color: '#ec4899' }))
   if (deals && (c('accountability') || c('no_visibility'))) out.push(R({ name: 'Pipeline by owner', module: deals.id, chart: 'hbar', groupBy: 'owner', measure: { op: 'sum', field: 'amount' }, filters: [{ field: '__stagetype', op: 'eq', value: 'open' }], size: 1, color: '#6366f1' }))
   if (invoices && c('late_collections')) out.push(R({ name: 'Who owes us', module: invoices.id, chart: 'hbar', groupBy: 'customer', measure: { op: 'sum', field: 'balance' }, filters: [{ field: '__status', op: 'neq', value: 'draft' }, { field: 'balance', op: 'gt', value: '0' }], size: 1, color: '#ef4444' }))
@@ -136,7 +136,7 @@ export function addSmartDefaults(schema: AppSchema) {
       if (!accounts.fields.some((f) => f.key === key)) accounts.fields.push({ id: uid('f'), key, label, type: 'rollup', width: 1, inList: false, rollup: { module, via, op, field }, help: 'Calculated from linked records' })
     }
     if (invoices) {
-      add('Total invoiced', 'total_invoiced', invoices.id, 'customer', 'sum', 'total')
+      add('Invoiced (excl. VAT)', 'total_invoiced', invoices.id, 'customer', 'sum', 'subtotal')
       add('Balance due', 'balance_due', invoices.id, 'customer', 'sum', 'balance')
     }
     if (deals) add('Number of deals', 'deal_count', deals.id, 'account', 'count')

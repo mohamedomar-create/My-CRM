@@ -3,14 +3,14 @@ import { CheckCircle2, Clock, Sparkles, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
-import { can, list, matches, updateRecord } from '../lib/engine'
+import { can, list, matches, todayISO, updateRecord } from '../lib/engine'
 import { moduleById, moduleByRole } from '../lib/schema'
 
 export default function Dashboard() {
   const { ws, user, schema, act } = useApp()
   const tasks = moduleByRole(schema, 'tasks')
   const myTasks = tasks ? list(ws, tasks.id).filter((t) => !t.values.done && t.values.assignee === user.id).sort((a, b) => String(a.values.due_date).localeCompare(String(b.values.due_date))).slice(0, 8) : []
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const reports = schema.reports.filter((r) => can({ schema, user }, r.module, 'view'))
   const hour = new Date().getHours()
   const role = schema.roles.find((r) => r.id === user.roleId)

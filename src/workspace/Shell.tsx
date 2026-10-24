@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Languages, LayoutDashboard, LogOut, Search, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, FlaskConical, Languages, LayoutDashboard, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
-import { can, canApprove, canPost, list, recordTitle, runScheduled } from '../lib/engine'
+import { can, canApprove, canPost, hasSampleData, list, recordTitle, removeSampleData, runScheduled } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
@@ -96,6 +96,17 @@ export default function Shell() {
           ) : <span className="small">{user.name}</span>}
           <button className="ghost" onClick={() => { void signOut().then(() => nav('/')) }} aria-label="Sign out"><LogOut size={18} /></button>
         </div>
+        {hasSampleData(ws) && (
+          <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
+            <FlaskConical size={16} />
+            <span className="grow small"><b>This workspace has sample data.</b> Sample documents use SAMPLE- numbers. Remove them before your first real invoice — real documents can’t be posted until you do.</span>
+            {self?.roleId === 'role_admin' && (
+              <button className="secondary small" onClick={() => { if (confirm('Remove all sample records, documents, payments and sample team members? Your own records stay.')) act((ctx) => removeSampleData(ctx), 'Sample data removed. Your books start clean.', 'Remove sample data') }}>
+                <Trash2 size={14} /> Remove sample data
+              </button>
+            )}
+          </div>
+        )}
         <Outlet />
       </div>
       {toast && (

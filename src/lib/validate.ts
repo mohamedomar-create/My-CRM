@@ -188,6 +188,12 @@ export function validate(schema: AppSchema): Issue[] {
     for (const need of info.needs ?? []) {
       if (!schema.modules.some((x) => x.role === need)) issues.push({ level: 'error', message: `“${m.name}” needs a ${ROLES[need].label} module`, tab: 'modules', moduleId: m.id })
     }
+    if (m.numberPrefix !== undefined) {
+      const at = { tab: 'modules' as const, moduleId: m.id }
+      if (!/^[A-Z]{2,6}$/.test(m.numberPrefix)) issues.push({ level: 'error', message: `“${m.name}” needs a number prefix of 2 to 6 capital letters (for example INV)`, ...at })
+      const clash = schema.modules.find((x) => x.id !== m.id && x.numberPrefix === m.numberPrefix)
+      if (clash) issues.push({ level: 'error', message: `“${m.name}” and “${clash.name}” use the same number prefix ${m.numberPrefix}. Each document type needs its own numbering.`, ...at })
+    }
     if (m.fields.length > 60) issues.push({ level: 'warning', message: `“${m.name}” has ${m.fields.length} fields. Long forms slow your team down — consider a second module.`, tab: 'modules', moduleId: m.id })
     for (const f of m.fields) checkField(schema, m, f, issues)
     formulaCycles(m, issues)
@@ -279,6 +285,7 @@ export function validate(schema: AppSchema): Issue[] {
         const target = fieldByKey(m, a.field)
         if (!target) issues.push({ level: 'error', message: `Automation “${w.name}” sets a field that no longer exists`, ...at })
         else if (target.readOnly) issues.push({ level: 'error', message: `Automation “${w.name}” can't change “${target.label}” — the system calculates it`, ...at })
+        else if ((m.role === 'invoices' || m.role === 'purchases') && ['customer', 'supplier', 'date', 'due_date'].includes(target.key)) issues.push({ level: 'error', message: `Automation “${w.name}” can't change “${target.label}”: it is part of the posted document and locks when the document is posted`, ...at })
         else if (w.trigger.type === 'updated') issues.push({ level: 'warning', message: `Automation “${w.name}” changes a record every time it is updated. It runs once per save, but check it does what you expect.`, ...at })
       }
       for (const text of ['title' in a ? a.title : '', 'message' in a ? a.message : '']) {
