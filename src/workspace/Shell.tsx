@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, FlaskConical, Languages, LayoutDashboard, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FlaskConical, LayoutDashboard, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
@@ -15,6 +15,11 @@ export default function Shell() {
   const nav = useNavigate()
   const toast = useToast()
   const { lang, setLang } = useLang()
+  // The app screens are English-only until full Arabic is built, so an Arabic choice made on the landing page
+  // must not leave them mirrored with English text in them.
+  useEffect(() => {
+    if (lang === 'ar') setLang('en')
+  }, [lang, setLang])
   const [bell, setBell] = useState(false)
   const [q, setQ] = useState('')
   const ran = useRef(false)
@@ -74,7 +79,6 @@ export default function Shell() {
             )}
           </div>
           <span className="grow" />
-          <button className="ghost" onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}><Languages size={16} /> {lang === 'en' ? 'ع' : 'EN'}</button>
           <div style={{ position: 'relative' }}>
             <button className="ghost" onClick={() => { setBell(!bell); if (!bell) markNotesRead(notes.slice(0, 30).map((n) => n.id)) }} aria-label="Notifications">
               <Bell size={18} />{unread > 0 && <span className="pill red tiny">{unread}</span>}
@@ -96,6 +100,13 @@ export default function Shell() {
           ) : <span className="small">{user.name}</span>}
           <button className="ghost" onClick={() => { void signOut().then(() => nav('/')) }} aria-label="Sign out"><LogOut size={18} /></button>
         </div>
+        {self && self.id !== user.id && (
+          <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
+            <Eye size={16} />
+            <span className="grow small"><b>Viewing as {user.name}</b> ({role?.name}). This is read-only: you see what they see, but nothing is changed in their name.</span>
+            <button className="secondary small" onClick={() => switchUser(self.id)}>Back to me</button>
+          </div>
+        )}
         {hasSampleData(ws) && (
           <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
             <FlaskConical size={16} />

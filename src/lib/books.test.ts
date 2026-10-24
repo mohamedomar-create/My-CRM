@@ -259,3 +259,33 @@ describe('Egypt', () => {
     expect(list(ws, mod('contacts'))).toHaveLength(1)
   })
 })
+
+describe('honest interface', () => {
+  it('automation conditions on rollup fields are calculated (they used to read as empty)', () => {
+    const { ws, schema, ctx, mod } = setup()
+    const accounts = mod('accounts')
+    schema.workflows.push({ id: 'w2', name: 'Flag customers with deals', module: accounts, enabled: true, trigger: { type: 'updated' }, conditions: [{ field: 'deal_count', op: 'gt', value: '0' }], actions: [{ type: 'notify', message: 'has deals' }] })
+    const acc = createRecord(ctx, accounts, { name: 'Acme' })
+    createRecord(ctx, mod('deals'), { title: 'D', account: acc.id, amount: 5, close_date: '2026-02-01' })
+    updateRecord(ctx, acc, { name: 'Acme Ltd' })
+    expect(ws.data.notes.some((n) => n.message === 'has deals')).toBe(true)
+  })
+
+  it('costs and margins are only for admin, finance and roles given the right', async () => {
+    const { canSeeCosts } = await import('./engine')
+    const { schema } = setup()
+    const sales = schema.roles.find((r) => !r.admin && !r.finance)!
+    expect(canSeeCosts({ schema, user: { ...admin, roleId: sales.id } })).toBe(false)
+    sales.costs = true
+    expect(canSeeCosts({ schema, user: { ...admin, roleId: sales.id } })).toBe(true)
+    expect(canSeeCosts({ schema, user: admin })).toBe(true)
+  })
+
+  it('exported cells can’t run as spreadsheet formulas, but negative numbers stay numbers', async () => {
+    const { csvSafe } = await import('./engine')
+    expect(csvSafe('=HYPERLINK("http://x","Click")')).toBe('\'=HYPERLINK("http://x","Click")')
+    expect(csvSafe('@SUM(A1)')).toBe("'@SUM(A1)")
+    expect(csvSafe('-1500')).toBe('-1500')
+    expect(csvSafe('Nile Foods')).toBe('Nile Foods')
+  })
+})

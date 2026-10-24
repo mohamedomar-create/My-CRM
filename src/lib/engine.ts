@@ -58,6 +58,15 @@ export function canPost(ctx: Pick<Ctx, 'schema' | 'user'>) {
   return Boolean(role?.admin || role?.finance)
 }
 
+/** Purchase cost, stock value and margin are for admin, finance and roles given “See costs & margins”. */
+export function canSeeCosts(ctx: Pick<Ctx, 'schema' | 'user'>) {
+  const role = ctx.schema.roles.find((r) => r.id === ctx.user.roleId)
+  return Boolean(role?.admin || role?.finance || role?.costs)
+}
+
+/** Fields that reveal what the company paid. */
+export const COST_KEYS = ['cost', 'stock_value']
+
 function need(ctx: Ctx, moduleId: string, p: Permission) {
   if (!can(ctx, moduleId, p)) throw new EngineError(`Your role can't ${p} records here`)
 }
@@ -760,7 +769,8 @@ function runWorkflows(ctx: Ctx, rec: Rec, event: 'created' | 'updated' | 'stage_
     for (const w of ctx.schema.workflows) {
       if (!w.enabled || w.module !== rec.module || w.trigger.type !== event) continue
       if (event === 'stage_changed' && w.trigger.stage && w.trigger.stage !== rec.stage) continue
-      if (!matches(ctx.schema, rec, w.conditions)) continue
+      // Pass the workspace so conditions on lookup and rollup fields are calculated, not read as empty.
+      if (!matches(ctx.schema, rec, w.conditions, ctx.ws)) continue
       execute(ctx, w, rec)
     }
   } finally {
@@ -813,7 +823,7 @@ export function runScheduled(ctx: Ctx) {
       if (!d || String(d) >= today) continue
       const key = `${w.id}:${rec.id}`
       if (ctx.ws.data.workflowRuns[key]) continue
-      if (!matches(ctx.schema, rec, w.conditions)) continue
+      if (!matches(ctx.schema, rec, w.conditions, ctx.ws)) continue
       ctx.ws.data.workflowRuns[key] = today
       execute(ctx, w, rec)
       ran++
@@ -905,6 +915,14 @@ export function addComment(ctx: Ctx, rec: Rec, text: string) {
       ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} mentioned you on ${recordTitle(ctx.ws, ctx.schema, rec)}: “${body.slice(0, 80)}”`, read: false, user: u.id, record: rec.id })
     }
   }
+}
+
+/* ---------------- export ---------------- */
+
+/** A spreadsheet cell that starts with = + - @ (or a tab/return) would run as a formula in Excel; prefix it with ' so it stays text. */
+export function csvSafe(c: unknown) {
+  const t = String(c)
+  return /^[=+\-@\t\r]/.test(t) && !/^-?\d/.test(t) ? `'${t}` : t
 }
 
 /* ---------------- import ---------------- */

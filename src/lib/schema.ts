@@ -182,6 +182,8 @@ export interface RoleDef {
   admin?: boolean
   /** can post invoices / purchases and register payments */
   finance?: boolean
+  /** can see purchase costs, stock value and margins (always true for admin and finance) */
+  costs?: boolean
 }
 
 export interface CompanyProfile {
