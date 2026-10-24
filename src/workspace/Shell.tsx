@@ -5,7 +5,7 @@ import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
 import { can, canApprove, canPost, list, recordTitle, runScheduled } from '../lib/engine'
-import { selfUser, signOut, switchUser, update, useStore } from '../lib/store'
+import { markNotesRead, selfUser, signOut, switchUser, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
 export default function Shell() {
@@ -31,7 +31,9 @@ export default function Shell() {
   // Notes addressed to a person go only to them; notes for a role go to that role (and Admin); the rest go to everyone.
   const notes = ws.data.notes.filter((n) => (n.user ? n.user === user.id : !n.role || role?.admin || n.role === user.roleId || (n.role === 'finance' && role?.finance)))
   const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
-  const unread = notes.filter((n) => !n.read).length
+  const readNotes = useStore((s) => s.prefs.readNotes)
+  const isRead = (n: { id: string; read?: boolean }) => Boolean(n.read) || Boolean(readNotes?.includes(n.id))
+  const unread = notes.filter((n) => !isRead(n)).length
   const results = q.trim().length > 1
     ? visible.flatMap((m) => list(ws, m.id).filter((r) => recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase())).slice(0, 4).map((r) => ({ r, m }))).slice(0, 10)
     : []
@@ -74,13 +76,13 @@ export default function Shell() {
           <span className="grow" />
           <button className="ghost" onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}><Languages size={16} /> {lang === 'en' ? 'ع' : 'EN'}</button>
           <div style={{ position: 'relative' }}>
-            <button className="ghost" onClick={() => { setBell(!bell); if (!bell) { const ids = new Set(notes.map((n) => n.id)); update((s) => s.workspaces[ws.id].data.notes.forEach((n) => { if (ids.has(n.id)) n.read = true })) } }} aria-label="Notifications">
+            <button className="ghost" onClick={() => { setBell(!bell); if (!bell) markNotesRead(notes.slice(0, 30).map((n) => n.id)) }} aria-label="Notifications">
               <Bell size={18} />{unread > 0 && <span className="pill red tiny">{unread}</span>}
             </button>
             {bell && (
               <div className="card notif">
                 {notes.length === 0 && <div className="muted">No notifications yet.</div>}
-                {notes.slice(0, 30).map((n) => <div key={n.id} className={n.read ? '' : 'unread'} style={{ cursor: n.record ? 'pointer' : undefined }} onClick={() => { if (n.record) { setBell(false); nav(`/app/r/${n.record}`) } }}>{n.message}<br /><span className="tiny muted">{new Date(n.at).toLocaleString()}</span></div>)}
+                {notes.slice(0, 30).map((n) => <div key={n.id} className={isRead(n) ? '' : 'unread'} style={{ cursor: n.record ? 'pointer' : undefined }} onClick={() => { if (n.record) { setBell(false); nav(`/app/r/${n.record}`) } }}>{n.message}<br /><span className="tiny muted">{new Date(n.at).toLocaleString()}</span></div>)}
               </div>
             )}
           </div>

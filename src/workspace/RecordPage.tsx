@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, UserPlus, X } from 'lucide-react'
 import { useApp } from './useApp'
+import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
   EngineError, can, canPost, convertLead, createRecord, deleteRecord, displayValue, findRecord, lineNet, lineTax, list, money, moveStage, onHand,
@@ -27,13 +28,45 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const { user, act } = useApp()
   const [values, setValues] = useState<Record<string, unknown>>(() => ({ ...(rec?.values ?? {}) }))
   const [lines, setLinesState] = useState<Line[]>(() => rec?.lines ?? [])
+  // What the form started from. Only fields that differ from it are saved, so a colleague's change to another field is never undone.
+  const [base, setBase] = useState<Record<string, unknown>>(() => ({ ...(rec?.values ?? {}) }))
+  const [baseLines, setBaseLines] = useState<Line[]>(() => rec?.lines ?? [])
+  const sync = useStore((s) => s.sync)
   const [paying, setPaying] = useState(false)
   const [printing, setPrinting] = useState(false)
   const isNew = !rec
   const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
   const set = (k: string, v: unknown) => setValues((s) => ({ ...s, [k]: v }))
-  const dirty = isNew || JSON.stringify(values) !== JSON.stringify(rec?.values) || JSON.stringify(lines) !== JSON.stringify(rec?.lines ?? [])
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  const changedKeys = Object.keys({ ...values, ...base }).filter((k) => !same(values[k], base[k]))
+  const linesChanged = !same(lines, baseLines)
+  const dirty = isNew || changedKeys.length > 0 || linesChanged
+
+  // When the saved record changes (after Save, or a colleague's change arriving), refresh every field the person hasn't touched.
+  const recKey = rec ? JSON.stringify([rec.values, rec.lines ?? []]) : ''
+  useEffect(() => {
+    if (!rec) return
+    const next = { ...rec.values }
+    for (const k of changedKeys) next[k] = values[k]
+    setValues(next)
+    setBase({ ...rec.values })
+    if (!linesChanged) setLinesState(rec.lines ?? [])
+    setBaseLines(rec.lines ?? [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recKey])
+
+  /** Applies the person's edits to the record inside an action. */
+  function applyEdits(ctx: Ctx, r: Rec) {
+    if (changedKeys.length) updateRecord(ctx, r, Object.fromEntries(changedKeys.map((k) => [k, values[k]])))
+    if (mod.lines && linesChanged) setLines(ctx, r, lines)
+  }
+
+  /** After a successful save the form's edits are part of the record, so nothing is left to save. */
+  function settle() {
+    setBase(values)
+    setBaseLines(lines)
+  }
 
   function save() {
     if (isNew) {
@@ -41,11 +74,17 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       if (created) nav(`/app/r/${created.id}`, { replace: true })
       return
     }
-    act((ctx) => {
+    if (act((ctx) => { applyEdits(ctx, findRecord(ctx.ws, rec!.id)!); return true }, 'Saved')) settle()
+  }
+
+  function saveAndPost() {
+    const ok = act((ctx) => {
       const r = findRecord(ctx.ws, rec!.id)!
-      updateRecord(ctx, r, values)
-      if (mod.lines) setLines(ctx, r, lines)
-    }, 'Saved')
+      applyEdits(ctx, r)
+      postDocument(ctx, r)
+      return true
+    }, 'Saved and posted. Stock and accounts are updated.')
+    if (ok) settle()
   }
 
   const related = rec ? relatedRecords(ws, schema, rec) : []
@@ -77,7 +116,9 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             </>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
-            <button className="success" disabled={dirty} title={dirty ? 'Save first' : ''} onClick={() => act((ctx) => postDocument(ctx, findRecord(ctx.ws, rec.id)!), 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
+            dirty
+              ? <button className="success" onClick={saveAndPost} title="Save your changes and post in one step"><Lock size={15} /> Save & post</button>
+              : <button className="success" onClick={() => act((ctx) => postDocument(ctx, findRecord(ctx.ws, rec.id)!), 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Register payment</button>
@@ -85,7 +126,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.lines && rec && rec.status === 'posted' && canPost({ schema, user }) && (
             <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act((ctx) => voidDoc(ctx, rec.id), 'Voided and reversed')}><Ban size={15} /> Void</button>
           )}
-          {mod.lines && rec && <button className="secondary" onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
+          {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? 'Save first' : sync !== 'saved' ? 'Waiting for the save to be confirmed, so the printed number is final' : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
           {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? 'Create' : 'Save'}</button>}
         </div>
       </div>

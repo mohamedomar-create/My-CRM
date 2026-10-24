@@ -6,7 +6,7 @@ import { ImportModal } from './ImportModal'
 import { useApp } from './useApp'
 import { Icon } from '../components/Icon'
 import { can, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score } from '../lib/engine'
-import { update } from '../lib/store'
+import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById } from '../lib/schema'
@@ -34,11 +34,12 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const [importing, setImporting] = useState(false)
   const scored = (mod.scoring?.length ?? 0) > 0
   const dateField = mod.fields.find((f) => ['close_date', 'due_date', 'date', 'visit_date', 'survey_date'].includes(f.key)) ?? mod.fields.find((f) => f.type === 'date')
-  const views = (ws.data.views ?? []).filter((v) => v.module === mod.id && v.user === user.id)
+  const myViews = useStore((s) => s.prefs.views)
+  const views = [...(ws.data.views ?? []).filter((v) => v.user === user.id), ...(myViews ?? [])].filter((v) => v.module === mod.id)
   function saveView() {
     const name = prompt('Name this view', stage ? 'My filtered view' : 'My view')
     if (!name) return
-    update((s) => { (s.workspaces[ws.id].data.views ??= []).push({ id: uid('v'), module: mod.id, user: user.id, name, q, stage, sort, view }) })
+    addView({ id: uid('v'), module: mod.id, user: user.id, name, q, stage, sort, view })
   }
   const cols = mod.fields.filter((f) => f.inList).slice(0, 7)
   const all = list(ws, mod.id)

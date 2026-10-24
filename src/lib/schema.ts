@@ -209,9 +209,41 @@ export interface AppSchema {
 }
 
 let counter = 0
+let recording: string[] | null = null
+let replaying: string[] | null = null
 export function uid(prefix = 'id') {
+  const again = replaying?.find((id) => id.startsWith(`${prefix}_`))
+  if (again && replaying) {
+    replaying.splice(replaying.indexOf(again), 1)
+    return again
+  }
   counter = (counter + 1) % 1_000_000
-  return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  const id = `${prefix}_${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  recording?.push(id)
+  return id
+}
+
+/** Runs fn and returns the ids it created, so the same change can later be replayed with the same ids. */
+export function recordIds<T>(fn: () => T): [T, string[]] {
+  const outer = recording
+  recording = []
+  try {
+    const out = fn()
+    return [out, recording]
+  } finally {
+    recording = outer
+  }
+}
+
+/** Runs fn handing out the given ids again (by prefix, in order), so records keep their identity when a change is replayed. */
+export function replayIds<T>(ids: string[], fn: () => T): T {
+  const outer = replaying
+  replaying = [...ids]
+  try {
+    return fn()
+  } finally {
+    replaying = outer
+  }
 }
 
 export function slugKey(label: string) {

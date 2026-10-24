@@ -3,15 +3,30 @@
 // The app keeps working on an in-memory copy and saves it back shortly after every change.
 import { useSyncExternalStore } from 'react'
 import type { User as AuthUser } from '@supabase/supabase-js'
-import type { User, Workspace } from './types'
+import type { SavedView, User, Workspace } from './types'
 import { emptyData } from './types'
 import { emptyAnswers } from './recommend'
-import { uid } from './schema'
+import { recordIds, replayIds, uid } from './schema'
 import { supabase } from './supabase'
 
 const LAST_WS = 'bonyan.workspace'
 
 export type Sync = 'saved' | 'saving' | 'error' | 'reloaded'
+
+/** A message the person must read before carrying on (shown as a blocking dialog). */
+export interface Notice {
+  title: string
+  text: string
+  items?: string[]
+  /** sign out when the dialog is closed (for example after access was removed) */
+  signOut?: boolean
+}
+
+/** Personal settings kept outside the shared company file, so they never collide with a colleague's save. */
+export interface Prefs {
+  readNotes?: string[]
+  views?: SavedView[]
+}
 
 interface State {
   ready: boolean
@@ -19,13 +34,23 @@ interface State {
   workspaces: Record<string, Workspace>
   /** userId is who the app acts as; selfId is who actually signed in (an admin can try the app as another role) */
   session: { workspaceId: string; userId: string; selfId: string } | null
+  notice: Notice | null
+  /** why the workspace couldn't be opened (network down, no access…), shown with a Retry button */
+  loadError: string | null
+  prefs: Prefs
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null }
+/** A change applied locally and not yet confirmed by the server. Kept so it can be replayed on a colleague's newer version. */
+interface Change {
+  label: string
+  run: (s: State) => void
+}
+
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {} }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
-let dirty = false
+let pending: Change[] = []
 let saving: Promise<void> = Promise.resolve()
 
 /** Publish fresh references for the state, the current workspace and its data, so every selector re-renders. */
@@ -38,48 +63,112 @@ function publish(fn: (s: State) => void) {
   listeners.forEach((l) => l())
 }
 
-function save() {
-  dirty = true
+function save(delay = 600) {
   if (state.sync !== 'saving') publish((s) => { s.sync = 'saving' })
   clearTimeout(timer)
-  timer = setTimeout(() => void flush(), 600)
+  timer = setTimeout(() => void flush(), delay)
 }
+
+/** Postgres error codes the database guards use: the save itself is not allowed, so retrying won't help. */
+const REFUSED = new Set(['42501', '22023', '54000', '23514', 'P0001'])
 
 /** Writes the current workspace if it changed. Saves run one at a time, and a save only lands on the version it was based on. */
 export function flush(): Promise<void> {
   clearTimeout(timer)
   saving = saving.then(async () => {
-    const ws = currentWorkspace()
-    if (!dirty || !ws) return
-    dirty = false
-    const version = versions.get(ws.id) ?? 1
-    const { data, error } = await supabase
-      .from('workspaces')
-      .update({ doc: ws, name: ws.answers.companyName, version: version + 1 })
-      .eq('id', ws.id)
-      .eq('version', version)
-      .select('version')
-    if (error) {
-      dirty = true
+    try {
+      await saveOnce()
+    } catch {
+      // Network trouble: keep everything and try again shortly. The chain itself never breaks.
       publish((s) => { s.sync = 'error' })
       timer = setTimeout(() => void flush(), 5000)
-      return
     }
-    if (data.length === 0) {
-      // Someone else saved first: take their version rather than overwrite it.
-      await reload(ws.id)
-      publish((s) => { s.sync = 'reloaded' })
-      return
-    }
-    versions.set(ws.id, version + 1)
-    if (!dirty) publish((s) => { s.sync = 'saved' })
   })
   return saving
 }
 
+async function saveOnce() {
+  const ws = currentWorkspace()
+  if (!ws || pending.length === 0) {
+    if (state.sync === 'saving') publish((s) => { s.sync = 'saved' })
+    return
+  }
+  const batch = pending.length
+  const version = versions.get(ws.id) ?? 1
+  const { data, error } = await supabase
+    .from('workspaces')
+    .update({ doc: ws, name: ws.answers.companyName, version: version + 1 })
+    .eq('id', ws.id)
+    .eq('version', version)
+    .select('version')
+  if (error) {
+    if (!REFUSED.has(error.code)) throw error
+    // The database refused the change (for example a role that may not change the setup). Go back to the server's version.
+    const refused = pending.map((c) => c.label)
+    pending = []
+    await reload(ws.id)
+    publish((s) => {
+      s.sync = 'reloaded'
+      s.notice = { title: 'Your change was not saved', text: `${friendly(error.message)} The workspace now shows the last saved version.`, items: refused }
+    })
+    return
+  }
+  if (data.length === 0) {
+    // Someone else saved first, or this person lost access. Find out which.
+    const fresh = await supabase.from('workspaces').select('doc, version').eq('id', ws.id).maybeSingle()
+    if (fresh.error) throw fresh.error
+    if (!fresh.data) {
+      pending = []
+      publish((s) => {
+        s.notice = { title: 'Your access was removed', text: 'An admin removed you from this workspace, so your latest changes could not be saved. You will be signed out.', signOut: true }
+      })
+      return
+    }
+    rebase(ws.id, fresh.data.doc as Workspace, fresh.data.version)
+    if (pending.length) save(0)
+    return
+  }
+  versions.set(ws.id, data[0].version)
+  pending.splice(0, batch)
+  if (pending.length === 0) publish((s) => { s.sync = 'saved' })
+}
+
+/** Takes a colleague's newer version and replays this person's unsaved changes on top of it. */
+function rebase(id: string, doc: Workspace, version: number) {
+  versions.set(id, version)
+  const failed: string[] = []
+  const kept: Change[] = []
+  publish((s) => {
+    s.workspaces[id] = doc
+    for (const c of pending) {
+      try {
+        c.run(s)
+        kept.push(c)
+      } catch (e) {
+        failed.push(`${c.label}: ${(e as Error).message}`)
+      }
+    }
+    if (failed.length) {
+      s.sync = 'reloaded'
+      s.notice = {
+        title: 'Some of your changes could not be kept',
+        text: 'A colleague saved changes at the same time. Everything else of yours was re-applied on top of their version, but these no longer fit:',
+        items: failed,
+      }
+    }
+  })
+  pending = kept
+}
+
+export function dismissNotice() {
+  const out = state.notice?.signOut
+  publish((s) => { s.notice = null })
+  if (out) void signOut()
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', (e) => {
-    if (dirty || state.sync === 'saving') e.preventDefault()
+    if (pending.length > 0) e.preventDefault()
   })
 }
 
@@ -88,20 +177,37 @@ export function getState() {
 }
 
 /** Mutate the state in place, re-render, and save the workspace to the cloud. */
-export function update(fn: (s: State) => void) {
+export function update(fn: (s: State) => void, label = 'A change') {
   publish(fn)
+  pending.push({ label, run: fn })
   save()
 }
 
-/** Runs fn on a copy of the workspace and commits only if it doesn't throw, so a failed action changes nothing. */
-export function transact<T>(fn: (ws: Workspace) => T): T {
+/**
+ * Runs fn on a copy of the workspace and commits only if it doesn't throw, so a failed action changes nothing.
+ * Nothing is saved when the action changed nothing. The change is remembered (with the ids it created) so it can be
+ * replayed on a colleague's newer version if they saved first.
+ */
+export function transact<T>(fn: (ws: Workspace) => T, label = 'A change'): T {
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   const copy = structuredClone(ws)
-  const result = fn(copy)
-  update((s) => {
+  const [result, ids] = recordIds(() => fn(copy))
+  if (JSON.stringify(copy) === JSON.stringify(ws)) return result
+  publish((s) => {
     s.workspaces[copy.id] = copy
   })
+  pending.push({
+    label,
+    run: (s) => {
+      const id = s.session?.workspaceId
+      if (!id || !s.workspaces[id]) return
+      const again = structuredClone(s.workspaces[id])
+      replayIds(ids, () => fn(again))
+      s.workspaces[id] = again
+    },
+  })
+  save()
   return result
 }
 
@@ -142,10 +248,42 @@ async function reload(id: string) {
   const { data, error } = await supabase.from('workspaces').select('doc, version').eq('id', id).single()
   if (error) throw new Error(friendly(error.message))
   versions.set(id, data.version)
-  dirty = false
   publish((s) => {
     s.workspaces[id] = data.doc as Workspace
   })
+}
+
+/* ---------------- personal settings ---------------- */
+
+let prefsTimer: ReturnType<typeof setTimeout> | undefined
+
+async function loadPrefs(workspaceId: string, email: string) {
+  const { data } = await supabase.from('member_prefs').select('prefs').eq('workspace_id', workspaceId).eq('email', email).maybeSingle()
+  publish((s) => { s.prefs = (data?.prefs as Prefs | undefined) ?? {} })
+}
+
+function setPrefs(fn: (p: Prefs) => Prefs) {
+  publish((s) => { s.prefs = fn(s.prefs) })
+  const ws = currentWorkspace()
+  const email = selfUser()?.email
+  if (!ws || !email) return
+  clearTimeout(prefsTimer)
+  prefsTimer = setTimeout(() => {
+    void supabase.from('member_prefs').upsert({ workspace_id: ws.id, email, prefs: state.prefs, updated_at: new Date().toISOString() })
+  }, 800)
+}
+
+/** Marks notifications read for this person only. */
+export function markNotesRead(ids: string[]) {
+  setPrefs((p) => ({ ...p, readNotes: [...new Set([...ids, ...(p.readNotes ?? [])])].slice(0, 1000) }))
+}
+
+export function addView(v: SavedView) {
+  setPrefs((p) => ({ ...p, views: [...(p.views ?? []), v] }))
+}
+
+export function removeView(id: string) {
+  setPrefs((p) => ({ ...p, views: (p.views ?? []).filter((v) => v.id !== id) }))
 }
 
 async function createWorkspace(auth: AuthUser, company: string, name: string) {
@@ -176,11 +314,15 @@ function open(ws: Workspace, user: User) {
   } catch {
     /* storage blocked: we just won't remember the choice */
   }
+  pending = []
   publish((s) => {
     s.workspaces = { [ws.id]: ws }
     s.session = { workspaceId: ws.id, userId: user.id, selfId: user.id }
     s.sync = 'saved'
+    s.loadError = null
+    s.prefs = {}
   })
+  void loadPrefs(ws.id, user.email)
 }
 
 /** Opens the workspace this account belongs to, or creates the one it registered for. */
@@ -211,12 +353,18 @@ async function openFor(auth: AuthUser) {
 
 /** Restores the signed-in session when the app loads. */
 export async function init() {
-  try {
-    const { data } = await supabase.auth.getSession()
-    if (data.session) await openFor(data.session.user)
-  } catch {
-    /* a stale or broken session: start signed out */
+  publish((s) => { s.loadError = null })
+  const { data, error } = await supabase.auth.getSession()
+  if (error) {
+    // The saved login is no longer valid: start signed out.
     await supabase.auth.signOut()
+  } else if (data.session) {
+    try {
+      await openFor(data.session.user)
+    } catch (e) {
+      // Keep the login; show what went wrong with a Retry button instead of silently signing out.
+      publish((s) => { s.loadError = (e as Error).message })
+    }
   }
   publish((s) => { s.ready = true })
 }
@@ -255,12 +403,26 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
-  await flush()
-  await supabase.auth.signOut()
-  publish((s) => {
-    s.workspaces = {}
-    s.session = null
-  })
+  try {
+    await flush()
+  } finally {
+    pending = []
+    clearTimeout(timer)
+    try {
+      localStorage.removeItem(LAST_WS)
+    } catch {
+      /* ignore */
+    }
+    await supabase.auth.signOut().catch(() => undefined)
+    publish((s) => {
+      s.workspaces = {}
+      s.session = null
+      s.sync = 'saved'
+      s.notice = null
+      s.loadError = null
+      s.prefs = {}
+    })
+  }
 }
 
 export function switchUser(userId: string) {
