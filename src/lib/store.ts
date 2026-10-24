@@ -248,7 +248,9 @@ export function selfUser(s: State = state): User | undefined {
 function friendly(message: string) {
   if (/invalid login credentials/i.test(message)) return 'E-mail or password is not correct'
   if (/email not confirmed/i.test(message)) return 'Confirm your e-mail first: open the link we sent you, then sign in.'
-  if (/already registered/i.test(message)) return 'An account with this e-mail already exists. Sign in instead.'
+  if (/already registered/i.test(message)) return 'We couldn’t create this login. If you already have an account, sign in or reset your password.'
+  if (/password should be|weak password|at least \d+ characters/i.test(message)) return 'Choose a longer password: at least 10 characters, and not one that has appeared in a data breach.'
+  if (/rate limit|too many/i.test(message)) return 'Too many attempts. Wait a few minutes and try again.'
   if (/failed to fetch|network/i.test(message)) return 'Can\'t reach the server. Check your internet connection and try again.'
   return message
 }
@@ -361,7 +363,23 @@ async function openFor(auth: AuthUser) {
 }
 
 /** Restores the signed-in session when the app loads. */
+let watching = false
+
 export async function init() {
+  if (!watching && typeof window !== 'undefined') {
+    watching = true
+    supabase.auth.onAuthStateChange((event) => {
+      // Signed out in another tab or the session expired: leave the workspace here too.
+      if (event === 'SIGNED_OUT' && state.session) {
+        pending = []
+        publish((s) => {
+          s.workspaces = {}
+          s.session = null
+          s.prefs = {}
+        })
+      }
+    })
+  }
   publish((s) => { s.loadError = null })
   const { data, error } = await supabase.auth.getSession()
   if (error) {
@@ -389,8 +407,8 @@ export async function register(company: string, name: string, email: string, pas
     options: { data: { name: name.trim(), company: company.trim() || null }, emailRedirectTo: `${location.origin}/signin` },
   })
   if (error) throw new Error(friendly(error.message))
-  if (data.user && data.user.identities?.length === 0) throw new Error('An account with this e-mail already exists. Sign in instead.')
-  if (!data.session || !data.user) return 'confirm'
+  // An e-mail that already has an account looks exactly like a new one (check your inbox), so nobody can find out who is registered.
+  if (!data.session || !data.user || data.user.identities?.length === 0) return 'confirm'
   try {
     await openFor(data.user)
   } catch (e) {
@@ -398,6 +416,29 @@ export async function register(company: string, name: string, email: string, pas
     throw e
   }
   return 'ready'
+}
+
+/** Sends a reset link. It always looks the same whether or not the e-mail has an account. */
+export async function requestPasswordReset(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${location.origin}/reset` })
+  if (error && /rate limit|too many/i.test(error.message)) throw new Error(friendly(error.message))
+}
+
+/** After opening the reset link: sets the new password and opens the workspace. */
+export async function setNewPassword(password: string) {
+  const { data, error } = await supabase.auth.updateUser({ password })
+  if (error) throw new Error(friendly(error.message))
+  try {
+    await openFor(data.user)
+  } catch (e) {
+    publish((s) => { s.loadError = (e as Error).message })
+  }
+}
+
+/** True when a login session exists (for example after opening a password-reset link). */
+export async function hasSession() {
+  const { data } = await supabase.auth.getSession()
+  return Boolean(data.session)
 }
 
 export async function signIn(email: string, password: string) {

@@ -75,6 +75,20 @@ npm run build
 
 To deploy on Vercel, import the repo with the **Root Directory left empty**. It is a static single-page app, and `vercel.json` handles the routes.
 
+## Checks
+
+Every push and pull request runs these on GitHub (`.github/workflows/ci.yml`); run them locally the same way:
+
+```bash
+npm run typecheck   # strict TypeScript, tests included
+npm run lint
+npm test            # engine, books, store (with a fake Supabase) and templates
+npm run build
+npm run test:db     # applies every migration to a throw-away Postgres and tries each attack the review found
+```
+
+`npm run test:db` needs Postgres installed locally (`initdb`, `pg_ctl`, `psql`), or a `DATABASE_URL` to an empty database.
+
 ## Cloud backend (Supabase)
 
 Accounts and data live in the Supabase project **my-crm0**. The URL and publishable key are in `src/lib/config.ts` (override them with `.env`, see `.env.example`). Both are meant to be public; row-level security and the database guards decide who can read and write what. Never commit a secret such as the service-role key.
@@ -85,7 +99,9 @@ Accounts and data live in the Supabase project **my-crm0**. The URL and publisha
 - **Guards on every save (database trigger):** only admins can change the setup, roles or team; posted journal, stock and payment lines can never be edited or deleted; document counters never go back; the workspace id and owner can't change; the server sets the version number. Workspaces are created only through `create_workspace()`.
 - **Owner:** every workspace has exactly one owner, who can't be removed or demoted and can hand ownership to another admin (`transfer_ownership()`, the *Make owner* button on the Team page).
 - **Backups:** the server keeps a snapshot at most every 10 minutes for 90 days (`workspace_versions`), and admins can download a full backup under *Builder → Company*.
-- **Supabase settings to check:** under *Authentication → URL Configuration*, set *Site URL* to the live address (for example the Vercel domain) and add it under *Redirect URLs*, so confirmation e-mails link back to the app. Keep *Confirm email* on, because membership is matched by e-mail.
+- **Supabase settings to check:** under *Authentication → URL Configuration*, set *Site URL* to the live address (for example the Vercel domain) and add it under *Redirect URLs*, so confirmation e-mails link back to the app. Keep *Confirm email* on, because membership is matched by e-mail. Use `https://<your-domain>/**` as the redirect URL so the password-reset link (`/reset`) is allowed.
+- **Passwords:** under *Authentication → Providers → Email*, set the minimum length to 10 and turn on leaked-password protection, so the rule the app shows is also enforced by the server.
+- **E-mail sending:** Supabase's built-in sender is limited to a few e-mails an hour and is meant for testing. Before real customers sign up, connect your own provider (Resend, Amazon SES, Postmark…) under *Authentication → Emails → SMTP settings*, sending from your own domain with SPF and DKIM set up.
 
 ## What this version is, and what comes next
 

@@ -6,6 +6,8 @@
 
 > **Status: approved by the owner on 24 October 2026**, with one change to Decision 4: the first wave covers 16 industries relevant to Egypt instead of 3. All other recommended answers are accepted.
 
+> **Progress (24–25 Oct 2026): Phase 0 is built and live** (pull requests #3–#7). Database lock-down, no silent data loss, correct books, honest interface, and the safety net (strict types, automatic checks on every change including database attack tests, password reset, no account enumeration). Still to do by the owner: Supabase password policy, leaked-password protection and a real e-mail (SMTP) provider (see README). Moved to Phase 1 as planned: signed invitation links, two-factor login, CAPTCHA, server-side audit trail and server-side permissions.
+
 ## Executive summary
 
 **What Bonyan is.** Bonyan lets a small business build its own CRM (sales and customer system) and a simple ERP (invoicing, stock and accounts) through a guided set of questions. It is made for Egypt first. Today all the business logic runs inside the user's web browser. The whole company is saved as one data file in the cloud (Supabase).

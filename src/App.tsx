@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Landing from './pages/Landing'
 import Auth from './pages/Auth'
+import Password from './pages/Password'
 import Onboarding from './pages/Onboarding'
 import Suggest from './pages/Suggest'
 
@@ -87,6 +88,8 @@ export default function App() {
       <Route path="/register" element={<Auth mode="register" />} />
       <Route path="/signin" element={<Auth mode="signin" />} />
       <Route path="/join" element={<Auth mode="join" />} />
+      <Route path="/forgot" element={<Password mode="forgot" />} />
+      <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/onboarding" element={<Guard need="admin"><Onboarding /></Guard>} />
       <Route path="/suggest" element={<Guard need="admin"><Suggest /></Guard>} />
       <Route path="/builder" element={<Guard need="draft"><Builder /></Guard>} />
