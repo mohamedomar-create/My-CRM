@@ -1,0 +1,439 @@
+import { useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, UserPlus, X } from 'lucide-react'
+import { useApp } from './useApp'
+import { Icon } from '../components/Icon'
+import {
+  EngineError, can, canPost, convertLead, createRecord, deleteRecord, displayValue, findRecord, lineNet, lineTax, list, money, moveStage, onHand,
+  postDocument, quoteToInvoice, recordTitle, registerPayment, setLines, totals, updateRecord, voidDocument, type Ctx,
+  addComment, approvalNeeded, canApprove, fieldValue, isVisible, requestApproval, rotting, score,
+} from '../lib/engine'
+import type { FieldDef, ModuleDef } from '../lib/schema'
+import { moduleById, moduleByRole, uid } from '../lib/schema'
+import type { Line, Rec, Workspace } from '../lib/types'
+import type { AppSchema } from '../lib/schema'
+
+export default function RecordPage() {
+  const { id, moduleId } = useParams()
+  const { ws, schema } = useApp()
+  const rec = id ? findRecord(ws, id) : undefined
+  const mod = moduleById(schema, rec?.module ?? moduleId ?? '')
+  if (!mod || (id && !rec)) return <div className="page">This record no longer exists. <Link to="/app">Back to dashboard</Link></div>
+  return <Editor key={rec?.id ?? `new-${mod.id}`} mod={mod} rec={rec} ws={ws} schema={schema} />
+}
+
+function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Workspace; schema: AppSchema }) {
+  const nav = useNavigate()
+  const { user, act } = useApp()
+  const [values, setValues] = useState<Record<string, unknown>>(() => ({ ...(rec?.values ?? {}) }))
+  const [lines, setLinesState] = useState<Line[]>(() => rec?.lines ?? [])
+  const [paying, setPaying] = useState(false)
+  const [printing, setPrinting] = useState(false)
+  const isNew = !rec
+  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
+  const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
+  const set = (k: string, v: unknown) => setValues((s) => ({ ...s, [k]: v }))
+  const dirty = isNew || JSON.stringify(values) !== JSON.stringify(rec?.values) || JSON.stringify(lines) !== JSON.stringify(rec?.lines ?? [])
+
+  function save() {
+    if (isNew) {
+      const created = act((ctx) => createRecord(ctx, mod.id, values, { lines }), `${mod.singular} created`)
+      if (created) nav(`/app/r/${created.id}`, { replace: true })
+      return
+    }
+    act((ctx) => {
+      const r = findRecord(ctx.ws, rec!.id)!
+      updateRecord(ctx, r, values)
+      if (mod.lines) setLines(ctx, r, lines)
+    }, 'Saved')
+  }
+
+  const related = rec ? relatedRecords(ws, schema, rec) : []
+  const history = rec ? ws.data.activity.filter((a) => a.record === rec.id).slice(0, 15) : []
+  const payments = rec ? ws.data.payments.filter((p) => p.doc === rec.id) : []
+
+  if (printing && rec) return <PrintView rec={rec} mod={mod} ws={ws} schema={schema} onClose={() => setPrinting(false)} />
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>
+          <button className="ghost icon" onClick={() => nav(`/app/m/${mod.id}`)} aria-label="Back"><ArrowLeft size={18} /></button>
+          <span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>
+          {isNew ? `New ${mod.singular.toLowerCase()}` : recordTitle(ws, schema, rec)}
+          {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title="Score from the scoring rules"><Flame size={13} /> {score(ws, schema, rec)}</span>}
+          {rec && rotting(schema, rec).rotting && <span className="pill red" title="No progress for a while"><Clock size={13} /> idle {rotting(schema, rec).days} days</span>}
+          {rec?.status && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{rec.status}</span>}
+        </h1>
+        <div className="row">
+          {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
+            <button className="success" onClick={() => { const d = act((ctx) => convertLead(ctx, findRecord(ctx.ws, rec.id)!), 'Lead converted: customer, contact and deal created'); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> Convert to customer</button>
+          )}
+          {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
+            <>
+              {rec.status === 'draft' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, rec.id, 'sent'), 'Marked as sent')}><Send size={15} /> Mark sent</button>}
+              <button className="success" disabled={!rec.lines?.length} onClick={() => { const inv = act((ctx) => quoteToInvoice(ctx, findRecord(ctx.ws, rec.id)!), 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Accept & invoice</button>
+              {rec.status !== 'declined' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, rec.id, 'declined'), 'Marked as declined')}><X size={15} /> Declined</button>}
+            </>
+          )}
+          {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
+            <button className="success" disabled={dirty} title={dirty ? 'Save first' : ''} onClick={() => act((ctx) => postDocument(ctx, findRecord(ctx.ws, rec.id)!), 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
+          )}
+          {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && (
+            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Register payment</button>
+          )}
+          {mod.lines && rec && rec.status === 'posted' && canPost({ schema, user }) && (
+            <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act((ctx) => voidDoc(ctx, rec.id), 'Voided and reversed')}><Ban size={15} /> Void</button>
+          )}
+          {mod.lines && rec && <button className="secondary" onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
+          {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? 'Create' : 'Save'}</button>}
+        </div>
+      </div>
+
+      {rec && <ApprovalBanner rec={rec} mod={mod} />}
+
+      {mod.stages && rec && (
+        <div className="stage-path">
+          {mod.stages.map((s, i) => {
+            const cur = mod.stages!.findIndex((x) => x.id === rec.stage)
+            return (
+              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act((ctx) => moveStage(ctx, findRecord(ctx.ws, rec.id)!, s.id), `Moved to ${s.name}`)} disabled={!can({ schema, user }, mod.id, 'edit')}>
+                {s.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="record-grid">
+        <div className="stack">
+          <div className="card">
+            {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? 'This quotation was turned into an invoice.' : 'Posted documents are locked to keep your books correct. Void it and create a new one to make changes.'}</div>}
+            <div className="form-grid">
+              {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && isVisible(mod, f, values)).map((f) => (
+                <div key={f.id} className={f.width === 2 || f.type === 'longtext' ? 'w2' : ''}>
+                  <label className="field">
+                    <span>{f.label}{f.required && !f.readOnly && <span style={{ color: 'var(--danger)' }}> *</span>}</span>
+                    <FieldInput field={f} value={(f.type === 'lookup' || f.type === 'rollup') ? (rec ? fieldValue(ws, schema, rec, f) : undefined) : values[f.key]} onChange={(v) => set(f.key, v)} disabled={!editable} ws={ws} schema={schema} />
+                  </label>
+                  {f.help && <span className="tiny muted">{f.help}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+          {mod.lines && <LinesEditor mod={mod} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {payments.length > 0 && (
+            <div className="card">
+              <h2>Payments</h2>
+              <table className="data"><tbody>{payments.map((p) => <tr key={p.id}><td className="mono">{p.ref}</td><td>{p.date}</td><td>{p.method}</td><td className="num">{money(p.amount, schema.company.currency)}</td></tr>)}</tbody></table>
+            </div>
+          )}
+        </div>
+        <div className="stack">
+          {related.length > 0 && (
+            <div className="card">
+              <h2>Linked records</h2>
+              {related.map(({ m, r }) => (
+                <Link key={r.id} to={`/app/r/${r.id}`} className="row" style={{ padding: '7px 0', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
+                  <Icon name={m.icon} size={15} style={{ color: m.color }} /> <span className="grow small">{recordTitle(ws, schema, r)}</span> <span className="tiny muted">{m.singular}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+          {rec && <Comments rec={rec} />}
+          {rec && (
+            <div className="card">
+              <h2>History</h2>
+              <ul className="timeline">
+                {history.map((a) => <li key={a.id}><b>{a.user}</b> {a.text}<br /><span className="tiny muted">{new Date(a.at).toLocaleString()}</span></li>)}
+                <li>Created {new Date(rec.createdAt).toLocaleDateString()} by {ws.users.find((u) => u.id === rec.createdBy)?.name ?? '—'}</li>
+              </ul>
+            </div>
+          )}
+          {rec && can({ schema, user }, mod.id, 'delete') && (
+            <button className="danger" onClick={() => confirm(`Delete this ${mod.singular.toLowerCase()}?`) && act((ctx) => { deleteRecord(ctx, findRecord(ctx.ws, rec.id)!); return true }, 'Deleted') && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> Delete</button>
+          )}
+        </div>
+      </div>
+      {paying && rec && <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act((ctx) => { registerPayment(ctx, findRecord(ctx.ws, rec.id)!, amount, date, method); return true }, 'Payment registered')) setPaying(false) }} />}
+    </div>
+  )
+}
+
+function voidDoc(ctx: Ctx, id: string) {
+  const r = findRecord(ctx.ws, id)
+  if (!r) throw new EngineError('Not found')
+  voidDocument(ctx, r)
+  return true
+}
+
+function setQuoteStatus(ctx: Ctx, id: string, status: 'sent' | 'declined') {
+  const r = findRecord(ctx.ws, id)
+  if (!r) throw new EngineError('Not found')
+  if (!can(ctx, r.module, 'edit')) throw new EngineError('Your role can’t edit quotations')
+  r.status = status
+}
+
+function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
+  const out: { m: ModuleDef; r: Rec }[] = []
+  for (const m of schema.modules) {
+    const rels = m.fields.filter((f) => f.type === 'relation' && f.target === rec.module)
+    if (!rels.length) continue
+    for (const r of list(ws, m.id)) if (rels.some((f) => r.values[f.key] === rec.id)) out.push({ m, r })
+  }
+  return out.slice(0, 20)
+}
+
+function FieldInput({ field, value, onChange, disabled, ws, schema }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema }) {
+  if (field.readOnly || field.type === 'formula' || field.type === 'lookup' || field.type === 'rollup') {
+    const shown = field.type === 'formula' ? (value === undefined || value === null ? '—' : Number(value).toLocaleString()) : displayValue(ws, schema, field, value) || (value === 0 ? '0' : '—')
+    return <div className="ro-value">{shown}</div>
+  }
+  const str = value === undefined || value === null ? '' : String(value)
+  switch (field.type) {
+    case 'longtext':
+      return <textarea value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} dir="auto" />
+    case 'number':
+    case 'currency':
+    case 'percent':
+      return <input type="number" step={field.type === 'number' ? 'any' : '0.01'} min={field.min} max={field.max} value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    case 'rating':
+      return (
+        <div className="row" style={{ gap: 2 }}>
+          {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" className="ghost icon" disabled={disabled} onClick={() => onChange(n)}><Star size={20} fill={Number(value) >= n ? '#f59e0b' : 'none'} color="#f59e0b" /></button>)}
+        </div>
+      )
+    case 'date':
+      return <input type="date" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    case 'checkbox':
+      return <label className="inline"><input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} disabled={disabled} /> {field.label}</label>
+    case 'select':
+      return (
+        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
+          <option value="">—</option>
+          {field.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )
+    case 'multiselect': {
+      const cur = (value as string[]) ?? []
+      return (
+        <div className="chips">
+          {field.options?.map((o) => (
+            <button key={o.value} type="button" disabled={disabled} className={`chip ${cur.includes(o.value) ? 'on' : ''}`} style={{ padding: '5px 11px' }} onClick={() => onChange(cur.includes(o.value) ? cur.filter((x) => x !== o.value) : [...cur, o.value])}>{o.label}</button>
+          ))}
+        </div>
+      )
+    }
+    case 'relation': {
+      const targets = list(ws, field.target ?? '')
+      return (
+        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
+          <option value="">—</option>
+          {targets.map((r) => <option key={r.id} value={r.id}>{recordTitle(ws, schema, r)}</option>)}
+        </select>
+      )
+    }
+    case 'user':
+      return (
+        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
+          <option value="">—</option>
+          {ws.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+      )
+    case 'email':
+      return <input type="email" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    case 'phone':
+      return <input type="tel" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="+20 10 0000 0000" />
+    case 'url':
+      return <input type="url" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="https://" />
+    default:
+      return <input value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} dir="auto" />
+  }
+}
+
+function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema }) {
+  const products = moduleByRole(schema, 'products')
+  const items = products ? list(ws, products.id) : []
+  const t = totals(lines)
+  const cur = schema.company.currency
+  const upd = (i: number, patch: Partial<Line>) => onChange(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
+  const pick = (i: number, pid: string) => {
+    const p = items.find((x) => x.id === pid)
+    if (!p) return upd(i, { product: undefined })
+    const price = mod.role === 'purchases' ? Number(p.values.cost || p.values.price || 0) : Number(p.values.price ?? 0)
+    upd(i, { product: p.id, description: String(p.values.name), price, vat: Number(p.values.vat_rate ?? schema.company.vatRate) })
+  }
+  return (
+    <div className="card">
+      <div className="row between"><h2 style={{ margin: 0 }}>Lines</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate }])}><Plus size={15} /> Add line</button>}</div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="lines">
+          <thead><tr><th style={{ minWidth: 200 }}>Product / service</th><th>Qty</th><th>Unit price</th><th>Disc %</th><th>VAT %</th><th className="num">Net</th><th className="num">VAT</th><th /></tr></thead>
+          <tbody>
+            {lines.length === 0 && <tr><td colSpan={8} className="muted small" style={{ padding: 16 }}>No lines yet. Add the products or services you are {mod.role === 'purchases' ? 'buying' : 'selling'}.</td></tr>}
+            {lines.map((l, i) => {
+              const p = items.find((x) => x.id === l.product)
+              const stock = p?.values.track_stock ? onHand(ws, p.id) : undefined
+              return (
+                <tr key={l.id}>
+                  <td>
+                    <select value={l.product ?? ''} onChange={(e) => pick(i, e.target.value)} disabled={disabled}>
+                      <option value="">— free text —</option>
+                      {items.map((x) => <option key={x.id} value={x.id}>{String(x.values.name)} {x.values.sku ? `(${x.values.sku})` : ''}</option>)}
+                    </select>
+                    {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder="Description" style={{ marginTop: 4 }} />}
+                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>On hand: {stock}</span>}
+                  </td>
+                  <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
+                  <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
+                  <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
+                  <td><input type="number" min={0} max={100} value={l.vat} onChange={(e) => upd(i, { vat: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
+                  <td className="num">{lineNet(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td className="num">{lineTax(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td>{!disabled && <button className="ghost icon" onClick={() => onChange(lines.filter((_, j) => j !== i))}><X size={14} /></button>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="totals">
+        <span>Subtotal</span><b className="num">{money(t.subtotal, cur)}</b>
+        <span>VAT</span><b className="num">{money(t.tax, cur)}</b>
+        <span className="grand">Total</span><span className="grand num">{money(t.total, cur)}</span>
+      </div>
+    </div>
+  )
+}
+
+function PaymentModal({ rec, currency, onClose, onPay }: { rec: Rec; currency: string; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') => void }) {
+  const [amount, setAmount] = useState(Number(rec.values.balance))
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [method, setMethod] = useState<'cash' | 'bank' | 'cheque' | 'instapay' | 'card'>('bank')
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="modal">
+        <div className="card stack">
+          <h2><Banknote size={18} /> Register payment for {rec.number}</h2>
+          <p className="muted small" style={{ margin: 0 }}>Balance due: <b>{money(Number(rec.values.balance), currency)}</b></p>
+          <label className="field">Amount<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
+          <label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method)}><CheckCircle2 size={16} /> Register</button></div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef; ws: Workspace; schema: AppSchema; onClose: () => void }) {
+  const partyId = String(rec.values.customer ?? rec.values.supplier ?? '')
+  const party = findRecord(ws, partyId)
+  const t = totals(rec.lines ?? [])
+  const cur = schema.company.currency
+  const title = mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
+  return (
+    <div className="page">
+      <div className="row no-print" style={{ marginBottom: 12 }}>
+        <button className="secondary" onClick={onClose}><ArrowLeft size={16} /> Back</button>
+        <button onClick={() => window.print()}><Printer size={16} /> Print / save as PDF</button>
+      </div>
+      <div className="print-doc">
+        <div className="row between" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <h1 style={{ marginBottom: 4 }}>{schema.company.name}</h1>
+            <div className="muted small">{schema.company.city}, {schema.company.country}</div>
+            {schema.company.taxId && <div className="small">Tax registration no.: <b>{schema.company.taxId}</b></div>}
+          </div>
+          <div style={{ textAlign: 'end' }}>
+            <h2 style={{ marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</h2>
+            <div className="mono">{rec.number ?? 'DRAFT'}</div>
+            <div className="small">Date: {String(rec.values.date ?? '')}</div>
+            {rec.values.due_date ? <div className="small">Due: {String(rec.values.due_date)}</div> : null}
+            {rec.values.valid_until ? <div className="small">Valid until: {String(rec.values.valid_until)}</div> : null}
+          </div>
+        </div>
+        <div style={{ margin: '24px 0', padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
+          <div className="tiny muted">{mod.role === 'purchases' ? 'Supplier' : 'Bill to'}</div>
+          <b>{recordTitle(ws, schema, party)}</b>
+          {party?.values.tax_id ? <div className="small">Tax ID: {String(party.values.tax_id)}</div> : null}
+        </div>
+        <table className="lines">
+          <thead><tr><th>#</th><th>Description</th><th className="num">Qty</th><th className="num">Unit price</th><th className="num">Disc.</th><th className="num">VAT</th><th className="num">Amount</th></tr></thead>
+          <tbody>
+            {(rec.lines ?? []).map((l, i) => (
+              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="totals">
+          <span>Subtotal</span><b className="num">{money(t.subtotal, cur)}</b>
+          <span>VAT</span><b className="num">{money(t.tax, cur)}</b>
+          <span className="grand">Total</span><span className="grand num">{money(t.total, cur)}</span>
+          {mod.role !== 'quotes' && <><span>Paid</span><span className="num">{money(Number(rec.values.paid ?? 0), cur)}</span><span><b>Balance due</b></span><b className="num">{money(Number(rec.values.balance ?? t.total), cur)}</b></>}
+        </div>
+        {rec.status === 'void' && <h2 style={{ color: 'var(--danger)', textAlign: 'center', marginTop: 30 }}>VOID</h2>}
+      </div>
+    </div>
+  )
+}
+
+function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
+  const { ws, schema, user, act, ctx } = useApp()
+  const rules = (schema.approvals ?? []).filter((r) => r.module === mod.id)
+  if (!rules.length) return null
+  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'pending' | 'rejected' | 'needed'; by?: string }
+  const items = rules.flatMap((r): Item[] => {
+    if (r.action === 'post' && rec.status !== 'draft') return []
+    const needed = approvalNeeded(ctx, rec, r.action, r.stage)
+    if (needed?.id !== r.id) {
+      const done = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'approved')
+      return done ? [{ r, state: 'approved', by: ws.users.find((u) => u.id === done.decidedBy)?.name }] : []
+    }
+    const pending = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'pending')
+    const rejected = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'rejected')
+    return [{ r, state: canApprove({ schema, user }, r) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : 'needed' }]
+  })
+  if (!items.length) return null
+  const roleName = (id: string) => schema.roles.find((x) => x.id === id)?.name ?? 'an approver'
+  const what = (r: (typeof rules)[number]) => (r.action === 'post' ? 'posting' : `moving to “${mod.stages?.find((s) => s.id === r.stage)?.name}”`)
+  return (
+    <div className="stack" style={{ marginBottom: 14 }}>
+      {items.map(({ r, state, by }) => (
+        <div key={r.id} className={`row ${state === 'approved' ? 'ok-box' : state === 'rejected' ? 'error-box' : 'note'}`}>
+          <ShieldAlert size={16} />
+          <span className="grow">
+            <b>{r.name}</b>:{' '}
+            {state === 'approved' && `approved by ${by}.`}
+            {state === 'self' && `${what(r)} normally needs approval from ${roleName(r.approverRole)}. You can do it yourself.`}
+            {state === 'pending' && `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`}
+            {state === 'rejected' && `rejected. Change the record and request approval again.`}
+            {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
+          </span>
+          {(state === 'needed' || state === 'rejected') && <button className="secondary" onClick={() => act((c) => { requestApproval(c, findRecord(c.ws, rec.id)!, r.id); return true }, 'Approval requested')}><Send size={14} /> Request approval</button>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Comments({ rec }: { rec: Rec }) {
+  const { ws, act } = useApp()
+  const [text, setText] = useState('')
+  const comments = (ws.data.comments ?? []).filter((c) => c.record === rec.id)
+  const name = (id: string) => ws.users.find((u) => u.id === id)?.name ?? '—'
+  return (
+    <div className="card">
+      <h2><MessageSquare size={17} /> Notes & comments</h2>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a note. Type @name to notify a colleague." dir="auto" style={{ minHeight: 64 }} />
+      <div className="row between" style={{ marginTop: 6 }}>
+        <span className="tiny muted">{ws.users.slice(0, 4).map((u) => `@${u.name.split(' ')[0]}`).join(' ')}</span>
+        <button onClick={() => { if (act((c) => { addComment(c, findRecord(c.ws, rec.id)!, text); return true })) setText('') }} disabled={!text.trim()}><Send size={14} /> Add note</button>
+      </div>
+      <ul className="timeline" style={{ marginTop: 10 }}>
+        {comments.map((c) => <li key={c.id}><b>{name(c.user)}</b> <span dir="auto">{c.text}</span><br /><span className="tiny muted">{new Date(c.at).toLocaleString()}</span></li>)}
+      </ul>
+    </div>
+  )
+}
