@@ -1,0 +1,6 @@
+# Supabase CLI settings used by the deploy workflow.
+project_id = "npnhoywlxidojqoijqdu"
+
+[functions.command]
+# The gateway checks the login token; the function then checks membership and rights itself.
+verify_jwt = true
