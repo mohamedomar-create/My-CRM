@@ -4,8 +4,7 @@ import { AlertTriangle, BarChart3, CheckCircle2, Kanban, LayoutDashboard, Rocket
 import { Logo } from '../components/Logo'
 import { useDraft } from './useDraft'
 import { healthScore, type Issue, type Tab } from '../lib/validate'
-import { update } from '../lib/store'
-import { seedSampleData } from '../lib/seed'
+import { run } from '../lib/store'
 import ModulesTab from './ModulesTab'
 import PipelinesTab from './PipelinesTab'
 import ReportsTab from './ReportsTab'
@@ -53,21 +52,12 @@ export default function Builder() {
       return
     }
     const first = !ws.published
-    update((s) => {
-      const w = s.workspaces[ws.id]
-      const version = (w.published?.version ?? 0) + 1
-      const snapshot = structuredClone({ ...w.draft!, version })
-      w.draft = structuredClone(snapshot)
-      w.published = snapshot
-      w.history.unshift({ version, at: new Date().toISOString(), note: first ? 'First version' : `Version ${version}`, schema: snapshot })
-      w.history = w.history.slice(0, 20)
-      if (first && w.seedOnPublish) {
-        const admin = w.users.find((u) => u.roleId === 'role_admin') ?? w.users[0]
-        const names = w.answers.products.split('\n').map((x) => x.trim()).filter(Boolean)
-        seedSampleData(w, snapshot, admin, names)
-        w.seedOnPublish = false
-      }
-    })
+    try {
+      run('setup.publish', {}, first ? 'Published the first version' : 'Published a new version')
+    } catch (e) {
+      alert((e as Error).message)
+      return
+    }
     if (first) nav('/app')
     else setPublished(`Version ${(ws.published?.version ?? 0) + 1} is live`)
   }

@@ -41,8 +41,7 @@ select pg_temp.blocked('a member e-mail that is not an e-mail', $q$insert into p
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"staff@test.dev","role":"authenticated"}', false);
 select pg_temp.blocked('staff takes over created_by (SECU-02)', $q$update public.workspaces set created_by='00000000-0000-0000-0000-00000000000b' where id='ws_test123456'$q$);
 select pg_temp.blocked('staff rewrites the users list (SECU-01)', $q$update public.workspaces set doc=jsonb_set(doc,'{users}','[{"id":"u","roleId":"role_admin"}]') where id='ws_test123456'$q$);
-select pg_temp.allowed('staff adds a journal entry (normal work)', $q$update public.workspaces set version=999, doc=jsonb_set(doc,'{data,journal}','[{"id":"j2","x":2},{"id":"j1","x":1}]') where id='ws_test123456'$q$);
-select pg_temp.check('the server, not the client, sets the version', (select version = 2 from public.workspaces where id='ws_test123456'));
+select pg_temp.blocked('a member edits the company file straight from the browser (all changes go through the server)', $q$update public.workspaces set version=999, doc=jsonb_set(doc,'{data,journal}','[{"id":"j2","x":2},{"id":"j1","x":1}]') where id='ws_test123456'$q$);
 select pg_temp.blocked('deleting a journal entry', $q$update public.workspaces set doc=jsonb_set(doc,'{data,journal}','[{"id":"j2","x":2}]') where id='ws_test123456'$q$);
 select pg_temp.blocked('editing a journal entry', $q$update public.workspaces set doc=jsonb_set(doc,'{data,journal}','[{"id":"j2","x":2},{"id":"j1","x":99}]') where id='ws_test123456'$q$);
 select pg_temp.blocked('turning the invoice counter back', $q$update public.workspaces set doc=jsonb_set(doc,'{data,sequences,INV}','1') where id='ws_test123456'$q$);
@@ -67,7 +66,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 select pg_temp.check('a stranger sees no workspace', (select count(*) = 0 from public.workspaces));
 select pg_temp.check('a stranger sees no members', (select count(*) = 0 from public.workspace_members));
 select pg_temp.blocked('a stranger creates a workspace with a mismatched id', $q$select public.create_workspace('ws_strange0001','S','{"id":"ws_other","users":[],"data":{}}')$q$);
-update public.workspaces set doc = '{"id":"ws_test123456","users":[],"data":{"hacked":true}}' where id = 'ws_test123456';
+select pg_temp.blocked('a stranger edits the company file', $q$update public.workspaces set doc = '{"id":"ws_test123456","users":[],"data":{"hacked":true}}' where id = 'ws_test123456'$q$);
 reset role;
 select pg_temp.check('a stranger''s update changed nothing', (select not (doc #> '{data}' ? 'hacked') from public.workspaces where id='ws_test123456'));
 
@@ -75,7 +74,6 @@ set role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', false);
 select pg_temp.check('the public (not signed in) sees no workspace', (select count(*) = 0 from public.workspaces));
 reset role;
-select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 
 -- Phase 1.1: the server is the writer, the audit trail is append-only.
 set role authenticated;
@@ -86,7 +84,11 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 set role service_role;
 select pg_temp.blocked('the server deletes a journal line', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), (select jsonb_set(doc,'{data,journal}','[]') from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.blocked('the server turns the invoice counter back', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), (select jsonb_set(doc,'{data,sequences,INV}','1') from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.blocked('the server saves a broken workspace', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), '{}'::jsonb, '00000000-0000-0000-0000-00000000000b')$q$);
+create temp table v_before as select version from public.workspaces where id='ws_test123456';
 select pg_temp.allowed('the server saves normal work for a person', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), (select jsonb_set(doc,'{data,journal}', (doc #> '{data,journal}') || '[{"id":"j3","x":3}]') from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.check('the database sets the next version itself', (select w.version = b.version + 1 from public.workspaces w, v_before b where w.id='ws_test123456'));
 select pg_temp.check('the save is attributed to that person', (select updated_by = '00000000-0000-0000-0000-00000000000b' from public.workspaces where id='ws_test123456'));
 select pg_temp.check('a save based on an old version does nothing', (select public.save_workspace('ws_test123456', 1, (select doc from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b') is null));
 select pg_temp.allowed('the server records an audit event', $q$insert into public.audit_events(workspace_id, actor, actor_email, command, ok) values ('ws_test123456','00000000-0000-0000-0000-00000000000b','staff@test.dev','record.create',true)$q$);
@@ -101,4 +103,5 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 select pg_temp.check('a stranger reads no audit events', (select count(*) = 0 from public.audit_events));
 reset role;
 
+select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

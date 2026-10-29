@@ -5,7 +5,7 @@ import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Fla
 import { ImportModal } from './ImportModal'
 import { useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, canSeeCosts, COST_KEYS, csvSafe, displayValue, fieldValue, list, moveStage, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { can, canSeeCosts, COST_KEYS, csvSafe, displayValue, fieldValue, list, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -117,7 +117,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
       ) : view === 'calendar' && dateField ? (
         <Calendar rows={rows} dateKey={dateField.key} ws={ws} schema={schema} color={mod.color} />
       ) : view === 'board' && mod.stages ? (
-        <Board mod={mod} rows={rows} ws={ws} schema={schema} onMove={(id, st) => act((ctx) => moveStage(ctx, list(ctx.ws, mod.id).find((r) => r.id === id)!, st))} />
+        <Board mod={mod} rows={rows} ws={ws} schema={schema} onMove={(id, st) => act('record.moveStage', { id, stage: st }, undefined, 'Moved on the board')} />
       ) : (
         <div className="table-wrap">
           <table className="data">

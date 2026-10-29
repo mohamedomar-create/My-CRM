@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle2, Download, FileSpreadsheet, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
-import { importRows, type ImportResult } from '../lib/engine'
+import { type ImportResult } from '../lib/engine'
 import type { ModuleDef } from '../lib/schema'
 
 /** Parses CSV exported from Excel or Google Sheets (quotes, commas or semicolons, BOM). */
@@ -72,7 +72,7 @@ export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => v
 
   function run() {
     const objects = rows.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])))
-    const res = act((ctx) => importRows(ctx, mod.id, objects, mapping))
+    const res = act<ImportResult>('import.rows', { module: mod.id, rows: objects, mapping }, undefined, `Imported ${mod.name.toLowerCase()}`)
     if (res) setResult(res)
   }
 

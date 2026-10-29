@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { AppSchema } from '../lib/schema'
-import { currentUser, currentWorkspace, transact, useStore } from '../lib/store'
+import { currentUser, currentWorkspace, run, useStore } from '../lib/store'
+import type { CommandArgs, CommandName } from '../lib/commands'
 import type { User, Workspace } from '../lib/types'
 import type { Ctx } from '../lib/engine'
 
@@ -30,12 +31,15 @@ export function useApp() {
   const ws = useStore((s) => currentWorkspace(s)) as Workspace
   const user = useStore((s) => currentUser(s)) as User
   const schema = ws.published as AppSchema
-  /** Run an engine action atomically. If it throws, nothing changes and the message is shown. */
-  function act<T>(fn: (ctx: Ctx) => T, ok?: string, label?: string): T | undefined {
+  /**
+   * Run a server command. The screen updates straight away; the server runs the same command and saves it.
+   * If it isn't allowed, nothing changes and the message is shown.
+   */
+  function act<T = unknown>(name: CommandName, args: CommandArgs[CommandName], ok?: string, label?: string): T | undefined {
     try {
-      const out = transact((copy) => fn({ ws: copy, schema: copy.published!, user: copy.users.find((u) => u.id === user.id)! }), label ?? ok ?? 'A change')
+      const out = run(name, args as never, label ?? ok ?? 'A change') as T
       if (ok) showToast({ kind: 'ok', text: ok })
-      return out
+      return (out ?? (true as T))
     } catch (e) {
       showToast({ kind: 'error', text: (e as Error).message })
       return undefined
