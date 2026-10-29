@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, ClipboardCheck, X } from 'lucide-react'
 import { useApp } from './useApp'
-import { canApprove, decideApproval, findRecord, recordTitle } from '../lib/engine'
+import { canApprove, findRecord, recordTitle } from '../lib/engine'
 import { moduleById } from '../lib/schema'
 
 export default function Approvals() {
@@ -29,8 +29,8 @@ export default function Approvals() {
         {decide ? (
           <>
             <input placeholder="Note (optional)" value={notes[a.id] ?? ''} onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })} style={{ maxWidth: 220 }} />
-            <button className="success" onClick={() => act((ctx) => { decideApproval(ctx, a.id, true, notes[a.id]); return true }, 'Approved')}><Check size={15} /> Approve</button>
-            <button className="danger" onClick={() => act((ctx) => { decideApproval(ctx, a.id, false, notes[a.id]); return true }, 'Rejected')}><X size={15} /> Reject</button>
+            <button className="success" onClick={() => act('approval.decide', { approval: a.id, approve: true, note: notes[a.id] }, 'Approved')}><Check size={15} /> Approve</button>
+            <button className="danger" onClick={() => act('approval.decide', { approval: a.id, approve: false, note: notes[a.id] }, 'Rejected')}><X size={15} /> Reject</button>
           </>
         ) : <span className={`pill ${a.status === 'approved' ? 'green' : a.status === 'rejected' ? 'red' : 'amber'}`}>{a.status}</span>}
       </div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Crown, Trash2, UserPlus, Users } from 'lucide-react'
 import { useApp, showToast } from './useApp'
-import { addMember, listMembers, removeMember, setMemberAdmin, transferOwnership, update, type Member } from '../lib/store'
+import { addMember, listMembers, removeMember, run, setMemberAdmin, transferOwnership, type Member } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { User } from '../lib/types'
 
@@ -34,7 +34,7 @@ export default function Team() {
     } catch (err) {
       return showToast({ kind: 'error', text: (err as Error).message })
     }
-    update((s) => s.workspaces[ws.id].users.push({ id: uid('u'), name: name.trim(), email: lower, roleId }))
+    run('team.addUser', { id: uid('u'), name: name.trim(), email: lower, roleId }, `Added ${name.trim() || lower} to the team`)
     setName('')
     setEmail('')
     void reload()
@@ -47,7 +47,7 @@ export default function Team() {
     } catch (err) {
       return showToast({ kind: 'error', text: (err as Error).message })
     }
-    update((s) => { s.workspaces[ws.id].users.find((x) => x.id === u.id)!.roleId = next })
+    run('team.setRole', { userId: u.id, roleId: next }, `Changed ${u.name}'s role`)
     void reload()
   }
 
@@ -58,7 +58,7 @@ export default function Team() {
     } catch (err) {
       return showToast({ kind: 'error', text: (err as Error).message })
     }
-    update((s) => { const w = s.workspaces[ws.id]; w.users = w.users.filter((x) => x.id !== u.id) })
+    run('team.removeUser', { userId: u.id }, `Removed ${u.name} from the team`)
     void reload()
   }
 

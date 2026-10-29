@@ -3,7 +3,7 @@ import { CheckCircle2, Clock, Sparkles, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
-import { can, canSeeCosts, list, matches, todayISO, updateRecord } from '../lib/engine'
+import { can, canSeeCosts, list, matches, todayISO } from '../lib/engine'
 import { moduleById, moduleByRole } from '../lib/schema'
 
 export default function Dashboard() {
@@ -51,9 +51,7 @@ export default function Dashboard() {
               const overdue = String(t.values.due_date) < today
               return (
                 <div key={t.id} className="row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                  <button className="ghost icon" aria-label="Mark done" onClick={() => act((ctx) => {
-                    updateRecord(ctx, list(ctx.ws, tasks.id).find((x) => x.id === t.id)!, { done: true })
-                  }, 'Task done')}><CheckCircle2 size={18} /></button>
+                  <button className="ghost icon" aria-label="Mark done" onClick={() => act('record.update', { id: t.id, values: { done: true } }, 'Task done')}><CheckCircle2 size={18} /></button>
                   <Link to={`/app/r/${t.id}`} className="grow" style={{ color: 'var(--text)' }}>{String(t.values.title)}<br /><span className="tiny muted">{String(t.values.related ?? '')}</span></Link>
                   <span className={`pill ${overdue ? 'red' : 'gray'}`}><Clock size={12} /> {String(t.values.due_date)}</span>
                 </div>

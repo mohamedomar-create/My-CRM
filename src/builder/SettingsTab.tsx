@@ -1,6 +1,6 @@
 import { Download, History, RotateCcw } from 'lucide-react'
 import { useDraft } from './useDraft'
-import { downloadBackup, update } from '../lib/store'
+import { downloadBackup, run } from '../lib/store'
 import type { CompanyProfile } from '../lib/schema'
 
 export default function SettingsTab() {
@@ -49,7 +49,7 @@ export default function SettingsTab() {
                 <td>{h.note}</td>
                 <td className="muted">{new Date(h.at).toLocaleString()}</td>
                 <td className="num">
-                  <button className="secondary" onClick={() => { if (confirm(`Load version ${h.version} into the builder? Your unpublished changes will be replaced.`)) update((s) => { s.workspaces[ws.id].draft = structuredClone(h.schema) }) }}><RotateCcw size={14} /> Restore to builder</button>
+                  <button className="secondary" onClick={() => { if (confirm(`Load version ${h.version} into the builder? Your unpublished changes will be replaced.`)) run('setup.restoreVersion', { version: h.version }, `Restored version ${h.version} into the builder`) }}><RotateCcw size={14} /> Restore to builder</button>
                 </td>
               </tr>
             ))}

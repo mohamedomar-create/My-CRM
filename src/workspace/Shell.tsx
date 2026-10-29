@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FlaskConical, LayoutDashboard, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
-import { can, canApprove, canPost, hasSampleData, list, recordTitle, removeSampleData, runScheduled } from '../lib/engine'
+import { can, canApprove, canPost, hasSampleData, list, recordTitle } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
@@ -28,7 +28,7 @@ export default function Shell() {
   useEffect(() => {
     if (ran.current) return
     ran.current = true
-    const n = act((ctx) => runScheduled(ctx))
+    const n = act<number>('automation.runScheduled', {}, undefined, 'Date-based automations')
     if (n) showToast({ kind: 'ok', text: `${n} date-based automation${n > 1 ? 's' : ''} ran (overdue items, reminders)` })
   }, [act])
 
@@ -61,6 +61,7 @@ export default function Shell() {
         {canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> Accounting</NavLink>}
         {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> Approvals {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> Team</NavLink>}
+        {role?.admin && <NavLink to="/app/audit"><ShieldCheck size={18} /> Audit trail</NavLink>}
         {role?.admin && <NavLink to="/builder"><Wand2 size={18} /> Customise system</NavLink>}
       </aside>
       <div className="main">
@@ -112,7 +113,7 @@ export default function Shell() {
             <FlaskConical size={16} />
             <span className="grow small"><b>This workspace has sample data.</b> Sample documents use SAMPLE- numbers. Remove them before your first real invoice — real documents can’t be posted until you do.</span>
             {self?.roleId === 'role_admin' && (
-              <button className="secondary small" onClick={() => { if (confirm('Remove all sample records, documents, payments and sample team members? Your own records stay.')) act((ctx) => removeSampleData(ctx), 'Sample data removed. Your books start clean.', 'Remove sample data') }}>
+              <button className="secondary small" onClick={() => { if (confirm('Remove all sample records, documents, payments and sample team members? Your own records stay.')) act('sample.remove', {}, 'Sample data removed. Your books start clean.', 'Remove sample data') }}>
                 <Trash2 size={14} /> Remove sample data
               </button>
             )}

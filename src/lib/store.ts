@@ -6,7 +6,8 @@ import type { User as AuthUser } from '@supabase/supabase-js'
 import type { SavedView, User, Workspace } from './types'
 import { emptyData } from './types'
 import { emptyAnswers } from './recommend'
-import { recordIds, replayIds, uid } from './schema'
+import { uid } from './schema'
+import { applyCommand, type Actor, type Command, type CommandArgs, type CommandName } from './commands'
 import { supabase } from './supabase'
 
 const LAST_WS = 'bonyan.workspace'
@@ -40,10 +41,11 @@ interface State {
   prefs: Prefs
 }
 
-/** A change applied locally and not yet confirmed by the server. Kept so it can be replayed on a colleague's newer version. */
+/** A command applied locally and not yet confirmed by the server (with the ids it created, so the server makes the same ones). */
 interface Change {
   label: string
-  run: (s: State) => void
+  cmd: Command
+  ids: string[]
 }
 
 let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {} }
@@ -51,6 +53,8 @@ const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
 let pending: Change[] = []
+/** how many of the pending changes are on their way to the server right now */
+let inFlight = 0
 let saving: Promise<void> = Promise.resolve()
 
 /** Publish fresh references for the state, the current workspace and its data, so every selector re-renders. */
@@ -63,23 +67,20 @@ function publish(fn: (s: State) => void) {
   listeners.forEach((l) => l())
 }
 
-function save(delay = 600) {
+function save(delay = 400) {
   if (state.sync !== 'saving') publish((s) => { s.sync = 'saving' })
   clearTimeout(timer)
   timer = setTimeout(() => void flush(), delay)
 }
 
-/** Postgres error codes the database guards use: the save itself is not allowed, so retrying won't help. */
-const REFUSED = new Set(['42501', '22023', '54000', '23514', 'P0001'])
-
-/** Writes the current workspace if it changed. Saves run one at a time, and a save only lands on the version it was based on. */
+/** Sends the pending changes to the server, one batch at a time. The chain never breaks; network trouble retries. */
 export function flush(): Promise<void> {
   clearTimeout(timer)
   saving = saving.then(async () => {
     try {
-      await saveOnce()
+      await sendOnce()
     } catch {
-      // Network trouble: keep everything and try again shortly. The chain itself never breaks.
+      inFlight = 0
       publish((s) => { s.sync = 'error' })
       timer = setTimeout(() => void flush(), 5000)
     }
@@ -87,72 +88,75 @@ export function flush(): Promise<void> {
   return saving
 }
 
-async function saveOnce() {
+interface ServerReply {
+  doc: Workspace
+  version: number
+  results: { ok: boolean; error?: string }[]
+}
+
+async function sendOnce() {
   const ws = currentWorkspace()
   if (!ws || pending.length === 0) {
     if (state.sync === 'saving') publish((s) => { s.sync = 'saved' })
     return
   }
-  const batch = pending.length
-  const version = versions.get(ws.id) ?? 1
-  const { data, error } = await supabase
-    .from('workspaces')
-    .update({ doc: ws, name: ws.answers.companyName, version: version + 1 })
-    .eq('id', ws.id)
-    .eq('version', version)
-    .select('version')
+  const batch = pending.slice(0, 50)
+  inFlight = batch.length
+  const { data, error } = await supabase.functions.invoke<ServerReply>('command', {
+    body: { workspace: ws.id, commands: batch.map((c) => ({ name: c.cmd.name, args: c.cmd.args, ids: c.ids, label: c.label })) },
+  })
+  inFlight = 0
   if (error) {
-    if (!REFUSED.has(error.code)) throw error
-    // The database refused the change (for example a role that may not change the setup). Go back to the server's version.
-    const refused = pending.map((c) => c.label)
-    pending = []
-    await reload(ws.id)
-    publish((s) => {
-      s.sync = 'reloaded'
-      s.notice = { title: 'Your change was not saved', text: `${friendly(error.message)} The workspace now shows the last saved version.`, items: refused }
-    })
-    return
-  }
-  if (data.length === 0) {
-    // Someone else saved first, or this person lost access. Find out which.
-    const fresh = await supabase.from('workspaces').select('doc, version').eq('id', ws.id).maybeSingle()
-    if (fresh.error) throw fresh.error
-    if (!fresh.data) {
+    const status = (error as { context?: { status?: number } }).context?.status
+    if (status === 401) {
       pending = []
-      publish((s) => {
-        s.notice = { title: 'Your access was removed', text: 'An admin removed you from this workspace, so your latest changes could not be saved. You will be signed out.', signOut: true }
-      })
+      publish((s) => { s.notice = { title: 'Please sign in again', text: 'Your login has expired, so your latest changes could not be saved.', signOut: true } })
       return
     }
-    rebase(ws.id, fresh.data.doc as Workspace, fresh.data.version)
-    if (pending.length) save(0)
-    return
+    if (status === 403) {
+      pending = []
+      publish((s) => { s.notice = { title: 'Your access was removed', text: 'An admin removed you from this workspace, so your latest changes could not be saved. You will be signed out.', signOut: true } })
+      return
+    }
+    if (status === 400 || status === 413) {
+      // The server will never accept this batch as it is: say so and go back to what is saved.
+      const dropped = pending.splice(0, batch.length).map((c) => c.label)
+      await reload(ws.id)
+      publish((s) => { s.sync = 'reloaded'; s.notice = { title: 'Your change was not saved', text: 'The server refused it. The workspace now shows the last saved version.', items: dropped } })
+      return
+    }
+    throw error
   }
-  versions.set(ws.id, data[0].version)
-  pending.splice(0, batch)
-  if (pending.length === 0) publish((s) => { s.sync = 'saved' })
+  if (!data) throw new Error('No reply from the server')
+  pending.splice(0, batch.length)
+  const refused = batch.flatMap((c, i) => (data.results[i]?.ok ? [] : [`${c.label}: ${data.results[i]?.error ?? 'refused'}`]))
+  // The server's copy is the truth (it includes colleagues' changes); anything still queued is re-applied on top of it.
+  adopt(ws.id, data.doc, data.version, refused)
+  if (pending.length) save(0)
+  else if (!refused.length) publish((s) => { s.sync = 'saved' })
 }
 
-/** Takes a colleague's newer version and replays this person's unsaved changes on top of it. */
-function rebase(id: string, doc: Workspace, version: number) {
+/** Takes the server's version and re-applies this person's still-unsent changes on top of it. */
+function adopt(id: string, doc: Workspace, version: number, refused: string[] = []) {
   versions.set(id, version)
-  const failed: string[] = []
+  const failed = [...refused]
   const kept: Change[] = []
   publish((s) => {
-    s.workspaces[id] = doc
+    let ws = doc
     for (const c of pending) {
       try {
-        c.run(s)
+        ws = applyCommand(ws, actorFor(s, ws), c.cmd, c.ids).ws
         kept.push(c)
       } catch (e) {
         failed.push(`${c.label}: ${(e as Error).message}`)
       }
     }
+    s.workspaces[id] = ws
     if (failed.length) {
       s.sync = 'reloaded'
       s.notice = {
-        title: 'Some of your changes could not be kept',
-        text: 'A colleague saved changes at the same time. Everything else of yours was re-applied on top of their version, but these no longer fit:',
+        title: 'Some of your changes could not be saved',
+        text: 'The server checked them against the latest version (which may include a colleague’s changes). Everything else was saved; these were not:',
         items: failed,
       }
     }
@@ -183,41 +187,41 @@ function assertSelf() {
   }
 }
 
-/** Mutate the state in place, re-render, and save the workspace to the cloud. */
-export function update(fn: (s: State) => void, label = 'A change') {
-  assertSelf()
-  publish(fn)
-  pending.push({ label, run: fn })
-  save()
+/** Who is acting, as the browser sees it. The server checks the same thing against the database. */
+function actorFor(s: State, ws: Workspace): Actor {
+  const userId = s.session?.selfId ?? ''
+  const me = ws.users.find((u) => u.id === userId)
+  const role = [...(ws.published?.roles ?? []), ...(ws.draft?.roles ?? [])].find((r) => r.id === me?.roleId)
+  return { userId, isAdmin: Boolean(role?.admin || me?.roleId === 'role_admin') }
 }
 
+/** Commands that replace something whole (the draft setup, onboarding answers): only the latest one needs sending. */
+const COALESCE = new Set<CommandName>(['setup.saveDraft', 'setup.setAnswers'])
+
 /**
- * Runs fn on a copy of the workspace and commits only if it doesn't throw, so a failed action changes nothing.
- * Nothing is saved when the action changed nothing. The change is remembered (with the ids it created) so it can be
- * replayed on a colleague's newer version if they saved first.
+ * Runs a command now (so the screen updates instantly) and queues it for the server, which runs the same command on
+ * the latest saved data and is the only one that saves. Throws, changing nothing, if the command isn't allowed.
  */
-export function transact<T>(fn: (ws: Workspace) => T, label = 'A change'): T {
+export function run<N extends CommandName>(name: N, args: CommandArgs[N], label = 'A change'): unknown {
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   assertSelf()
-  const copy = structuredClone(ws)
-  const [result, ids] = recordIds(() => fn(copy))
-  if (JSON.stringify(copy) === JSON.stringify(ws)) return result
-  publish((s) => {
-    s.workspaces[copy.id] = copy
-  })
-  pending.push({
-    label,
-    run: (s) => {
-      const id = s.session?.workspaceId
-      if (!id || !s.workspaces[id]) return
-      const again = structuredClone(s.workspaces[id])
-      replayIds(ids, () => fn(again))
-      s.workspaces[id] = again
-    },
-  })
+  const cmd = { name, args } as Command
+  const out = applyCommand(ws, actorFor(state, ws), cmd)
+  if (JSON.stringify(out.ws) === JSON.stringify(ws)) return out.result
+  publish((s) => { s.workspaces[ws.id] = out.ws })
+  const last = pending[pending.length - 1]
+  if (COALESCE.has(name) && last && last.cmd.name === name && pending.length > inFlight) {
+    // Typing in onboarding or the builder sends one save for the whole burst, not one per keystroke.
+    last.cmd = name === 'setup.setAnswers'
+      ? ({ name, args: { patch: { ...(last.cmd.args as CommandArgs['setup.setAnswers']).patch, ...(args as CommandArgs['setup.setAnswers']).patch } } } as Command)
+      : cmd
+    last.label = label
+  } else {
+    pending.push({ label, cmd, ids: out.ids })
+  }
   save()
-  return result
+  return out.result
 }
 
 export function useStore<T>(select: (s: State) => T): T {
@@ -527,4 +531,26 @@ export function downloadBackup() {
 export async function removeMember(workspaceId: string, email: string) {
   const { error } = await supabase.from('workspace_members').delete().eq('workspace_id', workspaceId).eq('email', email)
   if (error) throw new Error(friendly(error.message))
+}
+
+export interface AuditEvent {
+  id: number
+  at: string
+  actor_email: string
+  command: string
+  label: string | null
+  ok: boolean
+  error: string | null
+}
+
+/** The latest entries of the server's audit trail (admins only; the database refuses everyone else). */
+export async function loadAudit(workspaceId: string, limit = 300): Promise<AuditEvent[]> {
+  const { data, error } = await supabase
+    .from('audit_events')
+    .select('id, at, actor_email, command, label, ok, error')
+    .eq('workspace_id', workspaceId)
+    .order('at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(friendly(error.message))
+  return data as AuditEvent[]
 }

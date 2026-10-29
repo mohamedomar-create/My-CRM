@@ -5,9 +5,7 @@ import { useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  EngineError, can, canPost, convertLead, createRecord, deleteRecord, displayValue, findRecord, lineNet, lineTax, list, money, moveStage, onHand,
-  postDocument, quoteToInvoice, recordTitle, registerPayment, setLines, setQuoteStatus, todayISO, totals, updateRecord, voidDocument, defaultValues, type Ctx,
-  addComment, approvalNeeded, canApprove, canSeeCosts, COST_KEYS, fieldValue, isVisible, requestApproval, rotting, score,
+  can, canPost, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, canSeeCosts, COST_KEYS, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -58,10 +56,12 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recKey])
 
-  /** Applies the person's edits to the record inside an action. */
-  function applyEdits(ctx: Ctx, r: Rec) {
-    if (changedKeys.length) updateRecord(ctx, r, Object.fromEntries(changedKeys.map((k) => [k, values[k]])))
-    if (mod.lines && linesChanged) setLines(ctx, r, lines)
+  /** The person's edits: only the fields they changed, and the lines if those changed. */
+  function edits() {
+    return {
+      values: changedKeys.length ? Object.fromEntries(changedKeys.map((k) => [k, values[k]])) : undefined,
+      lines: mod.lines && linesChanged ? lines : undefined,
+    }
   }
 
   /** After a successful save the form's edits are part of the record, so nothing is left to save. */
@@ -72,20 +72,15 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
 
   function save() {
     if (isNew) {
-      const created = act((ctx) => createRecord(ctx, mod.id, values, { lines }), `${mod.singular} created`)
+      const created = act<{ id: string }>('record.create', { module: mod.id, values, lines }, `${mod.singular} created`)
       if (created) nav(`/app/r/${created.id}`, { replace: true })
       return
     }
-    if (act((ctx) => { applyEdits(ctx, findRecord(ctx.ws, rec!.id)!); return true }, 'Saved')) settle()
+    if (act('record.update', { id: rec!.id, ...edits() }, 'Saved')) settle()
   }
 
   function saveAndPost() {
-    const ok = act((ctx) => {
-      const r = findRecord(ctx.ws, rec!.id)!
-      applyEdits(ctx, r)
-      postDocument(ctx, r)
-      return true
-    }, 'Saved and posted. Stock and accounts are updated.')
+    const ok = act('record.saveAndPost', { id: rec!.id, ...edits() }, 'Saved and posted. Stock and accounts are updated.')
     if (ok) settle()
   }
 
@@ -109,26 +104,26 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         </h1>
         <div className="row">
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
-            <button className="success" onClick={() => { const d = act((ctx) => convertLead(ctx, findRecord(ctx.ws, rec.id)!), 'Lead converted: customer, contact and deal created'); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> Convert to customer</button>
+            <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, 'Lead converted: customer, contact and deal created'); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> Convert to customer</button>
           )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
-              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? 'Save first' : undefined} onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'sent'), 'Marked as sent and numbered')}><Send size={15} /> Mark sent</button>}
-              {rec.status === 'sent' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'accepted'), 'The customer accepted the quotation')}><CheckCircle2 size={15} /> Mark accepted</button>}
-              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act((ctx) => quoteToInvoice(ctx, findRecord(ctx.ws, rec.id)!), 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Create invoice</button>}
-              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act((ctx) => setQuoteStatus(ctx, findRecord(ctx.ws, rec.id)!, 'declined'), 'Marked as declined')}><X size={15} /> Declined</button>}
+              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? 'Save first' : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, 'Marked as sent and numbered')}><Send size={15} /> Mark sent</button>}
+              {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, 'The customer accepted the quotation')}><CheckCircle2 size={15} /> Mark accepted</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Create invoice</button>}
+              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, 'Marked as declined')}><X size={15} /> Declined</button>}
             </>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
             dirty
               ? <button className="success" onClick={saveAndPost} title="Save your changes and post in one step"><Lock size={15} /> Save & post</button>
-              : <button className="success" onClick={() => act((ctx) => postDocument(ctx, findRecord(ctx.ws, rec.id)!), 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
+              : <button className="success" onClick={() => act('doc.post', { id: rec.id }, 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Register payment</button>
           )}
           {mod.lines && rec && rec.status === 'posted' && canPost({ schema, user }) && (
-            <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act((ctx) => voidDoc(ctx, rec.id), 'Voided and reversed')}><Ban size={15} /> Void</button>
+            <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act('doc.void', { id: rec.id }, 'Voided and reversed')}><Ban size={15} /> Void</button>
           )}
           {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? 'Save first' : sync !== 'saved' ? 'Waiting for the save to be confirmed, so the printed number is final' : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
           {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? 'Create' : 'Save'}</button>}
@@ -142,7 +137,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.stages.map((s, i) => {
             const cur = mod.stages!.findIndex((x) => x.id === rec.stage)
             return (
-              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act((ctx) => moveStage(ctx, findRecord(ctx.ws, rec.id)!, s.id), `Moved to ${s.name}`)} disabled={!can({ schema, user }, mod.id, 'edit')}>
+              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act('record.moveStage', { id: rec.id, stage: s.id }, `Moved to ${s.name}`)} disabled={!can({ schema, user }, mod.id, 'edit')}>
                 {s.name}
               </button>
             )
@@ -196,20 +191,13 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             </div>
           )}
           {rec && can({ schema, user }, mod.id, 'delete') && (
-            <button className="danger" onClick={() => confirm(`Delete this ${mod.singular.toLowerCase()}?`) && act((ctx) => { deleteRecord(ctx, findRecord(ctx.ws, rec.id)!); return true }, 'Deleted') && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> Delete</button>
+            <button className="danger" onClick={() => confirm(`Delete this ${mod.singular.toLowerCase()}?`) && act('record.delete', { id: rec.id }, 'Deleted') && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> Delete</button>
           )}
         </div>
       </div>
-      {paying && rec && <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act((ctx) => { registerPayment(ctx, findRecord(ctx.ws, rec.id)!, amount, date, method); return true }, 'Payment registered')) setPaying(false) }} />}
+      {paying && rec && <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.pay', { id: rec.id, amount, date, method }, 'Payment registered')) setPaying(false) }} />}
     </div>
   )
-}
-
-function voidDoc(ctx: Ctx, id: string) {
-  const r = findRecord(ctx.ws, id)
-  if (!r) throw new EngineError('Not found')
-  voidDocument(ctx, r)
-  return true
 }
 
 function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
@@ -452,7 +440,7 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
             {state === 'rejected' && `rejected. Change the record and request approval again.`}
             {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
           </span>
-          {(state === 'needed' || state === 'rejected') && <button className="secondary" onClick={() => act((c) => { requestApproval(c, findRecord(c.ws, rec.id)!, r.id); return true }, 'Approval requested')}><Send size={14} /> Request approval</button>}
+          {(state === 'needed' || state === 'rejected') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, 'Approval requested')}><Send size={14} /> Request approval</button>}
         </div>
       ))}
     </div>
@@ -470,7 +458,7 @@ function Comments({ rec }: { rec: Rec }) {
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a note. Type @name to notify a colleague." dir="auto" style={{ minHeight: 64 }} />
       <div className="row between" style={{ marginTop: 6 }}>
         <span className="tiny muted">{ws.users.slice(0, 4).map((u) => `@${u.name.split(' ')[0]}`).join(' ')}</span>
-        <button onClick={() => { if (act((c) => { addComment(c, findRecord(c.ws, rec.id)!, text); return true })) setText('') }} disabled={!text.trim()}><Send size={14} /> Add note</button>
+        <button onClick={() => { if (act('comment.add', { id: rec.id, text }, undefined, 'Added a note')) setText('') }} disabled={!text.trim()}><Send size={14} /> Add note</button>
       </div>
       <ul className="timeline" style={{ marginTop: 10 }}>
         {comments.map((c) => <li key={c.id}><b>{name(c.user)}</b> <span dir="auto">{c.text}</span><br /><span className="tiny muted">{new Date(c.at).toLocaleString()}</span></li>)}

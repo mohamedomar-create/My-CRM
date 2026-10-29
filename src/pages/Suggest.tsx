@@ -5,7 +5,7 @@ import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { generateSchema, suggest } from '../lib/recommend'
 import { CHALLENGES } from '../lib/packs'
-import { currentWorkspace, update, useStore } from '../lib/store'
+import { currentWorkspace, run, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
 export default function Suggest() {
@@ -22,11 +22,7 @@ export default function Suggest() {
   const fixes = CHALLENGES.filter((c) => ws.answers.challenges.includes(c.id))
 
   function build() {
-    update((s) => {
-      const w = s.workspaces[ws!.id]
-      w.draft = preview
-      w.seedOnPublish = sample
-    })
+    run('setup.chooseTemplate', { draft: preview!, seedOnPublish: sample }, `Chose the ${pick!.template.name} template`)
     nav('/builder')
   }
 

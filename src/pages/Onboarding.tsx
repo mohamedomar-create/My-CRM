@@ -6,7 +6,7 @@ import { Icon } from '../components/Icon'
 import { TEMPLATES } from '../lib/templates'
 import { CHALLENGES, type TeamInput } from '../lib/packs'
 import type { Answers } from '../lib/recommend'
-import { currentWorkspace, update, useStore } from '../lib/store'
+import { currentWorkspace, run, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import { useLang } from '../lib/i18n'
 
@@ -36,7 +36,7 @@ export default function Onboarding() {
   }, [analysing, nav])
 
   if (!ws || !a) return null
-  const set = (patch: Partial<Answers>) => update((s) => Object.assign(s.workspaces[ws.id].answers, patch))
+  const set = (patch: Partial<Answers>) => run('setup.setAnswers', { patch }, 'Onboarding answers')
   const toggle = (key: 'customers' | 'channels' | 'challenges', v: string, max = 99) => {
     const cur = a[key]
     set({ [key]: cur.includes(v) ? cur.filter((x) => x !== v) : cur.length >= max ? cur : [...cur, v] } as Partial<Answers>)
