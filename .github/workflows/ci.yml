@@ -19,7 +19,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: oven-sh/setup-bun@v2
       - run: npm ci
+      - name: Server functions are built from the current engine
+        run: npm run build:functions && git diff --exit-code supabase/functions
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

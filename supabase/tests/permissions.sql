@@ -76,4 +76,29 @@ select set_config('request.jwt.claims', '{"role":"anon"}', false);
 select pg_temp.check('the public (not signed in) sees no workspace', (select count(*) = 0 from public.workspaces));
 reset role;
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
+
+-- Phase 1.1: the server is the writer, the audit trail is append-only.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"staff@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a person calls the server''s save function', $q$select public.save_workspace('ws_test123456', 1, '{}'::jsonb, '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.blocked('a person writes into the audit trail', $q$insert into public.audit_events(workspace_id, actor_email, command, ok) values ('ws_test123456','staff@test.dev','fake',true)$q$);
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select pg_temp.blocked('the server deletes a journal line', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), (select jsonb_set(doc,'{data,journal}','[]') from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.allowed('the server saves normal work for a person', $q$select public.save_workspace('ws_test123456', (select version from public.workspaces where id='ws_test123456'), (select jsonb_set(doc,'{data,journal}', (doc #> '{data,journal}') || '[{"id":"j3","x":3}]') from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b')$q$);
+select pg_temp.check('the save is attributed to that person', (select updated_by = '00000000-0000-0000-0000-00000000000b' from public.workspaces where id='ws_test123456'));
+select pg_temp.check('a save based on an old version does nothing', (select public.save_workspace('ws_test123456', 1, (select doc from public.workspaces where id='ws_test123456'), '00000000-0000-0000-0000-00000000000b') is null));
+select pg_temp.allowed('the server records an audit event', $q$insert into public.audit_events(workspace_id, actor, actor_email, command, ok) values ('ws_test123456','00000000-0000-0000-0000-00000000000b','staff@test.dev','record.create',true)$q$);
+select pg_temp.blocked('the server edits an audit event', $q$update public.audit_events set ok = false$q$);
+select pg_temp.blocked('the server deletes an audit event', $q$delete from public.audit_events$q$);
+reset role;
+select pg_temp.blocked('even the database owner edits an audit event', $q$update public.audit_events set command = 'x'$q$);
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"staff@test.dev","role":"authenticated"}', false);
+select pg_temp.check('an admin reads their workspace''s audit trail', (select count(*) = 1 from public.audit_events));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.check('a stranger reads no audit events', (select count(*) = 0 from public.audit_events));
+reset role;
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

@@ -10,7 +10,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:db": "bash scripts/test-db.sh",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "build:functions": "bash scripts/build-functions.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
