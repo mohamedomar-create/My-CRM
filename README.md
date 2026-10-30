@@ -94,22 +94,24 @@ npm run test:db     # applies every migration to a throw-away Postgres and tries
 Accounts and data live in the Supabase project **my-crm0**. The URL and publishable key are in `src/lib/config.ts` (override them with `.env`, see `.env.example`). Both are meant to be public; row-level security and the database guards decide who can read and write what. Never commit a secret such as the service-role key.
 
 - **Accounts:** Supabase Auth with e-mail and password. *Create workspace* (`/register`) makes a login and a new company workspace. *Join your team* (`/join`) makes a login for someone an admin added on the Team page.
-- **Data:** each workspace is one row in `workspaces`: the whole workspace as JSON, with a `version` number so two people saving at once never silently overwrite each other. `workspace_members` lists the e-mails that may open each workspace, and which of them are admins.
-- **Rules (`supabase/migrations/`):** only members can read or save a workspace, and only its admins can add, remove or promote members. Nobody else, signed in or not, can see it.
-- **Guards on every save (database trigger):** only admins can change the setup, roles or team; posted journal, stock and payment lines can never be edited or deleted; document counters never go back; the workspace id and owner can't change; the server sets the version number. Workspaces are created only through `create_workspace()`.
+- **Data:** each workspace has one row in `workspaces` (the setup, the team and the document counters, with a `version` number), and its records and books live in their own tables, one row each: `records`, `journal_entries`, `stock_moves`, `payments`, `approvals`, `comments`, `notes`, `activity`. `workspace_members` lists the e-mails that may open each workspace, and which of them are admins. A workspace saved in the older one-file format moves to the tables the first time it is opened, after a check that nothing changes on the way.
+- **Who changes what:** every change is a named command sent to the `command` server function (`supabase/functions/command`), which checks the person's membership, runs the same engine as the app on the latest saved data, saves only the rows that changed and writes the audit trail (`audit_events`). People can't write to the database directly.
+- **Who reads what:** people open a workspace through `open_workspace()`, which leaves out the modules their role can't view, product cost, stock value and the cost of stock movements unless their role may see costs, and the books unless they are admin or finance. Nobody reads the tables directly.
+- **Rules (`supabase/migrations/`):** only admins can add, remove or promote members. Nobody outside a workspace, signed in or not, can see it.
+- **Guards on every save (database triggers):** posted journal, stock and payment rows can only be added, never edited or deleted (sample rows may be removed); every journal entry must balance; a document number is used once per module; document counters never go back; the workspace id and owner can't change; the server sets the version number. Workspaces are created only through `create_workspace()`.
 - **Owner:** every workspace has exactly one owner, who can't be removed or demoted and can hand ownership to another admin (`transfer_ownership()`, the *Make owner* button on the Team page).
-- **Backups:** the server keeps a snapshot at most every 10 minutes for 90 days (`workspace_versions`), and admins can download a full backup under *Builder → Company*.
+- **Backups:** the server keeps a snapshot of the setup at most every 10 minutes for 90 days (`workspace_versions`), the previous version of every changed or deleted record for 90 days (`record_history`), and admins can download a full backup under *Builder → Company*.
 - **Supabase settings to check:** under *Authentication → URL Configuration*, set *Site URL* to the live address (for example the Vercel domain) and add it under *Redirect URLs*, so confirmation e-mails link back to the app. Keep *Confirm email* on, because membership is matched by e-mail. Use `https://<your-domain>/**` as the redirect URL so the password-reset link (`/reset`) is allowed.
 - **Passwords:** under *Authentication → Providers → Email*, set the minimum length to 10 and turn on leaked-password protection, so the rule the app shows is also enforced by the server.
 - **E-mail sending:** Supabase's built-in sender is limited to a few e-mails an hour and is meant for testing. Before real customers sign up, connect your own provider (Resend, Amazon SES, Postmark…) under *Authentication → Emails → SMTP settings*, sending from your own domain with SPF and DKIM set up.
 
 ## What this version is, and what comes next
 
-This is a **working product with real accounts and cloud save** (see above). The business rules (permissions, posting, stock, books) still run in the browser, on the workspace's JSON document. The engine is pure TypeScript and can move to the server unchanged.
+This is a **working product with real accounts and cloud save** (see above). The business rules (permissions, posting, stock, books) run on the server; the browser runs the same engine only to show a change at once, and the server's answer is final.
 
 Before a public launch:
 
-- **Server-side enforcement:** run the engine on the server (e.g. Supabase Edge Functions), so that roles inside a workspace (sales vs. finance) are enforced by the database and not only by the app. Also password reset, e-mail invitations, SSO, and records split out of the single JSON document as workspaces grow.
+- **Large workspaces:** server-side paging and search, so lists stay fast with tens of thousands of records (Phase 1.2, second part). Also e-mail invitations and SSO.
 - **Egypt ETA e-invoicing / e-receipt** submission (the tax ID and VAT data are already captured).
 - **Integrations:** WhatsApp Business for leads and reminders, e-mail, and Excel/CSV **import** with field mapping.
 - **Arabic across the whole app** (the landing page, industry names and challenges are bilingual today).

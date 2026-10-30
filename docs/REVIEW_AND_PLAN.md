@@ -7,6 +7,10 @@
 > **Status: approved by the owner on 24 October 2026**, with one change to Decision 4: the first wave covers 16 industries relevant to Egypt instead of 3. All other recommended answers are accepted.
 
 > **Progress (24–25 Oct 2026): Phase 0 is built and live** (pull requests #3–#7). Database lock-down, no silent data loss, correct books, honest interface, and the safety net (strict types, automatic checks on every change including database attack tests, password reset, no account enumeration). Still to do by the owner: Supabase password policy, leaked-password protection and a real e-mail (SMTP) provider (see README). Moved to Phase 1 as planned: signed invitation links, two-factor login, CAPTCHA, server-side audit trail and server-side permissions.
+>
+> **Progress (29–30 Oct 2026): Phase 1.1 is live** (pull requests #8–#11). Every change goes through the `command` server function; the browser can no longer write to the database; an append-only audit trail and an admin *Audit trail* screen.
+>
+> **Phase 1.2, first part (records in tables, server-filtered reads).** Records, journal, stock moves, payments, approvals, comments, notes and activity each have their own table; the company file keeps only the setup. Journal, stock and payment rows can only be added, every journal entry must balance in the database, and document numbers are unique per module. The server saves only the rows that changed and keeps the previous version of every record (90 days). People read through `open_workspace()`, which filters by role: no hidden modules, no costs or stock values without "see costs", no books without admin or finance. Existing workspaces move automatically on first open, checked item by item. Document lines stay inside their document row for now (a document and its lines are always saved together). **Second part, next:** server-side paging and search for long lists, and hiding formula fields built on cost.
 
 ## Executive summary
 

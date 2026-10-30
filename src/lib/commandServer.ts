@@ -1,7 +1,8 @@
 // The server side of commands, kept free of Deno and Supabase so it is tested like the rest of the engine.
-// supabase/functions/command wraps it with the real database.
+// supabase/functions/command wraps it with the real database. It sends back only what the person may see.
 import type { Workspace } from './types'
 import { applyCommand, type Command } from './commands'
+import { diff, setupPart, type Changes } from './split'
 
 export interface CommandRequest {
   workspace: string
@@ -31,9 +32,15 @@ export interface ServerDeps {
   user: { id: string; email: string }
   /** their membership of the workspace, read from the database; null = not a member */
   membership: (workspace: string, email: string) => Promise<{ isAdmin: boolean } | null>
-  load: (workspace: string) => Promise<{ doc: Workspace; version: number } | null>
-  /** saves only if the version is still `base`; returns the new version, or null if someone saved first */
-  save: (workspace: string, base: number, doc: Workspace, actor: string) => Promise<number | null>
+  /** the whole workspace, with the highest list place in use */
+  load: (workspace: string) => Promise<{ doc: Workspace; version: number; maxOrd: number } | null>
+  /**
+   * Saves the setup part and the changed rows, only if the version is still `base`; returns the new version, or null
+   * if someone saved first. `doc` is the whole workspace after the change, for stand-ins that keep it in one piece.
+   */
+  save: (workspace: string, base: number, write: { setup: ReturnType<typeof setupPart>; changes: Changes; doc: Workspace }, actor: string) => Promise<number | null>
+  /** the workspace as this person may see it (their role decides which records, costs and books are included) */
+  view: (workspace: string, email: string) => Promise<Workspace>
   audit: (rows: AuditRow[]) => Promise<void>
 }
 
@@ -87,12 +94,13 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
     }
     if (!results.some((r) => r.ok)) {
       await deps.audit(audit)
-      return { doc: loaded.doc, version: loaded.version, results }
+      return { doc: await deps.view(req.workspace, email), version: loaded.version, results }
     }
-    const version = await deps.save(req.workspace, loaded.version, doc, deps.user.id)
+    const { changes } = diff(loaded.doc, doc, loaded.maxOrd)
+    const version = await deps.save(req.workspace, loaded.version, { setup: setupPart(doc), changes, doc }, deps.user.id)
     if (version === null) continue
     await deps.audit(audit)
-    return { doc, version, results }
+    return { doc: await deps.view(req.workspace, email), version, results }
   }
   throw new HttpError(409, 'The workspace is very busy right now. Try again in a moment.')
 }
