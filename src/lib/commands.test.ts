@@ -8,6 +8,7 @@ import { applyCommand } from './commands'
 import { handleCommands, HttpError, type AuditRow, type ServerDeps } from './commandServer'
 import { list } from './engine'
 import { moduleByRole, uid } from './schema'
+import { applyChanges } from './split'
 
 const admin: User = { id: 'u_admin', name: 'Mona', email: 'mona@co.eg', roleId: 'role_admin' }
 
@@ -20,23 +21,25 @@ function workspace() {
   return { ws, schema, karim }
 }
 
-/** An in-memory server: one workspace row, the members table and the audit log. */
+/** An in-memory server: one workspace (saved row by row, like the database), the members table and the audit log. */
 function server(ws: Workspace, members: Record<string, { isAdmin: boolean }>, email: string) {
-  const row = { doc: structuredClone(ws), version: 1 }
+  const row = { doc: structuredClone(ws), version: 1, maxOrd: 0 }
   const audit: AuditRow[] = []
   let beforeSave: (() => void) | undefined
   const deps: ServerDeps = {
     user: { id: `uid-${email}`, email },
     membership: async (_w, e) => members[e] ?? null,
-    load: async () => ({ doc: structuredClone(row.doc), version: row.version }),
-    save: async (_w, base, doc) => {
+    load: async () => ({ doc: structuredClone(row.doc), version: row.version, maxOrd: row.maxOrd }),
+    save: async (_w, base, { setup, changes }) => {
       beforeSave?.()
       beforeSave = undefined
       if (row.version !== base) return null
-      row.doc = structuredClone(doc)
+      row.doc = applyChanges(row.doc, setup, changes)
+      row.maxOrd = Math.max(row.maxOrd, ...Object.values(changes).flatMap((c) => c.upsert.map((r) => r.ord)))
       row.version++
       return row.version
     },
+    view: async () => structuredClone(row.doc),
     audit: async (rows) => void audit.push(...rows),
   }
   return { deps, row, audit, colleagueSavesFirst: (fn: (d: Workspace) => void) => { beforeSave = () => { fn(row.doc); row.version++ } } }

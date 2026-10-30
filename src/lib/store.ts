@@ -1,6 +1,6 @@
-// Cloud store. Accounts are Supabase Auth users; each company workspace is one row in `workspaces`
-// (the whole Workspace as JSON) and `workspace_members` says which e-mails may open it.
-// The app keeps working on an in-memory copy and saves it back shortly after every change.
+// Cloud store. Accounts are Supabase Auth users; `workspace_members` says which e-mails may open which company.
+// The app opens a workspace through open_workspace(), which returns only what the person's role may see, works on
+// that copy and sends every change to the "command" server function.
 import { useSyncExternalStore } from 'react'
 import type { User as AuthUser } from '@supabase/supabase-js'
 import type { SavedView, User, Workspace } from './types'
@@ -259,12 +259,18 @@ function friendly(message: string) {
   return message
 }
 
-async function reload(id: string) {
-  const { data, error } = await supabase.from('workspaces').select('doc, version').eq('id', id).single()
+/** The workspace as this person may see it: the server leaves out what their role can't view. */
+async function fetchWorkspace(id: string): Promise<{ doc: Workspace; version: number }> {
+  const { data, error } = await supabase.rpc('open_workspace', { p_id: id })
   if (error) throw new Error(friendly(error.message))
+  return data as { doc: Workspace; version: number }
+}
+
+async function reload(id: string) {
+  const data = await fetchWorkspace(id)
   versions.set(id, data.version)
   publish((s) => {
-    s.workspaces[id] = data.doc as Workspace
+    s.workspaces[id] = data.doc
   })
 }
 
@@ -357,9 +363,8 @@ async function openFor(auth: AuthUser) {
     /* ignore */
   }
   const id = rows.find((r) => r.workspace_id === last)?.workspace_id ?? rows[0].workspace_id
-  const { data, error: e2 } = await supabase.from('workspaces').select('doc, version').eq('id', id).single()
-  if (e2) throw new Error(friendly(e2.message))
-  const ws = data.doc as Workspace
+  const data = await fetchWorkspace(id)
+  const ws = data.doc
   const user = ws.users.find((u) => u.email === email)
   if (!user) throw new Error('You are a member of this workspace but have no profile in it yet. Ask your admin to add you again on the Team page.')
   versions.set(ws.id, data.version)

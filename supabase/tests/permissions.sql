@@ -60,10 +60,11 @@ select pg_temp.check('exactly one owner afterwards', (select count(*) = 1 and bo
 select pg_temp.check('owner cannot read another person''s preferences', (select count(*) = 0 from public.member_prefs where email = 'staff@test.dev'));
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated","is_anonymous":true}', false);
-select pg_temp.check('an anonymous login sees no workspace', (select count(*) = 0 from public.workspaces));
+select pg_temp.blocked('an anonymous login reads a workspace', $q$select public.open_workspace('ws_test123456')$q$);
 select pg_temp.blocked('an anonymous login creates a workspace', $q$select public.create_workspace('ws_anon000001','A','{"id":"ws_anon000001","users":[],"data":{}}')$q$);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
-select pg_temp.check('a stranger sees no workspace', (select count(*) = 0 from public.workspaces));
+select pg_temp.blocked('a stranger opens a workspace', $q$select public.open_workspace('ws_test123456')$q$);
+select pg_temp.blocked('a stranger reads the company file directly', $q$select count(*) from public.workspaces$q$);
 select pg_temp.check('a stranger sees no members', (select count(*) = 0 from public.workspace_members));
 select pg_temp.blocked('a stranger creates a workspace with a mismatched id', $q$select public.create_workspace('ws_strange0001','S','{"id":"ws_other","users":[],"data":{}}')$q$);
 select pg_temp.blocked('a stranger edits the company file', $q$update public.workspaces set doc = '{"id":"ws_test123456","users":[],"data":{"hacked":true}}' where id = 'ws_test123456'$q$);
@@ -72,7 +73,7 @@ select pg_temp.check('a stranger''s update changed nothing', (select not (doc #>
 
 set role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', false);
-select pg_temp.check('the public (not signed in) sees no workspace', (select count(*) = 0 from public.workspaces));
+select pg_temp.blocked('the public (not signed in) reads a workspace', $q$select count(*) from public.workspaces$q$);
 reset role;
 
 -- Phase 1.1: the server is the writer, the audit trail is append-only.
@@ -102,6 +103,109 @@ select pg_temp.check('an admin reads their workspace''s audit trail', (select co
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
 select pg_temp.check('a stranger reads no audit events', (select count(*) = 0 from public.audit_events));
 reset role;
+
+-- Phase 1.2: records and books in their own tables; each person reads only what their role allows.
+insert into public.workspaces (id, name, doc, created_by) values ('ws_books000001', 'Books', $j${
+  "id": "ws_books000001", "users": [
+    {"id": "u_own", "email": "owner@test.dev", "roleId": "role_admin"},
+    {"id": "u_sales", "email": "sales@test.dev", "roleId": "role_sales"},
+    {"id": "u_fin", "email": "fin@test.dev", "roleId": "role_fin"}],
+  "published": {"roles": [
+    {"id": "role_admin", "admin": true, "access": {}},
+    {"id": "role_sales", "access": {"m_prod": ["view"], "m_inv": ["view", "create"], "m_secret": ["create"]}},
+    {"id": "role_fin", "finance": true, "access": {"m_inv": ["view"]}}]},
+  "draft": null,
+  "data": {
+    "sequences": {"INV": 1},
+    "records": {
+      "m_prod": [{"id": "r_prod", "module": "m_prod", "values": {"name": "Rice", "price": 50, "cost": 30, "stock_value": 300}}],
+      "m_inv": [{"id": "r_inv", "module": "m_inv", "number": "INV-0001", "status": "posted", "values": {"customer": "x"}}],
+      "m_secret": [{"id": "r_hr", "module": "m_secret", "values": {"name": "Salary list"}}],
+      "m_empty": []},
+    "journal": [{"id": "j_s", "ref": "SAMPLE", "sample": true, "lines": [{"account": "1100", "debit": 5, "credit": 0}, {"account": "4000", "debit": 0, "credit": 5}]},
+                {"id": "j_1", "ref": "INV-0001", "doc": "r_inv", "lines": [{"account": "1200", "debit": 114, "credit": 0}, {"account": "4000", "debit": 0, "credit": 100}, {"account": "2200", "debit": 0, "credit": 14}]}],
+    "stock": [{"id": "s_1", "product": "r_prod", "qty": -1, "cost": 30, "value": -30, "doc": "r_inv", "ref": "INV-0001"}],
+    "payments": [{"id": "p_in", "doc": "r_inv", "module": "m_inv", "amount": 10}, {"id": "p_out", "doc": "r_bill", "module": "m_bills", "amount": 7}],
+    "notes": [{"id": "n_all", "message": "all"}, {"id": "n_sales", "role": "role_sales", "message": "s"}, {"id": "n_fin", "user": "u_fin", "message": "f"}],
+    "activity": [{"id": "a_hr", "module": "m_secret", "record": "r_hr", "text": "hr"}, {"id": "a_inv", "module": "m_inv", "record": "r_inv", "text": "inv"}],
+    "comments": [{"id": "c_hr", "record": "r_hr", "text": "secret"}, {"id": "c_inv", "record": "r_inv", "text": "ok"}],
+    "approvals": [{"id": "ap_hr", "module": "m_secret", "record": "r_hr", "status": "pending"}]
+  }}$j$, '00000000-0000-0000-0000-00000000000a');
+insert into public.workspace_members (workspace_id, email, is_admin, is_owner) values
+  ('ws_books000001', 'owner@test.dev', true, true), ('ws_books000001', 'sales@test.dev', false, false), ('ws_books000001', 'fin@test.dev', false, false);
+-- A workspace whose file is damaged (two records share an id) must stay exactly as it was.
+insert into public.workspaces (id, name, doc, created_by) values ('ws_broken00001', 'Broken',
+  '{"id":"ws_broken00001","users":[{"id":"u_own","email":"owner@test.dev","roleId":"role_admin"}],"data":{"records":{"m":[{"id":"r_1","module":"m"},{"id":"r_1","module":"m"}]}}}',
+  '00000000-0000-0000-0000-00000000000a');
+insert into public.workspace_members (workspace_id, email, is_admin, is_owner) values ('ws_broken00001', 'owner@test.dev', true, true);
+create temp table original as select doc from public.workspaces where id = 'ws_books000001';
+grant select on original to authenticated, service_role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+create temp table sales as select public.open_workspace('ws_books000001') -> 'doc' as doc;
+select pg_temp.check('sales sees the modules their role may view', (select (doc #> '{data,records}') ?& array['m_prod','m_inv'] from sales));
+select pg_temp.check('sales does not see a module they can only create in', (select not ((doc #> '{data,records}') ? 'm_secret') from sales));
+select pg_temp.check('sales does not receive product cost or stock value', (select not (doc #> '{data,records,m_prod,0,values}' ?| array['cost','stock_value']) and doc #>> '{data,records,m_prod,0,values,price}' = '50' from sales));
+select pg_temp.check('sales does not receive the books', (select doc #> '{data,journal}' = '[]' from sales));
+select pg_temp.check('sales sees stock quantities without their cost', (select doc #> '{data,stock,0}' = '{"id":"s_1","product":"r_prod","qty":-1,"doc":"r_inv","ref":"INV-0001"}' from sales));
+select pg_temp.check('sales sees payments of invoices only', (select doc #> '{data,payments}' = '[{"id":"p_in","doc":"r_inv","module":"m_inv","amount":10}]' from sales));
+select pg_temp.check('sales gets the notes meant for everyone and for sales', (select array(select x ->> 'id' from jsonb_array_elements(doc #> '{data,notes}') x) = array['n_all','n_sales'] from sales));
+select pg_temp.check('activity, comments and approvals of hidden records stay hidden', (select doc #> '{data,activity}' = '[{"id":"a_inv","module":"m_inv","record":"r_inv","text":"inv"}]' and doc #> '{data,comments}' = '[{"id":"c_inv","record":"r_inv","text":"ok"}]' and doc #> '{data,approvals}' = '[]' from sales));
+select pg_temp.check('everyone still gets the setup and the team', (select jsonb_array_length(doc -> 'users') = 3 and doc #> '{data,sequences,INV}' = '1' from sales));
+select pg_temp.blocked('a member reads the records table directly', $q$select count(*) from public.records$q$);
+select pg_temp.blocked('a member reads the journal table directly', $q$select count(*) from public.journal_entries$q$);
+select pg_temp.blocked('a member loads the whole workspace like the server', $q$select public.load_workspace('ws_books000001')$q$);
+select pg_temp.blocked('a member asks for someone else''s view', $q$select public.workspace_view_for('ws_books000001', 'owner@test.dev')$q$);
+select pg_temp.blocked('a member saves rows like the server', $q$select public.save_workspace_changes('ws_books000001', 1, '{}', '{}', null)$q$);
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated"}', false);
+create temp table fin as select public.open_workspace('ws_books000001') -> 'doc' as doc;
+select pg_temp.check('finance gets the books', (select jsonb_array_length(doc #> '{data,journal}') = 2 from fin));
+select pg_temp.check('finance gets every payment, and only their own personal notes', (select jsonb_array_length(doc #> '{data,payments}') = 2 and array(select x ->> 'id' from jsonb_array_elements(doc #> '{data,notes}') x) = array['n_all','n_fin'] from fin));
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+create temp table own as select public.open_workspace('ws_books000001') as r;
+select pg_temp.check('an admin gets everything, exactly as it was in the file', (select (r #> '{doc,data}') - 'records' = (o.doc -> 'data') - 'records' and r #> '{doc,data,records}' = (o.doc #> '{data,records}') - 'm_empty' from own, original o));
+select pg_temp.blocked('opening a damaged workspace', $q$select public.open_workspace('ws_broken00001')$q$);
+reset role;
+select pg_temp.check('the damaged workspace was left exactly as it was', (select not data_in_tables and doc #> '{data,records,m}' is not null from public.workspaces where id = 'ws_broken00001'));
+select pg_temp.check('the moved workspace''s file keeps only the setup', (select data_in_tables and not (doc -> 'data' ?| array['records','journal','stock','payments','notes','activity','comments','approvals']) from public.workspaces where id = 'ws_books000001'));
+select pg_temp.check('the full file was kept as a snapshot before moving', (select count(*) = 1 from public.workspace_versions v, original o where v.workspace_id = 'ws_books000001' and v.doc = o.doc));
+
+set role service_role;
+select pg_temp.check('the server loads exactly what was moved', (select (public.load_workspace('ws_books000001') #> '{doc,data,journal}') = (doc #> '{data,journal}') from original));
+select pg_temp.blocked('the old whole-file save on a moved workspace', $q$select public.save_workspace('ws_books000001', (select version from public.workspaces where id='ws_books000001'), (select doc from original), null)$q$);
+create function pg_temp.save(changes jsonb) returns bigint language sql as $f$
+  select public.save_workspace_changes('ws_books000001', (select version from public.workspaces where id = 'ws_books000001'),
+    (select doc from public.workspaces where id = 'ws_books000001'), changes, '00000000-0000-0000-0000-00000000000d')
+$f$;
+grant execute on function pg_temp.save(jsonb) to service_role;
+select pg_temp.blocked('saving records back into the file', $q$select public.save_workspace_changes('ws_books000001', (select version from public.workspaces where id='ws_books000001'), (select doc from original), '{}', null)$q$);
+select pg_temp.allowed('the server saves a new invoice with its journal entry', $q$select pg_temp.save('{"records":{"upsert":[{"id":"r_inv2","ord":100,"data":{"id":"r_inv2","module":"m_inv","number":"INV-0002"}}],"delete":[]},"journal_entries":{"upsert":[{"id":"j_2","ord":101,"data":{"id":"j_2","ref":"INV-0002","lines":[{"account":"1200","debit":10,"credit":0},{"account":"4000","debit":0,"credit":10}]}}],"delete":[]}}')$q$);
+select pg_temp.check('the new rows are listed first', (select public.load_workspace('ws_books000001') #>> '{doc,data,records,m_inv,0,id}' = 'r_inv2' and public.load_workspace('ws_books000001') #>> '{doc,data,journal,0,id}' = 'j_2'));
+select pg_temp.allowed('saving a journal entry again unchanged is harmless', $q$select pg_temp.save('{"journal_entries":{"upsert":[{"id":"j_2","ord":0,"data":{"id":"j_2","ref":"INV-0002","lines":[{"account":"1200","debit":10,"credit":0},{"account":"4000","debit":0,"credit":10}]}}],"delete":[]}}')$q$);
+select pg_temp.blocked('the server changes a posted journal entry', $q$select pg_temp.save('{"journal_entries":{"upsert":[{"id":"j_1","ord":0,"data":{"id":"j_1","ref":"INV-0001","lines":[]}}],"delete":[]}}')$q$);
+select pg_temp.blocked('the server deletes a journal entry', $q$select pg_temp.save('{"journal_entries":{"upsert":[],"delete":["j_1"]}}')$q$);
+select pg_temp.blocked('the server deletes a stock movement', $q$select pg_temp.save('{"stock_moves":{"upsert":[],"delete":["s_1"]}}')$q$);
+select pg_temp.blocked('the server deletes a payment', $q$select pg_temp.save('{"payments":{"upsert":[],"delete":["p_in"]}}')$q$);
+select pg_temp.allowed('removing a sample journal entry', $q$select pg_temp.save('{"journal_entries":{"upsert":[],"delete":["j_s"]}}')$q$);
+select pg_temp.blocked('a journal entry that does not balance', $q$select pg_temp.save('{"journal_entries":{"upsert":[{"id":"j_bad","ord":102,"data":{"id":"j_bad","ref":"X","lines":[{"account":"1200","debit":10,"credit":0},{"account":"4000","debit":0,"credit":9}]}}],"delete":[]}}')$q$);
+select pg_temp.blocked('a journal entry with a negative amount', $q$select pg_temp.save('{"journal_entries":{"upsert":[{"id":"j_neg","ord":102,"data":{"id":"j_neg","ref":"X","lines":[{"account":"1200","debit":-10,"credit":0},{"account":"4000","debit":0,"credit":-10}]}}],"delete":[]}}')$q$);
+select pg_temp.blocked('using a document number twice', $q$select pg_temp.save('{"records":{"upsert":[{"id":"r_dup","ord":103,"data":{"id":"r_dup","module":"m_inv","number":"INV-0001"}}],"delete":[]}}')$q$);
+select pg_temp.blocked('a row whose id does not match its data', $q$select pg_temp.save('{"records":{"upsert":[{"id":"r_a","ord":104,"data":{"id":"r_b","module":"m_inv"}}],"delete":[]}}')$q$);
+select pg_temp.allowed('the server changes and deletes records', $q$select pg_temp.save('{"records":{"upsert":[{"id":"r_prod","ord":0,"data":{"id":"r_prod","module":"m_prod","values":{"name":"Rice","price":55,"cost":30,"stock_value":300}}}],"delete":["r_hr"]}}')$q$);
+select pg_temp.check('a save based on an old version changes nothing', (select public.save_workspace_changes('ws_books000001', 1, (select doc from public.workspaces where id='ws_books000001'), '{"records":{"upsert":[],"delete":["r_inv"]}}', null) is null and exists (select 1 from public.records where id = 'r_inv')));
+reset role;
+select pg_temp.check('earlier versions of changed and deleted records are kept, with who changed them', (select count(*) = 2 and bool_and(changed_by = '00000000-0000-0000-0000-00000000000d') from public.record_history where workspace_id = 'ws_books000001'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select pg_temp.check('a non-admin reads no record history', (select count(*) = 0 from public.record_history));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.check('an admin reads the record history', (select count(*) = 2 from public.record_history));
+reset role;
+select pg_temp.check('a refused save left no trace', (select not exists (select 1 from public.journal_entries where id in ('j_bad','j_neg')) and exists (select 1 from public.journal_entries where id = 'j_1') and not exists (select 1 from public.records where id = 'r_dup')));
+select pg_temp.blocked('even the database owner deletes a posted journal entry', $q$delete from public.journal_entries where id = 'j_1'$q$);
 
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

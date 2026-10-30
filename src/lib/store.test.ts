@@ -8,6 +8,7 @@ import { emptyAnswers, generateSchema } from './recommend'
 import { templateById } from './templates'
 import { moduleByRole } from './schema'
 import { list } from './engine'
+import { applyChanges } from './split'
 
 type Row = Record<string, unknown>
 const db: { workspaces: Row[]; workspace_members: Row[]; member_prefs: Row[]; audit: Row[] } = { workspaces: [], workspace_members: [], member_prefs: [], audit: [] }
@@ -52,15 +53,16 @@ async function invoke(_name: string, { body }: { body: unknown }) {
         },
         load: async (w) => {
           const r = db.workspaces.find((x) => x.id === w)
-          return r ? { doc: structuredClone(r.doc as Workspace), version: r.version as number } : null
+          return r ? { doc: structuredClone(r.doc as Workspace), version: r.version as number, maxOrd: 0 } : null
         },
-        save: async (w, base, doc) => {
+        save: async (w, base, { setup, changes }) => {
           const r = db.workspaces.find((x) => x.id === w)!
           if (r.version !== base) return null
-          r.doc = structuredClone(doc)
+          r.doc = applyChanges(r.doc as Workspace, setup, changes)
           r.version = base + 1
           return base + 1
         },
+        view: async (w) => structuredClone(db.workspaces.find((x) => x.id === w)!.doc as Workspace),
         audit: async (rows) => void db.audit.push(...(rows as unknown as Row[])),
       },
       body as never,
@@ -74,7 +76,12 @@ async function invoke(_name: string, { body }: { body: unknown }) {
 vi.mock('./supabase', () => ({
   supabase: {
     from: (t: keyof typeof db) => query(t),
-    rpc: async () => ({ data: null, error: null }),
+    rpc: async (name: string, args: { p_id: string }) => {
+      if (net.down) throw new TypeError('Failed to fetch')
+      const r = db.workspaces.find((x) => x.id === args.p_id)
+      if (name === 'open_workspace') return r ? { data: { doc: structuredClone(r.doc), version: r.version }, error: null } : { data: null, error: { message: 'You are not a member of this workspace' } }
+      return { data: null, error: null }
+    },
     functions: { invoke },
     auth: {
       getSession: async () => ({ data: { session: null }, error: null }),

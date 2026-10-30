@@ -1,6 +1,6 @@
 // The "command" server function. Every change to a workspace arrives here as named commands; this checks who is
 // asking (their login token and their membership in the database), runs the same engine the app uses on the latest
-// saved data, saves it on their behalf and writes the audit trail. Build with `npm run build:functions`.
+// saved data, saves the rows that changed on their behalf, writes the audit trail and sends back what they may see. Build with `npm run build:functions`.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { handleCommands, HttpError, type CommandRequest } from '../../../src/lib/commandServer'
 import type { Workspace } from '../../../src/lib/types'
@@ -39,14 +39,19 @@ Deno.serve(async (req) => {
           return data ? { isAdmin: Boolean(data.is_admin) } : null
         },
         load: async (workspace) => {
-          const { data, error } = await db.from('workspaces').select('doc, version').eq('id', workspace).maybeSingle()
+          const { data, error } = await db.rpc('load_workspace', { p_id: workspace })
           if (error) throw error
-          return data ? { doc: data.doc as Workspace, version: Number(data.version) } : null
+          return data ? { doc: data.doc as Workspace, version: Number(data.version), maxOrd: Number(data.max_ord) } : null
         },
-        save: async (workspace, base, doc, actor) => {
-          const { data, error } = await db.rpc('save_workspace', { p_id: workspace, p_base: base, p_doc: doc, p_actor: actor })
+        save: async (workspace, base, { setup, changes }, actor) => {
+          const { data, error } = await db.rpc('save_workspace_changes', { p_id: workspace, p_base: base, p_setup: setup, p_changes: changes, p_actor: actor })
           if (error) throw new HttpError(422, error.message)
           return data === null ? null : Number(data)
+        },
+        view: async (workspace, email) => {
+          const { data, error } = await db.rpc('workspace_view_for', { p_id: workspace, p_email: email })
+          if (error || !data) throw error ?? new HttpError(403, 'You have no profile in this workspace')
+          return data as Workspace
         },
         audit: async (rows) => {
           const { error } = await db.from('audit_events').insert(rows)
