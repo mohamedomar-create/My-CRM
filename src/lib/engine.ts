@@ -67,6 +67,26 @@ export function canSeeCosts(ctx: Pick<Ctx, 'schema' | 'user'>) {
 /** Fields that reveal what the company paid. */
 export const COST_KEYS = ['cost', 'stock_value']
 
+/**
+ * The cost fields plus every formula built on them (directly or through another formula), e.g. a "margin" field.
+ * People who can't see costs never see these; the server leaves them out the same way (private.cost_keys).
+ */
+export function costKeys(schema: AppSchema): string[] {
+  const keys = new Set(COST_KEYS)
+  const formulas = schema.modules.flatMap((m) => m.fields).filter((f) => f.type === 'formula' && f.formula)
+  const uses = (formula: string, key: string) => new RegExp(`(^|[^a-z0-9_])${key}([^a-z0-9_]|$)`, 'i').test(formula)
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const f of formulas) {
+      if (!keys.has(f.key) && [...keys].some((k) => uses(f.formula!, k))) {
+        keys.add(f.key)
+        grew = true
+      }
+    }
+  }
+  return [...keys]
+}
+
 function need(ctx: Ctx, moduleId: string, p: Permission) {
   if (!can(ctx, moduleId, p)) throw new EngineError(`Your role can't ${p} records here`)
 }
@@ -77,13 +97,29 @@ export function list(ws: Workspace, moduleId: string): Rec[] {
   return (ws.data.records[moduleId] ??= [])
 }
 
+/**
+ * Record lookups by id, so long lists don't search every record for every linked customer or product. The index is
+ * kept per records object and checked against each module list's identity and length; any change rebuilds it.
+ */
+const index = new WeakMap<Workspace['data']['records'], { lists: Map<string, { arr: Rec[]; len: number }>; byId: Map<string, Rec> }>()
+
+function recordIndex(records: Workspace['data']['records']) {
+  const cached = index.get(records)
+  const mods = Object.keys(records)
+  if (cached && cached.lists.size === mods.length && mods.every((m) => { const l = cached.lists.get(m); return l && l.arr === records[m] && l.len === records[m].length })) return cached.byId
+  const lists = new Map<string, { arr: Rec[]; len: number }>()
+  const byId = new Map<string, Rec>()
+  for (const m of mods) {
+    lists.set(m, { arr: records[m], len: records[m].length })
+    for (const r of records[m]) if (!byId.has(r.id)) byId.set(r.id, r)
+  }
+  index.set(records, { lists, byId })
+  return byId
+}
+
 export function findRecord(ws: Workspace, id: string | undefined): Rec | undefined {
   if (!id) return undefined
-  for (const recs of Object.values(ws.data.records)) {
-    const r = recs.find((x) => x.id === id)
-    if (r) return r
-  }
-  return undefined
+  return recordIndex(ws.data.records).get(id)
 }
 
 export function recordTitle(ws: Workspace, schema: AppSchema, rec: Rec | undefined): string {
