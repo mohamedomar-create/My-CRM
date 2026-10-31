@@ -463,6 +463,27 @@ export async function register(company: string, name: string, email: string, pas
   return 'ready'
 }
 
+/**
+ * Creates the login of someone who opened a valid invitation link and joins them to that company, without a
+ * confirmation e-mail (the link proves they received the invitation). Then signs them in.
+ */
+export async function joinWithInvitation(token: string, name: string, password: string) {
+  const { data, error } = await supabase.functions.invoke<{ email: string }>('join', { body: { token, name: name.trim(), password } })
+  if (error) {
+    // The server's message says what to do (sign in instead, ask for a new link…).
+    const ctx = (error as { context?: Response }).context
+    let message = error.message
+    try {
+      if (ctx && typeof ctx.json === 'function') message = ((await ctx.json()) as { error?: string }).error ?? message
+    } catch {
+      /* keep the generic message */
+    }
+    throw new Error(friendly(message))
+  }
+  if (!data) throw new Error('No reply from the server')
+  await signIn(data.email, password)
+}
+
 /** Sends a reset link. It always looks the same whether or not the e-mail has an account. */
 export async function requestPasswordReset(email: string) {
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${location.origin}/reset` })
