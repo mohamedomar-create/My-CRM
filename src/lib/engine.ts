@@ -890,23 +890,62 @@ export function canApprove(ctx: Pick<Ctx, 'schema' | 'user'>, rule: ApprovalRule
   return Boolean(role?.admin || role?.id === rule.approverRole)
 }
 
-/** The approval rule that blocks this action, if any (an approval is valid until the record changes). */
+/**
+ * A short fingerprint of what an approval is about: the record's values and document lines, not who touched it or
+ * when. An approval holds only while the record still has this fingerprint.
+ */
+export function fingerprint(rec: Pick<Rec, 'values' | 'lines'>): string {
+  const stable = (v: unknown): string =>
+    Array.isArray(v) ? `[${v.map(stable).join(',')}]`
+    : v && typeof v === 'object' ? `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}`
+    : JSON.stringify(v ?? null)
+  const text = stable({ values: rec.values, lines: rec.lines ?? [] })
+  // two 32-bit FNV-1a hashes with different seeds: short, stable, and different for any real edit
+  let a = 0x811c9dc5
+  let b = 0x01000193 ^ 0x5bd1e995
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    a = Math.imul(a ^ c, 0x01000193) >>> 0
+    b = Math.imul(b ^ c, 0x01000193 + 0x2c) >>> 0
+  }
+  return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0')
+}
+
+/** An approval that still covers the record as it is now. */
+function stillApproved(a: Approval, rec: Rec) {
+  if (a.status !== 'approved' || a.record !== rec.id) return false
+  return a.fingerprint ? a.fingerprint === fingerprint(rec) : (a.decidedAt ?? '') >= rec.updatedAt
+}
+
+/** The approval rule that blocks this action, if any (an approval holds until the record's content changes). */
 export function approvalNeeded(ctx: Ctx, rec: Rec, action: 'post' | 'stage', stage?: string): ApprovalRule | undefined {
   for (const rule of ctx.schema.approvals ?? []) {
     if (rule.module !== rec.module || rule.action !== action) continue
     if (action === 'stage' && rule.stage !== stage) continue
     if (!matches(ctx.schema, rec, rule.conditions, ctx.ws)) continue
-    const ok = (ctx.ws.data.approvals ?? []).some((a) => a.rule === rule.id && a.record === rec.id && a.status === 'approved' && (a.decidedAt ?? '') >= rec.updatedAt)
+    const ok = (ctx.ws.data.approvals ?? []).some((a) => a.rule === rule.id && stillApproved(a, rec))
     if (!ok) return rule
   }
   return undefined
 }
 
+/**
+ * An approver may go ahead on someone else's record, but not on their own (maker is never checker), unless nobody
+ * else in the company could approve it.
+ */
+export function mayActAsApprover(ctx: Pick<Ctx, 'schema' | 'user' | 'ws'>, rule: ApprovalRule, rec: Rec) {
+  if (!canApprove(ctx, rule)) return false
+  if (rec.createdBy !== ctx.user.id) return true
+  return !ctx.ws.users.some((u) => u.id !== ctx.user.id && !u.demo && canApprove({ schema: ctx.schema, user: u }, rule))
+}
+
 function guardApproval(ctx: Ctx, rec: Rec, action: 'post' | 'stage', stage?: string) {
+  if (ctx.sample) return
   const rule = approvalNeeded(ctx, rec, action, stage)
-  if (!rule || canApprove(ctx, rule)) return
+  if (!rule || mayActAsApprover(ctx, rule, rec)) return
   const pending = (ctx.ws.data.approvals ?? []).some((a) => a.rule === rule.id && a.record === rec.id && a.status === 'pending')
   const role = ctx.schema.roles.find((r) => r.id === rule.approverRole)?.name ?? 'an approver'
+  if (canApprove(ctx, rule)) throw new EngineError(`You made this record, so someone else must approve it (“${rule.name}”). Use “Request approval”, or an admin can override with a reason.`)
   throw new EngineError(pending ? `Waiting for approval from ${role} (“${rule.name}”)` : `Needs approval from ${role} first (“${rule.name}”). Use “Request approval”.`)
 }
 
@@ -915,7 +954,7 @@ export function requestApproval(ctx: Ctx, rec: Rec, ruleId: string) {
   if (!rule) throw new EngineError('That approval rule no longer exists')
   const list_ = (ctx.ws.data.approvals ??= [])
   if (list_.some((a) => a.rule === rule.id && a.record === rec.id && a.status === 'pending')) throw new EngineError('Approval already requested')
-  const a: Approval = { id: uid('ap'), rule: rule.id, record: rec.id, module: rec.module, requestedBy: ctx.user.id, at: nowISO(), status: 'pending' }
+  const a: Approval = { id: uid('ap'), rule: rule.id, record: rec.id, module: rec.module, requestedBy: ctx.user.id, at: nowISO(), status: 'pending', fingerprint: fingerprint(rec) }
   list_.unshift(a)
   ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} asks for approval: ${rule.name} — ${recordTitle(ctx.ws, ctx.schema, rec)}`, read: false, role: rule.approverRole, record: rec.id })
   log(ctx, `requested approval “${rule.name}”`, rec)
@@ -929,14 +968,33 @@ export function decideApproval(ctx: Ctx, approvalId: string, approve: boolean, n
   const rule = (ctx.schema.approvals ?? []).find((r) => r.id === a.rule)
   if (!rule) throw new EngineError('That approval rule no longer exists')
   if (!canApprove(ctx, rule)) throw new EngineError('Your role can’t decide this approval')
-  if (a.requestedBy === ctx.user.id && !ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin) throw new EngineError('You can’t approve your own request')
+  const rec = findRecord(ctx.ws, a.record)
+  // Maker is never checker: not the person who asked, nor the one who made the record (admins override with a reason).
+  if (a.requestedBy === ctx.user.id || rec?.createdBy === ctx.user.id) throw new EngineError('You can’t approve your own request or record. Someone else must decide, or an admin can override with a reason.')
   a.status = approve ? 'approved' : 'rejected'
   a.decidedBy = ctx.user.id
   a.decidedAt = nowISO()
   a.note = note
-  const rec = findRecord(ctx.ws, a.record)
+  // The approval covers the record exactly as the approver sees it now.
+  if (rec) a.fingerprint = fingerprint(rec)
   ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} ${approve ? 'approved' : 'rejected'} “${rule.name}” — ${recordTitle(ctx.ws, ctx.schema, rec)}${note ? `: ${note}` : ''}`, read: false, user: a.requestedBy, record: a.record })
   log(ctx, `${approve ? 'approved' : 'rejected'} “${rule.name}”${note ? ` (${note})` : ''}`, rec)
+}
+
+/** An admin approves without a second person, giving the reason; it shows as an override everywhere. */
+export function overrideApproval(ctx: Ctx, rec: Rec, ruleId: string, reason: string) {
+  if (!ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin) throw new EngineError('Only an admin can override an approval')
+  const rule = (ctx.schema.approvals ?? []).find((r) => r.id === ruleId)
+  if (!rule) throw new EngineError('That approval rule no longer exists')
+  const why = reason.trim()
+  if (why.length < 10) throw new EngineError('Write the reason for the override (at least 10 characters)')
+  const list_ = (ctx.ws.data.approvals ??= [])
+  for (const p of list_) if (p.rule === rule.id && p.record === rec.id && p.status === 'pending') p.status = 'rejected'
+  const a: Approval = { id: uid('ap'), rule: rule.id, record: rec.id, module: rec.module, requestedBy: ctx.user.id, at: nowISO(), status: 'approved', decidedBy: ctx.user.id, decidedAt: nowISO(), note: why, fingerprint: fingerprint(rec), override: true }
+  list_.unshift(a)
+  ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} overrode “${rule.name}” for ${recordTitle(ctx.ws, ctx.schema, rec)}: ${why}`, read: false, role: rule.approverRole, record: rec.id })
+  log(ctx, `overrode approval “${rule.name}”: ${why}`, rec)
+  return a
 }
 
 /* ---------------- comments & mentions ---------------- */

@@ -40,6 +40,10 @@ export default function Shell() {
   const readNotes = useStore((s) => s.prefs.readNotes)
   const companies = useStore((s) => s.companies)
   const twoFactor = useStore((s) => s.twoFactor)
+  const liveAt = useStore((s) => s.liveAt)
+  useEffect(() => {
+    if (liveAt) showToast({ kind: 'ok', text: 'Updated with your colleagues’ latest changes' })
+  }, [liveAt])
   const isRead = (n: { id: string; read?: boolean }) => Boolean(n.read) || Boolean(readNotes?.includes(n.id))
   const unread = notes.filter((n) => !isRead(n)).length
   const results = q.trim().length > 1

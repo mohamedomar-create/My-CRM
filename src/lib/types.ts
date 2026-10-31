@@ -104,6 +104,10 @@ export interface Approval {
   decidedBy?: string
   decidedAt?: string
   note?: string
+  /** what was approved: a fingerprint of the record's values and lines at the decision; any change cancels the approval */
+  fingerprint?: string
+  /** approved by an admin without a second person, with the reason in `note` */
+  override?: boolean
 }
 
 export interface Comment {

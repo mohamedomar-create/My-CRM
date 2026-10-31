@@ -2,7 +2,7 @@
 // The app opens a workspace through open_workspace(), which returns only what the person's role may see, works on
 // that copy and sends every change to the "command" server function.
 import { useSyncExternalStore } from 'react'
-import type { User as AuthUser } from '@supabase/supabase-js'
+import type { User as AuthUser, RealtimeChannel } from '@supabase/supabase-js'
 import type { SavedView, User, Workspace } from './types'
 import { emptyData } from './types'
 import { emptyAnswers } from './recommend'
@@ -47,6 +47,8 @@ interface State {
   needCode: boolean
   /** this login has two-factor turned on */
   twoFactor: boolean
+  /** when the screen last caught up with a colleague's save (live updates) */
+  liveAt: number
 }
 
 export interface Company {
@@ -70,7 +72,7 @@ interface Change {
   ids: string[]
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false }
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false, liveAt: 0 }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -304,6 +306,47 @@ async function reload(id: string) {
   })
 }
 
+/* ---------------- live updates ---------------- */
+
+let live: RealtimeChannel | null = null
+let liveTimer: ReturnType<typeof setTimeout> | undefined
+
+/** Listens for colleagues' saves on this workspace's private channel (only members may listen). */
+function listen(id: string) {
+  if (live?.topic === `realtime:ws:${id}`) return
+  void stopListening().then(async () => {
+    await supabase.realtime.setAuth()
+    live = supabase
+      .channel(`ws:${id}`, { config: { private: true } })
+      .on('broadcast', { event: 'saved' }, (msg: { payload?: { version?: number } }) => onRemoteSave(id, Number(msg.payload?.version)))
+      .subscribe()
+  })
+}
+
+async function stopListening() {
+  clearTimeout(liveTimer)
+  if (!live) return
+  const channel = live
+  live = null
+  await supabase.removeChannel(channel)
+}
+
+/** A save landed on the server. Saves of our own are already here; for a colleague's, fetch the newer version. */
+function onRemoteSave(id: string, version: number) {
+  if (!(version > (versions.get(id) ?? 0))) return
+  clearTimeout(liveTimer)
+  liveTimer = setTimeout(() => void catchUp(id), 600)
+}
+
+async function catchUp(id: string) {
+  // While changes of ours are on their way, the server's reply to them brings the colleague's work anyway.
+  if (state.session?.workspaceId !== id || pending.length || inFlight) return
+  const data = await fetchWorkspace(id).catch(() => null)
+  if (!data || data.version <= (versions.get(id) ?? 0) || pending.length || inFlight) return
+  adopt(id, data.doc, data.version)
+  publish((s) => { s.liveAt = Date.now() })
+}
+
 /* ---------------- personal settings ---------------- */
 
 let prefsTimer: ReturnType<typeof setTimeout> | undefined
@@ -374,6 +417,7 @@ function open(ws: Workspace, user: User) {
     s.prefs = {}
   })
   void loadPrefs(ws.id, user.email)
+  listen(ws.id)
 }
 
 /** Opens the workspace this account belongs to (the last one used, or a given one), or creates the one it registered for. */
@@ -644,6 +688,7 @@ export async function signOut() {
       s.needCode = false
       s.twoFactor = false
     })
+    void stopListening()
   }
 }
 

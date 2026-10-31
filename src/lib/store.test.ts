@@ -75,8 +75,20 @@ async function invoke(_name: string, { body }: { body: unknown }) {
   }
 }
 
+const live: { onSaved?: (msg: { payload: { version: number } }) => void } = {}
+
 vi.mock('./supabase', () => ({
   supabase: {
+    realtime: { setAuth: async () => undefined },
+    channel: (topic: string) => {
+      const ch = {
+        topic: `realtime:${topic}`,
+        on: (_t: string, _f: unknown, cb: (msg: { payload: { version: number } }) => void) => ((live.onSaved = cb), ch),
+        subscribe: () => ch,
+      }
+      return ch
+    },
+    removeChannel: async () => 'ok',
     from: (t: keyof typeof db) => query(t),
     rpc: async (name: string, args: { p_id: string } = { p_id: '' }) => {
       if (net.down) throw new TypeError('Failed to fetch')
@@ -263,6 +275,18 @@ describe('browser store with server commands', () => {
     expect(store.getState().needCode).toBe(false)
     expect(store.currentWorkspace()!.id).toBe('ws_test')
     expect(store.getState().twoFactor).toBe(true)
+  })
+
+  it('a colleague’s save shows up live, without a refresh', async () => {
+    await new Promise((r) => setTimeout(r, 10))
+    const theirs = structuredClone(db.workspaces[0].doc as Workspace)
+    list(theirs, accounts).unshift({ id: 'r_theirs00002', module: accounts, createdAt: '', updatedAt: '', createdBy: 'u2', values: { name: 'From Karim' } })
+    db.workspaces[0].doc = theirs
+    db.workspaces[0].version = 2
+    live.onSaved!({ payload: { version: 2 } })
+    await new Promise((r) => setTimeout(r, 700))
+    expect(localCustomers()).toEqual(['From Karim'])
+    expect(store.getState().liveAt).toBeGreaterThan(0)
   })
 
   it('signs out even when the last send fails', async () => {

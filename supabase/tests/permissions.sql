@@ -325,5 +325,17 @@ select set_config('request.jwt.claims', '', false);
 update public.workspaces set doc = doc - 'security' where id = 'ws_books000001';
 delete from auth.mfa_factors;
 
+-- Phase 1.4a: live updates.
+select pg_temp.check('every save is announced on the workspace''s channel, with only the version', (select count(*) > 0 and bool_and(payload ? 'version' and not payload ? 'doc' and private) from realtime.messages where topic = 'ws:ws_books000001' and event = 'saved'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select set_config('realtime.topic', 'ws:ws_books000001', false);
+select pg_temp.check('a member hears their workspace''s saves', (select count(*) > 0 from realtime.messages));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.check('a stranger hears nothing', (select count(*) = 0 from realtime.messages));
+select pg_temp.blocked('a person sends a fake save announcement', $q$insert into realtime.messages (topic, extension, event, payload) values ('ws:ws_books000001', 'broadcast', 'saved', '{"version":999}')$q$);
+select set_config('realtime.topic', '', false);
+reset role;
+
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;
