@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Copy, Crown, Link2, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Copy, Crown, Link2, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useApp, showToast } from './useApp'
-import { inviteMember, listInvitations, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, type Invitation, type Member } from '../lib/store'
+import { inviteMember, listInvitations, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, useStore, type Invitation, type Member } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { User } from '../lib/types'
 
 export default function Team() {
-  const { ws, schema, user } = useApp()
+  const { ws, schema, user, act } = useApp()
+  const myTwoFactor = useStore((s) => s.twoFactor)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleId, setRoleId] = useState(schema.roles.find((r) => !r.admin)?.id ?? 'role_admin')
@@ -158,6 +160,15 @@ export default function Team() {
             </div>
           </div>
         )}
+        <div className="card stack">
+          <h2><ShieldCheck size={18} /> Security</h2>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <input type="checkbox" style={{ width: 'auto', marginTop: 3 }} checked={Boolean(ws.security?.requireTwoFactor)} disabled={!myTwoFactor && !ws.security?.requireTwoFactor}
+              onChange={(e) => act('security.setTwoFactor', { required: e.target.checked }, e.target.checked ? 'Two-factor login is now required for admins and finance' : 'Two-factor login is no longer required', e.target.checked ? 'Required two-factor for admins and finance' : 'Stopped requiring two-factor')} />
+            <span>Require two-factor login for admins and finance<br /><span className="tiny muted">They'll be asked to set up an authenticator app before they can open the company.</span></span>
+          </label>
+          {!myTwoFactor && <p className="tiny muted">Turn it on for yourself first on the <Link to="/security">Security page</Link>.</p>}
+        </div>
         <form className="card stack" onSubmit={add}>
           <h2><UserPlus size={18} /> Add a team member</h2>
           <label className="field">Name<input required value={name} onChange={(e) => setName(e.target.value)} /></label>

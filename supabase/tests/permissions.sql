@@ -299,5 +299,31 @@ select pg_temp.check('the server sees an unconfirmed login as unconfirmed', (sel
 reset role;
 select pg_temp.check('joining by link made them a member', (select count(*) = 1 from public.workspace_members where workspace_id = 'ws_books000001' and email = 'link@test.dev' and not is_admin));
 
+-- Phase 1.3b: two-factor login.
+insert into auth.mfa_factors (user_id, status) values ('00000000-0000-0000-0000-00000000000a', 'verified');
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal1"}', false);
+select pg_temp.blocked('someone with two-factor on opens the workspace with only a password', $q$select public.open_workspace('ws_books000001')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.allowed('the same person after entering their code', $q$select public.open_workspace('ws_books000001')$q$);
+select pg_temp.blocked('a person asks the server''s two-factor check about someone else', $q$select public.second_factor_problem_for('ws_books000001', '00000000-0000-0000-0000-00000000000e', 'fin@test.dev', 'aal1')$q$);
+reset role;
+select set_config('request.jwt.claims', '', false);
+update public.workspaces set doc = jsonb_set(doc, '{security}', '{"requireTwoFactor":true}') where id = 'ws_books000001';
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated","aal":"aal1"}', false);
+select pg_temp.blocked('when the company requires it, finance without two-factor is sent to set it up', $q$select public.open_workspace('ws_books000001')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated","aal":"aal1"}', false);
+select pg_temp.allowed('sales is not required to use two-factor', $q$select public.open_workspace('ws_books000001')$q$);
+reset role;
+set role service_role;
+select pg_temp.check('the server function gets the same answer for each person', (select public.second_factor_problem_for('ws_books000001', '00000000-0000-0000-0000-00000000000e', 'fin@test.dev', 'aal1') like '%requires two-factor%'
+  and public.second_factor_problem_for('ws_books000001', '00000000-0000-0000-0000-00000000000d', 'sales@test.dev', 'aal1') is null
+  and public.second_factor_problem_for('ws_books000001', '00000000-0000-0000-0000-00000000000a', 'owner@test.dev', 'aal1') like '%6-digit code%'));
+reset role;
+select set_config('request.jwt.claims', '', false);
+update public.workspaces set doc = doc - 'security' where id = 'ws_books000001';
+delete from auth.mfa_factors;
+
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

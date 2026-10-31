@@ -5,7 +5,7 @@ import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
 import { applyCommand } from './commands'
-import { handleCommands, HttpError, type AuditRow, type ServerDeps } from './commandServer'
+import { handleCommands, HttpError, PER_MINUTE, type AuditRow, type ServerDeps } from './commandServer'
 import { list } from './engine'
 import { moduleByRole, uid } from './schema'
 import { applyChanges } from './split'
@@ -135,5 +135,32 @@ describe('server commands', () => {
     const out = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ name: 'evil.dropTables', args: {} }] })
     expect(out.results[0]).toMatchObject({ ok: false, error: 'Unknown action' })
     await expect(handleCommands(s.deps, { workspace: 'ws_test', commands: Array.from({ length: 51 }, () => ({ name: 'sample.remove', args: {} })) })).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('asks for the two-factor code first when the person or their company needs it', async () => {
+    const { ws, schema } = workspace()
+    const s = server(ws, { 'mona@co.eg': { isAdmin: true } }, 'mona@co.eg')
+    s.deps.secondFactor = async () => 'Enter the 6-digit code from your authenticator app to continue.'
+    await expect(handleCommands(s.deps, { workspace: 'ws_test', commands: [customerCmd(moduleByRole(schema, 'accounts')!.id, 'X')] })).rejects.toMatchObject({ status: 428 })
+    expect(s.row.version).toBe(1)
+  })
+
+  it('limits how many changes one person sends per minute', async () => {
+    const { ws, schema } = workspace()
+    const s = server(ws, { 'mona@co.eg': { isAdmin: true } }, 'mona@co.eg')
+    s.deps.recentCommands = async () => PER_MINUTE
+    await expect(handleCommands(s.deps, { workspace: 'ws_test', commands: [customerCmd(moduleByRole(schema, 'accounts')!.id, 'X')] })).rejects.toMatchObject({ status: 429 })
+    s.deps.recentCommands = async () => PER_MINUTE - 1
+    expect((await handleCommands(s.deps, { workspace: 'ws_test', commands: [customerCmd(moduleByRole(schema, 'accounts')!.id, 'X')] })).results[0].ok).toBe(true)
+  })
+
+  it('an admin can require two-factor for others only after passing it themselves', async () => {
+    const { ws } = workspace()
+    const s = server(ws, { 'mona@co.eg': { isAdmin: true } }, 'mona@co.eg')
+    const require = { workspace: 'ws_test', commands: [{ name: 'security.setTwoFactor', args: { required: true } }] }
+    expect((await handleCommands(s.deps, require)).results[0]).toMatchObject({ ok: false, error: expect.stringMatching(/for yourself first/) })
+    s.deps.user.aal = 'aal2'
+    expect((await handleCommands(s.deps, require)).results[0].ok).toBe(true)
+    expect(s.row.doc.security).toEqual({ requireTwoFactor: true })
   })
 })

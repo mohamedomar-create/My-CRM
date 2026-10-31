@@ -39,6 +39,7 @@ export default function Shell() {
   const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
   const readNotes = useStore((s) => s.prefs.readNotes)
   const companies = useStore((s) => s.companies)
+  const twoFactor = useStore((s) => s.twoFactor)
   const isRead = (n: { id: string; read?: boolean }) => Boolean(n.read) || Boolean(readNotes?.includes(n.id))
   const unread = notes.filter((n) => !isRead(n)).length
   const results = q.trim().length > 1
@@ -70,6 +71,7 @@ export default function Shell() {
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> Team</NavLink>}
         {role?.admin && <NavLink to="/app/audit"><ShieldCheck size={18} /> Audit trail</NavLink>}
         {role?.admin && <NavLink to="/builder"><Wand2 size={18} /> Customise system</NavLink>}
+        <NavLink to="/security"><ShieldCheck size={18} /> Security</NavLink>
       </aside>
       <div className="main">
         <div className="topbar no-print">
@@ -126,7 +128,10 @@ export default function Shell() {
             )}
           </div>
         )}
-        <div className="no-print" style={{ padding: "0 24px" }}><Invitations /></div>
+        <div className="no-print" style={{ padding: "0 24px" }}>
+          <Invitations />
+          {(role?.admin || role?.finance) && !twoFactor && <div className="info row" style={{ gap: 8 }}><ShieldCheck size={15} /><span className="grow">You can see the company's books: protect your login with two-factor (a code from your phone).</span><Link className="btn small" to="/security">Set it up</Link></div>}
+        </div>
         <Outlet />
       </div>
       {toast && (

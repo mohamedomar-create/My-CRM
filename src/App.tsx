@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Suspense, lazy, useEffect } from 'react'
+import { Link, Navigate, Route, Routes } from 'react-router-dom'
 import Landing from './pages/Landing'
 import Auth from './pages/Auth'
 import Password from './pages/Password'
@@ -16,8 +16,10 @@ const Accounting = lazy(() => import('./workspace/Accounting'))
 const Team = lazy(() => import('./workspace/Team'))
 const Approvals = lazy(() => import('./workspace/Approvals'))
 const Audit = lazy(() => import('./workspace/Audit'))
-import { currentUser, currentWorkspace, dismissNotice, init, signOut, useStore } from './lib/store'
+import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signOut, signOutIdle, useStore } from './lib/store'
 import { Invitations } from './components/Invitations'
+import { CodeStep } from './components/CodeStep'
+import Security from './pages/Security'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -25,7 +27,9 @@ function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | '
   const ws = useStore((s) => currentWorkspace(s))
   const user = useStore((s) => currentUser(s))
   const loadError = useStore((s) => s.loadError)
+  const needCode = useStore((s) => s.needCode)
   if (!ready) return <div className="empty">Loading…</div>
+  if (needCode) return <CodeModal />
   if (loadError) return <LoadError message={loadError} />
   if (!ws || !user) return <Navigate to="/signin" replace />
   const isAdmin = user.roleId === 'role_admin'
@@ -39,10 +43,62 @@ function Home() {
   const ready = useStore((s) => s.ready)
   const ws = useStore((s) => currentWorkspace(s))
   const loadError = useStore((s) => s.loadError)
+  const needCode = useStore((s) => s.needCode)
   if (!ready) return <div className="empty">Loading…</div>
+  if (needCode) return <CodeModal />
   if (loadError) return <LoadError message={loadError} />
   if (!ws) return <Landing />
   return <Navigate to={ws.published ? '/app' : ws.draft ? '/builder' : '/onboarding'} replace />
+}
+
+/** The code step after a page reload, for logins with two-factor on. */
+function CodeModal() {
+  return (
+    <div className="modal">
+      <div className="card"><CodeStep /></div>
+    </div>
+  )
+}
+
+/** Signs out after IDLE_MINUTES without using the app; activity in any tab counts (shared through localStorage). */
+function useIdleLock() {
+  const signedIn = useStore((s) => Boolean(s.session))
+  useEffect(() => {
+    if (!signedIn) return
+    const KEY = 'bonyan.activity'
+    const mark = () => {
+      try {
+        localStorage.setItem(KEY, String(Date.now()))
+      } catch {
+        /* storage blocked: this tab's own activity still counts */
+      }
+      last = Date.now()
+    }
+    let last = Date.now()
+    let marked = 0
+    const onActivity = () => {
+      if (Date.now() - marked > 15_000) {
+        marked = Date.now()
+        mark()
+      }
+    }
+    mark()
+    const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }))
+    const timer = setInterval(() => {
+      let shared = last
+      try {
+        shared = Math.max(last, Number(localStorage.getItem(KEY) ?? 0))
+      } catch {
+        /* ignore */
+      }
+      if (Date.now() - shared > IDLE_MINUTES * 60_000) void signOutIdle()
+    }, 30_000)
+    return () => {
+      clearInterval(timer)
+      events.forEach((e) => window.removeEventListener(e, onActivity))
+    }
+  }, [signedIn])
 }
 
 /** Shown when signed in but the workspace couldn't be opened, instead of silently signing the person out. */
@@ -52,6 +108,7 @@ function LoadError({ message }: { message: string }) {
       <div className="card stack">
         <h2>We couldn't open your workspace</h2>
         <p>{message}</p>
+        {/two-factor|authenticator/i.test(message) && <Link className="btn" to="/security">Set up two-factor login</Link>}
         <Invitations />
         <div className="row">
           <button onClick={() => void init()}>Try again</button>
@@ -82,6 +139,7 @@ function NoticeDialog() {
 }
 
 export default function App() {
+  useIdleLock()
   return (
     <Suspense fallback={<div className="empty">Loading…</div>}>
     <NoticeDialog />
@@ -93,6 +151,7 @@ export default function App() {
       <Route path="/join" element={<Auth mode="join" />} />
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
+      <Route path="/security" element={<Security />} />
       <Route path="/onboarding" element={<Guard need="admin"><Onboarding /></Guard>} />
       <Route path="/suggest" element={<Guard need="admin"><Suggest /></Guard>} />
       <Route path="/builder" element={<Guard need="draft"><Builder /></Guard>} />

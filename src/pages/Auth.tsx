@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, MailOpen } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { invitationByToken, joinWithInvitation, register, signIn } from '../lib/store'
+import { getState, invitationByToken, joinWithInvitation, register, signIn } from '../lib/store'
+import { CodeStep } from '../components/CodeStep'
 
 const INVITE_PROBLEM: Record<string, string> = {
   accepted: 'This invitation was already accepted. Sign in to open the company.',
@@ -20,6 +21,7 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
+  const [code, setCode] = useState(false)
   const creating = mode !== 'signin'
   // An invitation link (/join?invite=… or /signin?invite=…): the e-mail is fixed to the invited one.
   const [params] = useSearchParams()
@@ -58,7 +60,8 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
         else nav(mode === 'register' ? '/onboarding' : '/app')
       } else {
         await signIn(email, password, invite?.id)
-        nav('/app')
+        if (getState().needCode) setCode(true)
+        else nav('/app')
       }
     } catch (err) {
       setError((err as Error).message)
@@ -83,7 +86,9 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
         <span className="small" style={{ color: '#8a8dc0' }}>Made in Egypt for the world</span>
       </div>
       <div className="auth-form">
-        {sent ? (
+        {code ? (
+          <CodeStep onDone={() => nav('/app')} />
+        ) : sent ? (
           <div className="stack">
             <h1>Check your e-mail</h1>
             <p className="muted">If <b>{email}</b> can be used, we sent it a confirmation link. Open it, then sign in{mode === 'register' ? ' and we will set up your workspace' : ''}. Already have an account? Sign in or reset your password.</p>
