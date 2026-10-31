@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Download, ShieldCheck, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Download, ShieldCheck, XCircle } from 'lucide-react'
 import { useApp } from './useApp'
-import { loadAudit, type AuditEvent } from '../lib/store'
+import { loadAudit, loadAutomationRuns, type AuditEvent, type AutomationRun } from '../lib/store'
 import { csvSafe } from '../lib/engine'
 
 /** Who changed what and when, as recorded by the server (people can't edit or delete these entries). */
@@ -9,6 +9,7 @@ export default function Audit() {
   const { ws, schema, user } = useApp()
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
   const [error, setError] = useState('')
+  const [runs, setRuns] = useState<AutomationRun[]>([])
   const [who, setWho] = useState('')
   const [onlyRefused, setOnlyRefused] = useState(false)
   const isAdmin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
@@ -16,6 +17,7 @@ export default function Audit() {
   useEffect(() => {
     if (!isAdmin) return
     loadAudit(ws.id).then(setEvents).catch((e: Error) => setError(e.message))
+    loadAutomationRuns(ws.id).then(setRuns).catch(() => setRuns([]))
   }, [ws.id, isAdmin])
 
   const people = useMemo(() => [...new Set((events ?? []).map((e) => e.actor_email))].sort(), [events])
@@ -62,6 +64,23 @@ export default function Audit() {
                 </tr>
               ))}
               {shown.length === 0 && <tr><td colSpan={4} className="muted">Nothing recorded yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <h2 style={{ marginTop: 22 }}><Clock size={17} /> Nightly automations</h2>
+      <p className="small muted">Every night at about 3:15 am Cairo time the server runs your date-based automations (overdue reminders, follow-ups), even when nobody opens Bonyan.</p>
+      {runs.length === 0 ? <p className="muted small">No nightly run yet.</p> : (
+        <div className="table-wrap">
+          <table className="data">
+            <thead><tr><th>When</th><th>Result</th></tr></thead>
+            <tbody>
+              {runs.map((r) => (
+                <tr key={r.id} style={{ cursor: 'default' }}>
+                  <td className="small">{new Date(r.at).toLocaleString()}</td>
+                  <td>{r.ok ? <span className="pill green"><CheckCircle2 size={12} /> {r.ran ? `${r.ran} automation${r.ran > 1 ? 's' : ''} ran` : 'Nothing due'}</span> : <span className="pill red"><XCircle size={12} /> Failed</span>} {r.error && <span className="tiny muted">{r.error}</span>}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

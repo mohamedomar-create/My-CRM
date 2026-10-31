@@ -17,7 +17,7 @@ export interface CommandResult {
 
 export interface AuditRow {
   workspace_id: string
-  actor: string
+  actor: string | null
   actor_email: string
   command: string
   label: string | null

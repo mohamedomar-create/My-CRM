@@ -337,5 +337,31 @@ select pg_temp.blocked('a person sends a fake save announcement', $q$insert into
 select set_config('realtime.topic', '', false);
 reset role;
 
+-- Phase 1.4b: the nightly scheduler, its run log, and drafts for admins only.
+select set_config('request.jwt.claims', '', false);
+update public.workspaces set doc = doc || '{"draft":{"roles":[]},"history":[{"version":1}]}' where id = 'ws_books000001';
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select pg_temp.check('people who aren''t admins don''t receive the setup draft or earlier versions', (select doc -> 'draft' = 'null' and doc -> 'history' = '[]' from (select public.open_workspace('ws_books000001') -> 'doc' as doc) x));
+select pg_temp.blocked('a person checks a scheduler key', $q$select public.scheduler_key_ok('x')$q$);
+select pg_temp.blocked('a person reads the scheduler key', $q$select key from private.scheduler_key$q$);
+select pg_temp.blocked('a person lists the workspaces to run', $q$select public.scheduled_workspaces()$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('an admin still receives the draft and the versions', (select doc -> 'draft' <> 'null' and jsonb_array_length(doc -> 'history') = 1 from (select public.open_workspace('ws_books000001') -> 'doc' as doc) x));
+reset role;
+create temp table skey as select key from private.scheduler_key;
+grant select on skey to service_role;
+set role service_role;
+select pg_temp.check('the scheduler''s key works, a wrong one doesn''t', (select public.scheduler_key_ok((select key from skey)) and not public.scheduler_key_ok('0123456789abcdef0123456789abcdef') and not public.scheduler_key_ok('')));
+select pg_temp.check('the scheduler finds the published workspaces and their owner', (select array_agg(w) @> array['ws_books000001'] from public.scheduled_workspaces() w) and public.workspace_owner_email('ws_books000001') = 'owner@test.dev');
+select pg_temp.allowed('the scheduler logs a run', $q$insert into public.automation_runs (workspace_id, ok, ran) values ('ws_books000001', true, 2)$q$);
+select pg_temp.blocked('the run log is never edited', $q$update public.automation_runs set ran = 0$q$);
+reset role;
+set role authenticated;
+select pg_temp.check('an admin reads the run log', (select count(*) = 1 from public.automation_runs));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select pg_temp.check('others don''t', (select count(*) = 0 from public.automation_runs));
+reset role;
+
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;
