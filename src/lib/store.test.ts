@@ -13,6 +13,7 @@ import { applyChanges } from './split'
 type Row = Record<string, unknown>
 const db: { workspaces: Row[]; workspace_members: Row[]; member_prefs: Row[]; audit: Row[] } = { workspaces: [], workspace_members: [], member_prefs: [], audit: [] }
 const net = { down: false, invokes: 0, sent: [] as string[][] }
+const invitations: { id: string; workspace: string }[] = []
 
 /** Just enough of the supabase-js query builder for the store's reads. */
 function query(table: keyof typeof db) {
@@ -76,10 +77,22 @@ async function invoke(_name: string, { body }: { body: unknown }) {
 vi.mock('./supabase', () => ({
   supabase: {
     from: (t: keyof typeof db) => query(t),
-    rpc: async (name: string, args: { p_id: string }) => {
+    rpc: async (name: string, args: { p_id: string } = { p_id: '' }) => {
       if (net.down) throw new TypeError('Failed to fetch')
       const r = db.workspaces.find((x) => x.id === args.p_id)
       if (name === 'open_workspace') return r ? { data: { doc: structuredClone(r.doc), version: r.version }, error: null } : { data: null, error: { message: 'You are not a member of this workspace' } }
+      if (name === 'my_workspaces') {
+        const mine = db.workspace_members.filter((m) => m.email === 'mona@co.eg')
+        return { data: mine.map((m) => ({ id: m.workspace_id, name: 'Co', is_admin: m.is_admin, is_owner: false })), error: null }
+      }
+      if (name === 'my_invitations') return { data: [], error: null }
+      if (name === 'respond_invitation') {
+        const a = args as unknown as { p_id: string; p_accept: boolean }
+        const inv = invitations.find((i) => i.id === a.p_id)
+        if (!inv) return { data: null, error: { message: 'This invitation is for another e-mail.' } }
+        if (a.p_accept) db.workspace_members.push({ workspace_id: inv.workspace, email: 'mona@co.eg', is_admin: false, added_at: '2' })
+        return { data: inv.workspace, error: null }
+      }
       return { data: null, error: null }
     },
     functions: { invoke },
@@ -87,6 +100,7 @@ vi.mock('./supabase', () => ({
       getSession: async () => ({ data: { session: null }, error: null }),
       signInWithPassword: async ({ email }: { email: string }) => ({ data: { user: { email, user_metadata: {} } }, error: null }),
       signOut: async () => ({ error: null }),
+      getUser: async () => ({ data: { user: { email: 'mona@co.eg', user_metadata: {} } }, error: null }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     },
   },
@@ -202,6 +216,32 @@ describe('browser store with server commands', () => {
     addCustomer('As me')
     await store.flush()
     expect(serverCustomers()).toEqual(['As me'])
+  })
+
+  it('switches to another company the person belongs to', async () => {
+    const other = structuredClone(db.workspaces[0].doc as Workspace)
+    other.id = 'ws_other'
+    db.workspaces.push({ id: 'ws_other', doc: other, version: 1 })
+    db.workspace_members.push({ workspace_id: 'ws_other', email: 'mona@co.eg', is_admin: true, added_at: '2' })
+    await store.signOut()
+    await store.signIn('mona@co.eg', 'x')
+    expect(store.getState().companies.map((c) => c.id)).toEqual(['ws_test', 'ws_other'])
+    await store.switchWorkspace('ws_other')
+    expect(store.currentWorkspace()!.id).toBe('ws_other')
+    addCustomer('In the other company')
+    await store.flush()
+    expect(list(db.workspaces[1].doc as Workspace, accounts).map((r) => r.values.name)).toEqual(['In the other company'])
+    expect(serverCustomers()).toEqual([])
+  })
+
+  it('signing in from an invitation link accepts it and opens that company', async () => {
+    const other = structuredClone(db.workspaces[0].doc as Workspace)
+    other.id = 'ws_invited'
+    db.workspaces.push({ id: 'ws_invited', doc: other, version: 1 })
+    invitations.push({ id: 'inv-1', workspace: 'ws_invited' })
+    await store.signOut()
+    await store.signIn('mona@co.eg', 'x', 'inv-1')
+    expect(store.currentWorkspace()!.id).toBe('ws_invited')
   })
 
   it('signs out even when the last send fails', async () => {

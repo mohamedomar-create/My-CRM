@@ -17,6 +17,7 @@ const Team = lazy(() => import('./workspace/Team'))
 const Approvals = lazy(() => import('./workspace/Approvals'))
 const Audit = lazy(() => import('./workspace/Audit'))
 import { currentUser, currentWorkspace, dismissNotice, init, signOut, useStore } from './lib/store'
+import { Invitations } from './components/Invitations'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -51,6 +52,7 @@ function LoadError({ message }: { message: string }) {
       <div className="card stack">
         <h2>We couldn't open your workspace</h2>
         <p>{message}</p>
+        <Invitations />
         <div className="row">
           <button onClick={() => void init()}>Try again</button>
           <button className="secondary" onClick={() => void signOut()}>Sign out</button>

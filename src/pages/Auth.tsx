@@ -1,8 +1,15 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { CheckCircle2, MailOpen } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { register, signIn } from '../lib/store'
+import { invitationByToken, register, signIn } from '../lib/store'
+
+const INVITE_PROBLEM: Record<string, string> = {
+  accepted: 'This invitation was already accepted. Sign in to open the company.',
+  declined: 'This invitation was declined. Ask your admin for a new one.',
+  cancelled: 'This invitation was cancelled or replaced by a newer one. Ask your admin for a new link.',
+  expired: 'This invitation has expired. Ask your admin for a new link.',
+}
 
 export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' }) {
   const nav = useNavigate()
@@ -14,6 +21,22 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
   const creating = mode !== 'signin'
+  // An invitation link (/join?invite=… or /signin?invite=…): the e-mail is fixed to the invited one.
+  const [params] = useSearchParams()
+  const token = params.get('invite') ?? ''
+  const [invite, setInvite] = useState<{ id: string; company: string; email: string; status: string } | null>(null)
+  const [inviteError, setInviteError] = useState('')
+  useEffect(() => {
+    if (!token) return
+    invitationByToken(token)
+      .then((i) => {
+        if (!i) return setInviteError('This invitation link is not valid. Check that you copied all of it, or ask your admin for a new one.')
+        if (i.status !== 'open') return setInviteError(INVITE_PROBLEM[i.status] ?? 'This invitation can no longer be used.')
+        setInvite(i)
+        setEmail(i.email)
+      })
+      .catch((e: Error) => setInviteError(e.message))
+  }, [token])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -26,11 +49,11 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
     setBusy(true)
     try {
       if (creating) {
-        const result = await register(mode === 'register' ? company : '', name, email, password)
+        const result = await register(mode === 'register' ? company : '', name, email, password, invite ? { id: invite.id, token } : undefined)
         if (result === 'confirm') setSent(true)
         else nav(mode === 'register' ? '/onboarding' : '/app')
       } else {
-        await signIn(email, password)
+        await signIn(email, password, invite?.id)
         nav('/app')
       }
     } catch (err) {
@@ -65,14 +88,19 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
         ) : (
         <form onSubmit={submit}>
           <h1>{mode === 'register' ? 'Create your workspace' : mode === 'join' ? 'Join your team' : 'Sign in'}</h1>
-          <p className="muted" style={{ marginTop: 0 }}>{mode === 'register' ? 'Free to start. Takes about 5 minutes to get a working system.' : mode === 'join' ? 'Use the e-mail your admin added on the Team page.' : 'Use the e-mail and password you registered with.'}</p>
+          {invite ? (
+            <div className="info" style={{ marginBottom: 12 }}><MailOpen size={15} /> You're invited to <b>{invite.company || 'a company'}</b>. {mode === 'join' ? 'Create your login with the invited e-mail to accept.' : 'Sign in with the invited e-mail to accept.'} {mode === 'join' ? <>Already have a login? <Link to={`/signin?invite=${encodeURIComponent(token)}`}>Sign in instead</Link>.</> : <>No login yet? <Link to={`/join?invite=${encodeURIComponent(token)}`}>Create one</Link>.</>}</div>
+          ) : (
+            <p className="muted" style={{ marginTop: 0 }}>{mode === 'register' ? 'Free to start. Takes about 5 minutes to get a working system.' : mode === 'join' ? 'Open the invitation link your admin sent you, or use the invited e-mail.' : 'Use the e-mail and password you registered with.'}</p>
+          )}
+          {inviteError && <div className="error-box">{inviteError}</div>}
           {creating && (
             <>
               {mode === 'register' && <label className="field">Company name<input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Nile Water Solutions" autoFocus /></label>}
               <label className="field">Your name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mohamed Omar" /></label>
             </>
           )}
-          <label className="field">Work e-mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></label>
+          <label className="field">Work e-mail<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" readOnly={Boolean(invite)} /></label>
           <label className="field">Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder={creating ? 'At least 10 characters' : ''} /></label>
           {error && <div className="error-box">{error}</div>}
           <button className="glow big" disabled={busy}>{busy ? 'Please wait…' : mode === 'register' ? 'Create workspace' : mode === 'join' ? 'Create my login' : 'Sign in'}</button>
