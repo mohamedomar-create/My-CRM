@@ -5,7 +5,8 @@ import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
 import { can, canApprove, canPost, hasSampleData, list, recordTitle } from '../lib/engine'
-import { markNotesRead, selfUser, signOut, switchUser, useStore } from '../lib/store'
+import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
+import { Invitations } from '../components/Invitations'
 import { useLang } from '../lib/i18n'
 
 export default function Shell() {
@@ -37,6 +38,7 @@ export default function Shell() {
   const notes = ws.data.notes.filter((n) => (n.user ? n.user === user.id : !n.role || role?.admin || n.role === user.roleId || (n.role === 'finance' && role?.finance)))
   const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
   const readNotes = useStore((s) => s.prefs.readNotes)
+  const companies = useStore((s) => s.companies)
   const isRead = (n: { id: string; read?: boolean }) => Boolean(n.read) || Boolean(readNotes?.includes(n.id))
   const unread = notes.filter((n) => !isRead(n)).length
   const results = q.trim().length > 1
@@ -47,6 +49,11 @@ export default function Shell() {
     <div className="app">
       <aside className="sidebar">
         <Link to="/app"><Logo /></Link>
+        {companies.length > 1 && (
+          <select aria-label="Switch company" value={ws.id} onChange={(e) => void switchWorkspace(e.target.value).then(() => nav('/app')).catch((err: Error) => showToast({ kind: 'error', text: err.message }))} style={{ margin: '4px 0 8px' }}>
+            {companies.map((c) => <option key={c.id} value={c.id}>{c.name || 'Unnamed company'}</option>)}
+          </select>
+        )}
         <NavLink to="/app" end><LayoutDashboard size={18} /> Dashboard</NavLink>
         <div className="sect">{schema.company.name}</div>
         {visible.map((m) => (
@@ -119,6 +126,7 @@ export default function Shell() {
             )}
           </div>
         )}
+        <div className="no-print" style={{ padding: "0 24px" }}><Invitations /></div>
         <Outlet />
       </div>
       {toast && (

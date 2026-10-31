@@ -39,6 +39,24 @@ interface State {
   /** why the workspace couldn't be opened (network down, no access…), shown with a Retry button */
   loadError: string | null
   prefs: Prefs
+  /** the companies this person belongs to (for the company switcher) */
+  companies: Company[]
+  /** invitations waiting for this person's answer */
+  invitations: PendingInvitation[]
+}
+
+export interface Company {
+  id: string
+  name: string
+  is_admin: boolean
+  is_owner: boolean
+}
+
+export interface PendingInvitation {
+  id: string
+  company: string
+  invited_by: string
+  expires_at: string
 }
 
 /** A command applied locally and not yet confirmed by the server (with the ids it created, so the server makes the same ones). */
@@ -48,7 +66,7 @@ interface Change {
   ids: string[]
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {} }
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [] }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -346,15 +364,22 @@ function open(ws: Workspace, user: User) {
   void loadPrefs(ws.id, user.email)
 }
 
-/** Opens the workspace this account belongs to, or creates the one it registered for. */
-async function openFor(auth: AuthUser) {
+/** Opens the workspace this account belongs to (the last one used, or a given one), or creates the one it registered for. */
+async function openFor(auth: AuthUser, wanted?: string) {
   const email = (auth.email ?? '').toLowerCase()
-  const { data: rows, error } = await supabase.from('workspace_members').select('workspace_id').eq('email', email).order('added_at')
-  if (error) throw new Error(friendly(error.message))
-  if (rows.length === 0) {
+  const [mine, invited] = await Promise.all([supabase.rpc('my_workspaces'), supabase.rpc('my_invitations')])
+  if (mine.error) throw new Error(friendly(mine.error.message))
+  const companies = (mine.data ?? []) as Company[]
+  const invitations = (invited.data ?? []) as PendingInvitation[]
+  publish((s) => {
+    s.companies = companies
+    s.invitations = invitations
+  })
+  if (companies.length === 0) {
     const company = auth.user_metadata?.company as string | undefined
     if (company) return createWorkspace(auth, company, (auth.user_metadata?.name as string) ?? '')
-    throw new Error('No workspace has been shared with this e-mail yet. Ask your admin to add you on the Team page, or create your own workspace.')
+    if (invitations.length) throw new Error('You have been invited to a company. Accept the invitation below to open it.')
+    throw new Error('No workspace has been shared with this e-mail yet. Ask your admin to invite you from the Team page, or create your own workspace.')
   }
   let last: string | null = null
   try {
@@ -362,13 +387,22 @@ async function openFor(auth: AuthUser) {
   } catch {
     /* ignore */
   }
-  const id = rows.find((r) => r.workspace_id === last)?.workspace_id ?? rows[0].workspace_id
+  const id = companies.find((c) => c.id === wanted)?.id ?? companies.find((c) => c.id === last)?.id ?? companies[0].id
   const data = await fetchWorkspace(id)
   const ws = data.doc
   const user = ws.users.find((u) => u.email === email)
   if (!user) throw new Error('You are a member of this workspace but have no profile in it yet. Ask your admin to add you again on the Team page.')
   versions.set(ws.id, data.version)
   open(ws, user)
+}
+
+/** Opens another company this person belongs to. Unsent changes are sent first. */
+export async function switchWorkspace(id: string) {
+  await flush()
+  if (pending.length) throw new Error('Your latest changes are still being saved. Try again in a moment.')
+  const { data } = await supabase.auth.getUser()
+  if (!data.user) throw new Error('Please sign in again')
+  await openFor(data.user, id)
 }
 
 /** Restores the signed-in session when the app loads. */
@@ -409,17 +443,19 @@ export async function init() {
  * Creates the login. With a company name it also creates the workspace; without one it joins the workspace an admin shared.
  * Returns 'confirm' when Supabase first wants the e-mail address confirmed.
  */
-export async function register(company: string, name: string, email: string, password: string): Promise<'ready' | 'confirm'> {
+export async function register(company: string, name: string, email: string, password: string, invite?: { id: string; token: string }): Promise<'ready' | 'confirm'> {
   const { data, error } = await supabase.auth.signUp({
     email: email.trim().toLowerCase(),
     password,
-    options: { data: { name: name.trim(), company: company.trim() || null }, emailRedirectTo: `${location.origin}/signin` },
+    // after confirming the e-mail they come back to sign in, still holding the invitation link
+    options: { data: { name: name.trim(), company: company.trim() || null }, emailRedirectTo: `${location.origin}/signin${invite ? `?invite=${encodeURIComponent(invite.token)}` : ''}` },
   })
   if (error) throw new Error(friendly(error.message))
   // An e-mail that already has an account looks exactly like a new one (check your inbox), so nobody can find out who is registered.
   if (!data.session || !data.user || data.user.identities?.length === 0) return 'confirm'
   try {
-    await openFor(data.user)
+    if (invite) await respondInvitation(invite.id, true, false)
+    await openFor(data.user, invite ? acceptedInto : undefined)
   } catch (e) {
     await supabase.auth.signOut()
     throw e
@@ -450,12 +486,18 @@ export async function hasSession() {
   return Boolean(data.session)
 }
 
-export async function signIn(email: string, password: string) {
+export async function signIn(email: string, password: string, inviteId?: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
   if (error) throw new Error(friendly(error.message))
   try {
-    await openFor(data.user)
+    if (inviteId) await respondInvitation(inviteId, true, false)
+    await openFor(data.user, inviteId ? acceptedInto : undefined)
   } catch (e) {
+    // Signed in but nothing to open yet: stay signed in when an invitation is waiting, so it can be answered.
+    if (state.invitations.length) {
+      publish((s) => { s.loadError = (e as Error).message })
+      return
+    }
     await supabase.auth.signOut()
     throw e
   }
@@ -480,6 +522,8 @@ export async function signOut() {
       s.notice = null
       s.loadError = null
       s.prefs = {}
+      s.companies = []
+      s.invitations = []
     })
   }
 }
@@ -491,10 +535,68 @@ export function switchUser(userId: string) {
   })
 }
 
-/** Lets an e-mail open this workspace. Their profile (name, role) lives in the workspace's users list. */
-export async function addMember(workspaceId: string, email: string, isAdmin: boolean) {
-  const { error } = await supabase.from('workspace_members').insert({ workspace_id: workspaceId, email, is_admin: isAdmin })
-  if (error) throw new Error(/duplicate/i.test(error.message) ? 'Someone already uses this e-mail' : friendly(error.message))
+/** Invites someone to this workspace. Returns the private link to send them (valid 7 days, shown only now). */
+export async function inviteMember(workspaceId: string, email: string, isAdmin: boolean): Promise<string> {
+  const { data, error } = await supabase.rpc('create_invitation', { p_workspace: workspaceId, p_email: email, p_is_admin: isAdmin })
+  if (error) throw new Error(friendly(error.message))
+  return `${location.origin}/join?invite=${encodeURIComponent(String(data))}`
+}
+
+export interface Invitation {
+  id: string
+  email: string
+  is_admin: boolean
+  invited_by_email: string
+  created_at: string
+  expires_at: string
+  accepted_at: string | null
+  declined_at: string | null
+  revoked_at: string | null
+}
+
+/** The workspace's invitations, newest first (admins only). */
+export async function listInvitations(workspaceId: string): Promise<Invitation[]> {
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('id, email, is_admin, invited_by_email, created_at, expires_at, accepted_at, declined_at, revoked_at')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(friendly(error.message))
+  return data as Invitation[]
+}
+
+export async function revokeInvitation(id: string) {
+  const { error } = await supabase.rpc('revoke_invitation', { p_id: id })
+  if (error) throw new Error(friendly(error.message))
+}
+
+/** What an invitation link is for (works before signing in). */
+export async function invitationByToken(token: string): Promise<{ id: string; company: string; email: string; status: string } | null> {
+  const { data, error } = await supabase.rpc('invitation_by_token', { p_token: token })
+  if (error) throw new Error(friendly(error.message))
+  return ((data as { id: string; company: string; email: string; status: string }[]) ?? [])[0] ?? null
+}
+
+/** the workspace the last accepted invitation was for, so sign-in opens it */
+let acceptedInto: string | undefined
+
+/** Accepts or declines an invitation sent to this person; accepting opens that company (unless `openIt` is false). */
+export async function respondInvitation(id: string, accept: boolean, openIt = true) {
+  const { data, error } = await supabase.rpc('respond_invitation', { p_id: id, p_accept: accept })
+  if (error) throw new Error(friendly(error.message))
+  acceptedInto = accept ? String(data) : undefined
+  publish((s) => {
+    s.invitations = s.invitations.filter((i) => i.id !== id)
+  })
+  if (!openIt) return
+  const { data: auth } = await supabase.auth.getUser()
+  if (!auth.user) return
+  try {
+    await openFor(auth.user, acceptedInto ?? state.session?.workspaceId)
+    publish((s) => { s.loadError = null })
+  } catch (e) {
+    publish((s) => { s.loadError = (e as Error).message })
+  }
 }
 
 export async function setMemberAdmin(workspaceId: string, email: string, isAdmin: boolean) {
