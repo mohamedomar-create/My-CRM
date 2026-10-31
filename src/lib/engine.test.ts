@@ -4,8 +4,8 @@ import { emptyAnswers, generateSchema, suggest } from './recommend'
 import { validate } from './validate'
 import { emptyData, type User, type Workspace } from './types'
 import { seedSampleData } from './seed'
-import { createRecord, list, moveStage, onHand, postDocument, registerPayment, runScheduled, trialBalance, voidDocument, type Ctx } from './engine'
-import { moduleByRole, uid } from './schema'
+import { costKeys, createRecord, deleteRecord, findRecord, list, moveStage, onHand, postDocument, registerPayment, runScheduled, trialBalance, voidDocument, type Ctx } from './engine'
+import { moduleByRole, uid, type FieldDef } from './schema'
 import { evalFormula, formulaRefs } from './formula'
 
 const admin: User = { id: 'u_admin', name: 'Admin', email: 'a@x.com', roleId: 'role_admin' }
@@ -284,5 +284,27 @@ describe('competitor-grade features', () => {
     const inv = createRecord(ctx, moduleByRole(schema, 'invoices')!.id, { customer: c.id, date: '2026-01-02' }, { lines: [{ id: uid('l'), product: p.id, description: 'F', qty: 4, price: 50, discount: 0, vat: 14 }] })
     postDocument(ctx, inv)
     expect(ws.data.notes.some((n) => n.message.startsWith('Reorder Filter: 4 left'))).toBe(true)
+  })
+})
+
+describe('large lists', () => {
+  it('finds records by id through the index, and notices new and deleted records', () => {
+    const { ws, schema, ctx } = workspace()
+    const accounts = moduleByRole(schema, 'accounts')!.id
+    const first = createRecord(ctx, accounts, { name: 'First' })
+    expect(findRecord(ws, first.id)).toBe(first)
+    const second = createRecord(ctx, accounts, { name: 'Second' })
+    expect(findRecord(ws, second.id)).toBe(second)
+    deleteRecord(ctx, first)
+    expect(findRecord(ws, first.id)).toBeUndefined()
+    expect(findRecord(ws, second.id)).toBe(second)
+  })
+
+  it('a formula built on cost is a cost field too, even through another formula', () => {
+    const { schema } = workspace()
+    const products = moduleByRole(schema, 'products')!
+    const formula = (key: string, f: string) => ({ id: uid('f'), key, label: key, type: 'formula', formula: f }) as FieldDef
+    products.fields.push(formula('margin', 'price - cost'), formula('margin_pct', 'margin / price * 100'), formula('double', 'price * 2'), formula('extra', 'price + costs_extra'))
+    expect(costKeys(schema).sort()).toEqual(['cost', 'margin', 'margin_pct', 'stock_value'])
   })
 })

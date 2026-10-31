@@ -5,7 +5,7 @@ import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Fla
 import { ImportModal } from './ImportModal'
 import { useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, canSeeCosts, COST_KEYS, csvSafe, displayValue, fieldValue, list, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, list, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -32,6 +32,8 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: '__created', dir: -1 })
   const [stage, setStage] = useState('')
   const [importing, setImporting] = useState(false)
+  /** long lists show a page at a time, so they open fast */
+  const [limit, setLimit] = useState(PAGE)
   const scored = (mod.scoring?.length ?? 0) > 0
   const dateField = mod.fields.find((f) => ['close_date', 'due_date', 'date', 'visit_date', 'survey_date'].includes(f.key)) ?? mod.fields.find((f) => f.type === 'date')
   const myViews = useStore((s) => s.prefs.views)
@@ -42,23 +44,22 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
     addView({ id: uid('v'), module: mod.id, user: user.id, name, q, stage, sort, view })
   }
   const costs = canSeeCosts({ schema, user })
-  const hidden = (key: string) => mod.role === 'products' && !costs && COST_KEYS.includes(key)
+  const secret = costs ? [] : costKeys(schema)
+  const hidden = (key: string) => secret.includes(key)
   const cols = mod.fields.filter((f) => f.inList && !hidden(f.key)).slice(0, 7)
   const all = list(ws, mod.id)
   const rows = all
     .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())))
     .filter((r) => !stage || r.stage === stage || r.status === stage)
-    .sort((a, b) => {
-      const val = (r: Rec) => {
-        if (sort.key === '__created') return r.createdAt
-        if (sort.key === '__score') return score(ws, schema, r)
-        const f = mod.fields.find((x) => x.key === sort.key)
-        return ((f ? fieldValue(ws, schema, r, f) : r.values[sort.key]) as string | number | undefined) ?? ''
-      }
-      const av = val(a)
-      const bv = val(b)
-      return (av > bv ? 1 : av < bv ? -1 : 0) * sort.dir
+    // each sort value is worked out once per record, not once per comparison
+    .map((r) => {
+      if (sort.key === '__created') return { r, v: r.createdAt as string | number }
+      if (sort.key === '__score') return { r, v: score(ws, schema, r) as string | number }
+      const f = mod.fields.find((x) => x.key === sort.key)
+      return { r, v: ((f ? fieldValue(ws, schema, r, f) : r.values[sort.key]) as string | number | undefined) ?? '' }
     })
+    .sort((a, b) => (a.v > b.v ? 1 : a.v < b.v ? -1 : 0) * sort.dir)
+    .map((x) => x.r)
 
   function exportCsv() {
     const fields = mod.fields.filter((f) => !hidden(f.key))
@@ -89,9 +90,9 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
         </div>
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${mod.name.toLowerCase()}…`} style={{ maxWidth: 320 }} />
+        <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} placeholder={`Search ${mod.name.toLowerCase()}…`} style={{ maxWidth: 320 }} />
         {(mod.stages || mod.lines) && (
-          <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ width: 'auto' }}>
+          <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }}>
             <option value="">{mod.stages ? 'All stages' : 'All statuses'}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{s}</option>)}
@@ -133,7 +134,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)}>
                   <td><b>{mod.lines ? (r.number ?? 'Draft') : recordTitle(ws, schema, r)}</b></td>
                   {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : null })()}</td>}
@@ -155,12 +156,22 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
               </tfoot>
             )}
           </table>
+          {rows.length > limit && (
+            <div className="row" style={{ justifyContent: 'center', padding: 12, gap: 12 }}>
+              <span className="tiny muted">Showing {limit.toLocaleString()} of {rows.length.toLocaleString()}</span>
+              <button className="secondary small" onClick={() => setLimit(limit + PAGE)}>Show {Math.min(PAGE, rows.length - limit)} more</button>
+            </div>
+          )}
         </div>
       )}
       {importing && <ImportModal mod={mod} onClose={() => setImporting(false)} />}
     </div>
   )
 }
+
+const PAGE = 100
+/** cards shown per board column; the rest are counted, and the table or search finds them */
+const BOARD_CARDS = 50
 
 const isNum = (f: FieldDef) => ['number', 'currency', 'percent', 'formula'].includes(f.type)
 
@@ -194,7 +205,8 @@ function Board({ mod, rows, ws, schema, onMove }: { mod: ModuleDef; rows: Rec[];
           return (
             <Column key={s.id} id={s.id}>
               <div className="kcol-head"><span className="dot" style={{ background: s.color }} />{s.name} <span className="pill gray tiny">{items.length}</span><span className="sum">{amountField ? money(sum, schema.company.currency).replace('.00', '') : `${s.probability}%`}</span></div>
-              {items.map((r) => <Card key={r.id} rec={r} color={s.color} mod={mod} ws={ws} schema={schema} amountField={amountField} />)}
+              {items.slice(0, BOARD_CARDS).map((r) => <Card key={r.id} rec={r} color={s.color} mod={mod} ws={ws} schema={schema} amountField={amountField} />)}
+              {items.length > BOARD_CARDS && <div className="tiny muted" style={{ padding: 8, textAlign: 'center' }}>+{(items.length - BOARD_CARDS).toLocaleString()} more. Search or use the table to find them.</div>}
             </Column>
           )
         })}

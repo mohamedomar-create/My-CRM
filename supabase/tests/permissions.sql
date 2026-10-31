@@ -207,5 +207,23 @@ reset role;
 select pg_temp.check('a refused save left no trace', (select not exists (select 1 from public.journal_entries where id in ('j_bad','j_neg')) and exists (select 1 from public.journal_entries where id = 'j_1') and not exists (select 1 from public.records where id = 'r_dup')));
 select pg_temp.blocked('even the database owner deletes a posted journal entry', $q$delete from public.journal_entries where id = 'j_1'$q$);
 
+-- Phase 1.2, part 2: formula fields built on cost are hidden like cost itself.
+update public.workspaces set doc = jsonb_set(doc, '{published,modules}', '[{"id":"m_prod","fields":[
+  {"key":"margin","type":"formula","formula":"price - cost"},
+  {"key":"margin_pct","type":"formula","formula":"margin / price * 100"},
+  {"key":"markup","type":"formula","formula":"price * 2"},
+  {"key":"costly","type":"formula","formula":"price + costs_extra"}]}]') where id = 'ws_books000001';
+update public.workspaces set doc = jsonb_set(doc, '{published,roles,2,access,m_prod}', '["view"]') where id = 'ws_books000001';
+update public.records set data = jsonb_set(data, '{values}', data -> 'values' || '{"margin":25,"margin_pct":45,"markup":110,"costly":1}') where workspace_id = 'ws_books000001' and id = 'r_prod';
+select pg_temp.check('cost formulas are found through other formulas, and only whole names count', (select private.cost_keys(doc) = array['cost','stock_value','margin','margin_pct'] from public.workspaces where id = 'ws_books000001'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select pg_temp.check('sales does not receive a margin built on cost', (select (public.open_workspace('ws_books000001') #> '{doc,data,records,m_prod,0,values}') = '{"name":"Rice","price":55,"markup":110,"costly":1}'));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated"}', false);
+select pg_temp.check('finance (who may see costs) sees the margin once given the products module', (select (public.open_workspace('ws_books000001') #>> '{doc,data,records,m_prod,0,values,margin}') = '25'));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.check('an admin sees the margin', (select (public.open_workspace('ws_books000001') #>> '{doc,data,records,m_prod,0,values,margin}') = '25'));
+reset role;
+
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;
