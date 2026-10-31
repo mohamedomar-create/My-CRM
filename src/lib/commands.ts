@@ -7,7 +7,7 @@ import type { AppSchema } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
 import type { Line, User, Workspace } from './types'
 import {
-  EngineError, addComment, convertLead, createRecord, decideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
+  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
   type Ctx,
 } from './engine'
@@ -31,6 +31,7 @@ export interface CommandArgs {
   'doc.pay': { id: string; amount: number; date: string; method: Method }
   'approval.request': { id: string; rule: string }
   'approval.decide': { approval: string; approve: boolean; note?: string }
+  'approval.override': { id: string; rule: string; reason: string }
   'comment.add': { id: string; text: string }
   'import.rows': { module: string; rows: Record<string, string>[]; mapping: Record<string, string> }
   'sample.remove': Record<string, never>
@@ -103,6 +104,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },
+  'approval.override': { admin: true, run: (ws, u, a) => void overrideApproval(ctx(ws, u), rec(ws, a.id), a.rule, String(a.reason ?? '')) },
   'comment.add': { run: (ws, u, a) => addComment(ctx(ws, u), rec(ws, a.id), String(a.text ?? '')) },
   'import.rows': {
     run: (ws, u, a) => {

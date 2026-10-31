@@ -174,7 +174,7 @@ describe('formula', () => {
   })
 })
 
-import { addComment, ageing, approvalNeeded, decideApproval, fieldValue, importRows, requestApproval, rotting, score, updateRecord } from './engine'
+import { addComment, ageing, approvalNeeded, decideApproval, fieldValue, fingerprint, importRows, overrideApproval, requestApproval, rotting, score, updateRecord } from './engine'
 
 describe('competitor-grade features', () => {
   function setup() {
@@ -229,6 +229,59 @@ describe('competitor-grade features', () => {
     decideApproval(asBoss, req.id, true, 'ok')
     expect(ws.data.notes.some((n) => n.user === clerk.id && n.message.includes('approved'))).toBe(true)
     postDocument(asClerk, inv)
+    expect(inv.status).toBe('posted')
+  })
+
+  it('an approval covers the exact content: editing the invoice after approval needs a new one', () => {
+    const { ws, schema, clerk, boss } = setup()
+    const asClerk: Ctx = { ws, schema, user: clerk }
+    const asBoss: Ctx = { ws, schema, user: boss }
+    const asAdmin: Ctx = { ws, schema, user: admin }
+    const acc = createRecord(asAdmin, moduleByRole(schema, 'accounts')!.id, { name: 'Big', owner: admin.id })
+    const svc = createRecord(asAdmin, moduleByRole(schema, 'products')!.id, { name: 'Big svc', sku: 'B', price: 300000, vat_rate: 14, track_stock: false })
+    const line = (price: number) => [{ id: 'l_1', product: svc.id, description: 'x', qty: 1, price, discount: 0, vat: 14 }]
+    const inv = createRecord(asAdmin, moduleByRole(schema, 'invoices')!.id, { customer: acc.id, date: '2026-03-01' }, { lines: line(300000) })
+    const rule = approvalNeeded(asClerk, inv, 'post')!
+    decideApproval(asBoss, requestApproval(asClerk, inv, rule.id).id, true)
+    expect(approvalNeeded(asClerk, inv, 'post')).toBeUndefined()
+    inv.updatedAt = '2099-01-01T00:00:00.000Z'
+    expect(approvalNeeded(asClerk, inv, 'post')).toBeUndefined()
+    const before = fingerprint(inv)
+    inv.lines = line(400000)
+    expect(fingerprint(inv)).not.toBe(before)
+    expect(approvalNeeded(asClerk, inv, 'post')?.id).toBe(rule.id)
+    expect(() => postDocument(asClerk, inv)).toThrow(/Needs approval/)
+  })
+
+  it('maker is never checker: nobody approves their own request or record; an admin overrides only with a reason', () => {
+    const { ws, schema, boss } = setup()
+    const asBoss: Ctx = { ws, schema, user: boss }
+    const asAdmin: Ctx = { ws, schema, user: admin }
+    const acc = createRecord(asAdmin, moduleByRole(schema, 'accounts')!.id, { name: 'Big', owner: admin.id })
+    const svc = createRecord(asAdmin, moduleByRole(schema, 'products')!.id, { name: 'Big svc', sku: 'B', price: 300000, vat_rate: 14, track_stock: false })
+    const inv = createRecord(asAdmin, moduleByRole(schema, 'invoices')!.id, { customer: acc.id, date: '2026-03-01' }, { lines: [{ id: uid('l'), product: svc.id, description: 'x', qty: 1, price: 300000, discount: 0, vat: 14 }] })
+    // The admin may approve too, but made this invoice, and the manager could approve it: someone else must.
+    expect(() => postDocument(asAdmin, inv)).toThrow(/someone else must approve/)
+    const rule = approvalNeeded(asAdmin, inv, 'post')!
+    const req = requestApproval(asAdmin, inv, rule.id)
+    expect(() => decideApproval(asAdmin, req.id, true)).toThrow(/your own/)
+    expect(() => overrideApproval(asBoss, inv, rule.id, 'urgent customer order')).toThrow(/Only an admin/)
+    expect(() => overrideApproval(asAdmin, inv, rule.id, 'urgent')).toThrow(/reason/)
+    overrideApproval(asAdmin, inv, rule.id, 'Urgent order, manager on leave')
+    expect(ws.data.approvals!.find((a) => a.override)).toMatchObject({ status: 'approved', note: 'Urgent order, manager on leave', decidedBy: admin.id })
+    expect(ws.data.approvals!.find((a) => a.id === req.id)!.status).toBe('rejected')
+    postDocument(asAdmin, inv)
+    expect(inv.status).toBe('posted')
+  })
+
+  it('in a company where nobody else could approve, the maker may still go ahead', () => {
+    const { ws, schema } = setup()
+    ws.users = ws.users.filter((u) => u.id === admin.id)
+    const asAdmin: Ctx = { ws, schema, user: admin }
+    const acc = createRecord(asAdmin, moduleByRole(schema, 'accounts')!.id, { name: 'Big', owner: admin.id })
+    const svc = createRecord(asAdmin, moduleByRole(schema, 'products')!.id, { name: 'Big svc', sku: 'B', price: 300000, vat_rate: 14, track_stock: false })
+    const inv = createRecord(asAdmin, moduleByRole(schema, 'invoices')!.id, { customer: acc.id, date: '2026-03-01' }, { lines: [{ id: uid('l'), product: svc.id, description: 'x', qty: 1, price: 300000, discount: 0, vat: 14 }] })
+    postDocument(asAdmin, inv)
     expect(inv.status).toBe('posted')
   })
 

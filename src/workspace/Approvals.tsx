@@ -11,7 +11,8 @@ export default function Approvals() {
   const all = ws.data.approvals ?? []
   const rule = (id: string) => (schema.approvals ?? []).find((r) => r.id === id)
   const name = (id?: string) => ws.users.find((u) => u.id === id)?.name ?? '—'
-  const mine = all.filter((a) => a.status === 'pending' && rule(a.rule) && canApprove({ schema, user }, rule(a.rule)!))
+  // Maker is never checker: requests you made, or about records you made, wait for someone else.
+  const mine = all.filter((a) => a.status === 'pending' && rule(a.rule) && canApprove({ schema, user }, rule(a.rule)!) && a.requestedBy !== user.id && findRecord(ws, a.record)?.createdBy !== user.id)
   const requested = all.filter((a) => a.requestedBy === user.id)
   const done = all.filter((a) => a.status !== 'pending').slice(0, 30)
 
@@ -24,7 +25,7 @@ export default function Approvals() {
         <div className="grow">
           <b>{r?.name ?? 'Approval'}</b> · <Link to={`/app/r/${a.record}`}>{mod?.singular} {recordTitle(ws, schema, rec)}</Link>
           {rec?.values.total !== undefined && <span className="pill gray" style={{ marginInlineStart: 8 }}>{schema.company.currency} {Number(rec.values.total).toLocaleString()}</span>}
-          <div className="tiny muted">Requested by {name(a.requestedBy)} · {new Date(a.at).toLocaleString()}{a.decidedBy && ` · ${a.status} by ${name(a.decidedBy)}${a.note ? ` (“${a.note}”)` : ''}`}</div>
+          <div className="tiny muted">Requested by {name(a.requestedBy)} · {new Date(a.at).toLocaleString()}{a.decidedBy && ` · ${a.override ? 'override' : a.status} by ${name(a.decidedBy)}${a.note ? ` (“${a.note}”)` : ''}`}</div>
         </div>
         {decide ? (
           <>

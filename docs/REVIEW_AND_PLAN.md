@@ -17,6 +17,8 @@
 > **Phase 1.3, first part (SECU-09, SECU-M4).** Invitations with a private, single-use link (7 days, bound to the invited e-mail, stored only as a hash), accept or decline in the app, cancel and re-send by admins, at most 50 a day per workspace. Admin rights on joining follow the person's current role. Members can no longer be added directly. A company switcher for people in several companies. Joining from a link needs no confirmation e-mail (the `join` server function creates the login already confirmed).
 >
 > **Phase 1.3, second part (SECU-11, SECU-12).** Two-factor login with an authenticator app, enforced by the server for anyone who turned it on, and optionally required by the company for admins and finance. Idle sign-out after 30 minutes. Limits: 120 changes per person per minute, 200,000 records and 200 people per workspace. Not done: CAPTCHA on sign-up (needs a CAPTCHA account; Supabase supports hCaptcha and Turnstile) and a list of active sessions.
+>
+> **Phase 1.4, first part (SECU-04 base, SECU-07).** Live updates: screens catch up with colleagues' saves within a second (Realtime broadcast with the version only, members-only private channel). Approvals tied to a content fingerprint; maker is never checker; admin override with a reason. Not yet: "Ahmed is editing" presence and a field-level merge prompt. **Second part, next:** server scheduler with a run log (SECU-17) and setup versions in their own table (BUIL-M1).
 
 ## Executive summary
 

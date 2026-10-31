@@ -5,7 +5,7 @@ import { useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -413,35 +413,43 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   const { ws, schema, user, act, ctx } = useApp()
   const rules = (schema.approvals ?? []).filter((r) => r.module === mod.id)
   if (!rules.length) return null
-  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'pending' | 'rejected' | 'needed'; by?: string }
+  const isAdmin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
+  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'own' | 'pending' | 'rejected' | 'needed'; by?: string; override?: string }
   const items = rules.flatMap((r): Item[] => {
     if (r.action === 'post' && rec.status !== 'draft') return []
     const needed = approvalNeeded(ctx, rec, r.action, r.stage)
     if (needed?.id !== r.id) {
       const done = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'approved')
-      return done ? [{ r, state: 'approved', by: ws.users.find((u) => u.id === done.decidedBy)?.name }] : []
+      return done ? [{ r, state: 'approved', by: ws.users.find((u) => u.id === done.decidedBy)?.name, override: done.override ? done.note : undefined }] : []
     }
     const pending = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'pending')
     const rejected = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'rejected')
-    return [{ r, state: canApprove({ schema, user }, r) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : 'needed' }]
+    const state = mayActAsApprover(ctx, r, rec) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : canApprove({ schema, user }, r) ? 'own' : 'needed'
+    return [{ r, state }]
   })
   if (!items.length) return null
   const roleName = (id: string) => schema.roles.find((x) => x.id === id)?.name ?? 'an approver'
   const what = (r: (typeof rules)[number]) => (r.action === 'post' ? 'posting' : `moving to “${mod.stages?.find((s) => s.id === r.stage)?.name}”`)
+  function override(r: (typeof rules)[number]) {
+    const reason = prompt(`Override “${r.name}” without a second person. Write the reason (it is kept in the history and the audit trail):`)
+    if (reason !== null) act('approval.override', { id: rec.id, rule: r.id, reason }, 'Approved by override', `Overrode “${r.name}”`)
+  }
   return (
     <div className="stack" style={{ marginBottom: 14 }}>
-      {items.map(({ r, state, by }) => (
+      {items.map(({ r, state, by, override: why }) => (
         <div key={r.id} className={`row ${state === 'approved' ? 'ok-box' : state === 'rejected' ? 'error-box' : 'note'}`}>
           <ShieldAlert size={16} />
           <span className="grow">
             <b>{r.name}</b>:{' '}
-            {state === 'approved' && `approved by ${by}.`}
+            {state === 'approved' && (why ? `approved by ${by} as an override: “${why}”.` : `approved by ${by}. Changing the record cancels the approval.`)}
             {state === 'self' && `${what(r)} normally needs approval from ${roleName(r.approverRole)}. You can do it yourself.`}
+            {state === 'own' && `you made this record, so someone else must approve ${what(r)}.`}
             {state === 'pending' && `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`}
             {state === 'rejected' && `rejected. Change the record and request approval again.`}
             {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
           </span>
-          {(state === 'needed' || state === 'rejected') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, 'Approval requested')}><Send size={14} /> Request approval</button>}
+          {(state === 'needed' || state === 'rejected' || state === 'own') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, 'Approval requested')}><Send size={14} /> Request approval</button>}
+          {isAdmin && state !== 'approved' && state !== 'self' && <button className="ghost small" onClick={() => override(r)} title="Approve without a second person, with a reason">Override…</button>}
         </div>
       ))}
     </div>
