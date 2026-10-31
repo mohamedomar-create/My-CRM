@@ -29,10 +29,17 @@ Deno.serve(async (req) => {
     const user = auth?.user
     if (authError || !user?.email || user.is_anonymous || !user.email_confirmed_at) throw new HttpError(401, 'Please sign in again')
     const body = (await req.json()) as CommandRequest
+    // The token is verified above; its "aal" says whether this login passed the two-factor step.
+    let aal = ''
+    try {
+      aal = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).aal ?? ''
+    } catch {
+      /* no claim: treated as a password-only login */
+    }
 
     const out = await handleCommands(
       {
-        user: { id: user.id, email: user.email },
+        user: { id: user.id, email: user.email, aal },
         membership: async (workspace, email) => {
           const { data, error } = await db.from('workspace_members').select('is_admin').eq('workspace_id', workspace).eq('email', email).maybeSingle()
           if (error) throw error
@@ -52,6 +59,16 @@ Deno.serve(async (req) => {
           const { data, error } = await db.rpc('workspace_view_for', { p_id: workspace, p_email: email })
           if (error || !data) throw error ?? new HttpError(403, 'You have no profile in this workspace')
           return data as Workspace
+        },
+        secondFactor: async (workspace, email) => {
+          const { data, error } = await db.rpc('second_factor_problem_for', { p_id: workspace, p_uid: user.id, p_email: email, p_aal: aal })
+          if (error) throw error
+          return (data as string | null) ?? null
+        },
+        recentCommands: async () => {
+          const { count, error } = await db.from('audit_events').select('id', { count: 'exact', head: true }).eq('actor', user.id).gte('at', new Date(Date.now() - 60_000).toISOString())
+          if (error) throw error
+          return count ?? 0
         },
         audit: async (rows) => {
           const { error } = await db.from('audit_events').insert(rows)

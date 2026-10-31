@@ -156,6 +156,8 @@ export interface Workspace {
   published: AppSchema | null
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
+  /** company-wide security settings (admins only) */
+  security?: { requireTwoFactor?: boolean }
   data: WorkspaceData
 }
 

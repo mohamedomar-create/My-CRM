@@ -28,8 +28,8 @@ export interface AuditRow {
 
 /** What the server core needs from the outside world. */
 export interface ServerDeps {
-  /** the signed-in person, from their verified login token */
-  user: { id: string; email: string }
+  /** the signed-in person, from their verified login token ("aal2" once they passed the two-factor step) */
+  user: { id: string; email: string; aal?: string }
   /** their membership of the workspace, read from the database; null = not a member */
   membership: (workspace: string, email: string) => Promise<{ isAdmin: boolean } | null>
   /** the whole workspace, with the highest list place in use */
@@ -42,6 +42,10 @@ export interface ServerDeps {
   /** the workspace as this person may see it (their role decides which records, costs and books are included) */
   view: (workspace: string, email: string) => Promise<Workspace>
   audit: (rows: AuditRow[]) => Promise<void>
+  /** why this person must pass two-factor first (they turned it on, or the company requires it), or null */
+  secondFactor?: (workspace: string, email: string) => Promise<string | null>
+  /** how many changes this person sent in the last minute */
+  recentCommands?: () => Promise<number>
 }
 
 export class HttpError extends Error {
@@ -54,6 +58,8 @@ export class HttpError extends Error {
 
 const ID = /^[a-z]{1,4}_[a-z0-9]{6,40}$/
 const MAX_COMMANDS = 50
+/** changes one person may send per minute */
+export const PER_MINUTE = 120
 
 /**
  * Applies the commands in order on the latest saved workspace and saves the result.
@@ -66,6 +72,11 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
   const email = deps.user.email.toLowerCase()
   const member = await deps.membership(req.workspace, email)
   if (!member) throw new HttpError(403, 'You are not a member of this workspace')
+  const problem = await deps.secondFactor?.(req.workspace, email)
+  if (problem) throw new HttpError(428, problem)
+  if (deps.recentCommands && (await deps.recentCommands()) + req.commands.length > PER_MINUTE) {
+    throw new HttpError(429, 'Too many changes in one minute. They will be sent again in a moment.')
+  }
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const loaded = await deps.load(req.workspace)
@@ -82,6 +93,10 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         // Ids the browser already used are kept, so the page it shows still finds the record, but only fresh ones.
         const ids = Array.isArray(c.ids) ? c.ids.filter((x): x is string => typeof x === 'string') : undefined
         if (ids?.some((id) => !ID.test(id) || JSON.stringify(doc).includes(`"${id}"`))) throw new Error('This change was already saved or is not valid')
+        // Requiring two-factor for others needs it for yourself first, or the admin could lock themselves out.
+        if (c.name === 'security.setTwoFactor' && (c.args as { required?: boolean })?.required && deps.user.aal !== 'aal2') {
+          throw new Error('Turn on two-factor login for yourself first (Security page), then require it for others')
+        }
         const out = applyCommand(doc, actor, { name: c.name, args: c.args } as Command, ids)
         doc = out.ws
         results.push({ ok: true, result: out.result })

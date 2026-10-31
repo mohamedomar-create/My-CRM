@@ -14,7 +14,9 @@
 >
 > **Phase 1.2, second part.** Formula fields built on cost (directly or through another formula, e.g. a margin) are hidden from people who can't see costs, in the app and by the server (`private.cost_keys`). Record lookups use an index, sorting works out each value once, tables show 100 rows at a time and boards 50 cards per column: searching 20,000 invoices takes about 35 ms. Still to come when a company passes roughly 10,000 records: the server sending one page at a time instead of every record the person may see.
 >
-> **Phase 1.3, first part (SECU-09, SECU-M4).** Invitations with a private, single-use link (7 days, bound to the invited e-mail, stored only as a hash), accept or decline in the app, cancel and re-send by admins, at most 50 a day per workspace. Admin rights on joining follow the person's current role. Members can no longer be added directly. A company switcher for people in several companies. **Second part, next:** two-factor login, idle lock, limits.
+> **Phase 1.3, first part (SECU-09, SECU-M4).** Invitations with a private, single-use link (7 days, bound to the invited e-mail, stored only as a hash), accept or decline in the app, cancel and re-send by admins, at most 50 a day per workspace. Admin rights on joining follow the person's current role. Members can no longer be added directly. A company switcher for people in several companies. Joining from a link needs no confirmation e-mail (the `join` server function creates the login already confirmed).
+>
+> **Phase 1.3, second part (SECU-11, SECU-12).** Two-factor login with an authenticator app, enforced by the server for anyone who turned it on, and optionally required by the company for admins and finance. Idle sign-out after 30 minutes. Limits: 120 changes per person per minute, 200,000 records and 200 people per workspace. Not done: CAPTCHA on sign-up (needs a CAPTCHA account; Supabase supports hCaptcha and Turnstile) and a list of active sessions.
 
 ## Executive summary
 

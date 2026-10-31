@@ -43,6 +43,10 @@ interface State {
   companies: Company[]
   /** invitations waiting for this person's answer */
   invitations: PendingInvitation[]
+  /** signed in with the password, and the 6-digit code from their authenticator app is still to come */
+  needCode: boolean
+  /** this login has two-factor turned on */
+  twoFactor: boolean
 }
 
 export interface Company {
@@ -66,7 +70,7 @@ interface Change {
   ids: string[]
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [] }
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -134,6 +138,14 @@ async function sendOnce() {
     if (status === 403) {
       pending = []
       publish((s) => { s.notice = { title: 'Your access was removed', text: 'An admin removed you from this workspace, so your latest changes could not be saved. You will be signed out.', signOut: true } })
+      return
+    }
+    if (status === 428) {
+      // Two-factor is needed first (the company now requires it, or the login has not passed the code step).
+      const dropped = pending.splice(0, batch.length).map((c) => c.label)
+      const text = await serverMessage(error)
+      publish((s) => { s.sync = 'reloaded'; s.notice = { title: 'Two-factor login needed', text, items: dropped } })
+      await reload(ws.id).catch((e: Error) => publish((s) => { s.loadError = e.message }))
       return
     }
     if (status === 400 || status === 413) {
@@ -367,13 +379,14 @@ function open(ws: Workspace, user: User) {
 /** Opens the workspace this account belongs to (the last one used, or a given one), or creates the one it registered for. */
 async function openFor(auth: AuthUser, wanted?: string) {
   const email = (auth.email ?? '').toLowerCase()
-  const [mine, invited] = await Promise.all([supabase.rpc('my_workspaces'), supabase.rpc('my_invitations')])
+  const [mine, invited, factors] = await Promise.all([supabase.rpc('my_workspaces'), supabase.rpc('my_invitations'), supabase.auth.mfa.listFactors()])
   if (mine.error) throw new Error(friendly(mine.error.message))
   const companies = (mine.data ?? []) as Company[]
   const invitations = (invited.data ?? []) as PendingInvitation[]
   publish((s) => {
     s.companies = companies
     s.invitations = invitations
+    s.twoFactor = Boolean(factors.data?.totp?.length)
   })
   if (companies.length === 0) {
     const company = auth.user_metadata?.company as string | undefined
@@ -430,7 +443,8 @@ export async function init() {
     await supabase.auth.signOut()
   } else if (data.session) {
     try {
-      await openFor(data.session.user)
+      if (await codeStillNeeded()) publish((s) => { s.needCode = true })
+      else await openFor(data.session.user)
     } catch (e) {
       // Keep the login; show what went wrong with a Retry button instead of silently signing out.
       publish((s) => { s.loadError = (e as Error).message })
@@ -471,17 +485,93 @@ export async function joinWithInvitation(token: string, name: string, password: 
   const { data, error } = await supabase.functions.invoke<{ email: string }>('join', { body: { token, name: name.trim(), password } })
   if (error) {
     // The server's message says what to do (sign in instead, ask for a new link…).
-    const ctx = (error as { context?: Response }).context
-    let message = error.message
-    try {
-      if (ctx && typeof ctx.json === 'function') message = ((await ctx.json()) as { error?: string }).error ?? message
-    } catch {
-      /* keep the generic message */
-    }
-    throw new Error(friendly(message))
+    throw new Error(friendly(await serverMessage(error)))
   }
   if (!data) throw new Error('No reply from the server')
   await signIn(data.email, password)
+}
+
+/** The message a server function sent with its error (the error itself only says "non-2xx status"). */
+async function serverMessage(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response }).context
+  try {
+    if (ctx && typeof ctx.json === 'function') return ((await ctx.clone().json()) as { error?: string }).error ?? (error as Error).message
+  } catch {
+    /* not JSON */
+  }
+  return (error as Error).message
+}
+
+/* ---------------- two-factor login (authenticator app) ---------------- */
+
+let pendingInvite: string | undefined
+
+/** True when this login has two-factor on but hasn't entered its code yet. */
+async function codeStillNeeded() {
+  const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+  return data?.nextLevel === 'aal2' && data.currentLevel !== 'aal2'
+}
+
+/** The sign-in code step: checks the 6-digit code, then opens the workspace. */
+export async function verifySignInCode(code: string) {
+  const { data } = await supabase.auth.mfa.listFactors()
+  const factor = data?.totp?.[0]
+  if (!factor) throw new Error('No authenticator app is set up for this login')
+  const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s/g, '') })
+  if (error) throw new Error(/invalid|expired/i.test(error.message) ? 'That code is not right or has expired. Enter the current code from your app.' : friendly(error.message))
+  publish((s) => { s.needCode = false })
+  const { data: auth } = await supabase.auth.getUser()
+  if (!auth.user) throw new Error('Please sign in again')
+  const invite = pendingInvite
+  pendingInvite = undefined
+  try {
+    if (invite) await respondInvitation(invite, true, false)
+    await openFor(auth.user, invite ? acceptedInto : undefined)
+  } catch (e) {
+    publish((s) => { s.loadError = (e as Error).message })
+  }
+}
+
+/** Starts setting up an authenticator app: returns the QR code to scan and the key to type in instead. */
+export async function startTwoFactorSetup(): Promise<{ factorId: string; qr: string; secret: string }> {
+  const { data: list } = await supabase.auth.mfa.listFactors()
+  // A setup that was started but never finished is replaced.
+  for (const f of list?.all ?? []) if (f.factor_type === 'totp' && f.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: f.id })
+  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Bonyan ${new Date().toISOString().slice(0, 10)}` })
+  if (error) throw new Error(friendly(error.message))
+  return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret }
+}
+
+/** Finishes the setup with the first code from the app. From now on this login asks for a code at every sign-in. */
+export async function finishTwoFactorSetup(factorId: string, code: string) {
+  const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: code.replace(/\s/g, '') })
+  if (error) throw new Error(/invalid|expired/i.test(error.message) ? 'That code is not right or has expired. Enter the current code from your app.' : friendly(error.message))
+  publish((s) => { s.twoFactor = true })
+}
+
+/** The authenticator apps set up for this login. */
+export async function twoFactorFactors() {
+  const { data, error } = await supabase.auth.mfa.listFactors()
+  if (error) throw new Error(friendly(error.message))
+  return (data?.totp ?? []).map((f) => ({ id: f.id, name: f.friendly_name ?? 'Authenticator app', created: f.created_at }))
+}
+
+/** Turns two-factor off for this login (only possible right after entering a code). */
+export async function removeTwoFactor(factorId: string) {
+  const { error } = await supabase.auth.mfa.unenroll({ factorId })
+  if (error) throw new Error(/aal2|assurance/i.test(error.message) ? 'Sign out and in again with your code, then turn it off.' : friendly(error.message))
+  publish((s) => { s.twoFactor = false })
+}
+
+/* ---------------- idle lock ---------------- */
+
+/** Signs out after this long without using the app, in any of its tabs. */
+export const IDLE_MINUTES = 30
+
+/** Ends the session because nobody used the app for a while; unsent changes are sent first. */
+export async function signOutIdle() {
+  await signOut()
+  publish((s) => { s.notice = { title: 'Signed out', text: `You were signed out after ${IDLE_MINUTES} minutes without activity, to keep your company's data safe. Sign in again to continue.` } })
 }
 
 /** Sends a reset link. It always looks the same whether or not the e-mail has an account. */
@@ -510,6 +600,12 @@ export async function hasSession() {
 export async function signIn(email: string, password: string, inviteId?: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
   if (error) throw new Error(friendly(error.message))
+  if (await codeStillNeeded()) {
+    // The invitation is accepted after the code, when the login is complete.
+    pendingInvite = inviteId
+    publish((s) => { s.needCode = true })
+    return
+  }
   try {
     if (inviteId) await respondInvitation(inviteId, true, false)
     await openFor(data.user, inviteId ? acceptedInto : undefined)
@@ -545,6 +641,8 @@ export async function signOut() {
       s.prefs = {}
       s.companies = []
       s.invitations = []
+      s.needCode = false
+      s.twoFactor = false
     })
   }
 }

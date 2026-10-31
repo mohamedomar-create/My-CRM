@@ -43,6 +43,7 @@ export interface CommandArgs {
   'team.addUser': { id: string; name: string; email: string; roleId: string }
   'team.setRole': { userId: string; roleId: string }
   'team.removeUser': { userId: string }
+  'security.setTwoFactor': { required: boolean }
 }
 
 export type CommandName = keyof CommandArgs
@@ -183,6 +184,12 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       if (!target) throw new EngineError('This person is no longer in the team')
       if (!roleExists(ws, a.roleId)) throw new EngineError('That role no longer exists')
       target.roleId = a.roleId
+    },
+  },
+  'security.setTwoFactor': {
+    admin: true,
+    run: (ws, _u, a) => {
+      ws.security = { ...ws.security, requireTwoFactor: Boolean(a.required) }
     },
   },
   'team.removeUser': {

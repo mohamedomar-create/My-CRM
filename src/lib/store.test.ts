@@ -14,6 +14,7 @@ type Row = Record<string, unknown>
 const db: { workspaces: Row[]; workspace_members: Row[]; member_prefs: Row[]; audit: Row[] } = { workspaces: [], workspace_members: [], member_prefs: [], audit: [] }
 const net = { down: false, invokes: 0, sent: [] as string[][] }
 const invitations: { id: string; workspace: string }[] = []
+const mfa = { on: false, level: 'aal1' }
 
 /** Just enough of the supabase-js query builder for the store's reads. */
 function query(table: keyof typeof db) {
@@ -101,6 +102,11 @@ vi.mock('./supabase', () => ({
       signInWithPassword: async ({ email }: { email: string }) => ({ data: { user: { email, user_metadata: {} } }, error: null }),
       signOut: async () => ({ error: null }),
       getUser: async () => ({ data: { user: { email: 'mona@co.eg', user_metadata: {} } }, error: null }),
+      mfa: {
+        getAuthenticatorAssuranceLevel: async () => ({ data: { currentLevel: mfa.level, nextLevel: mfa.on ? 'aal2' : 'aal1' }, error: null }),
+        listFactors: async () => ({ data: { all: [], totp: mfa.on ? [{ id: 'f1', friendly_name: 'Phone', created_at: '' }] : [] }, error: null }),
+        challengeAndVerify: async ({ code }: { code: string }) => (code === '123456' ? ((mfa.level = 'aal2'), { data: {}, error: null }) : { data: null, error: { message: 'Invalid TOTP code entered' } }),
+      },
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     },
   },
@@ -125,6 +131,8 @@ const localCustomers = () => list(store.currentWorkspace()!, accounts).map((r) =
 const addCustomer = (name: string) => store.run('record.create', { module: accounts, values: { name } }, `Customer ${name}`) as { id: string }
 
 beforeEach(async () => {
+  mfa.on = false
+  mfa.level = 'aal1'
   net.down = false
   net.invokes = 0
   net.sent = []
@@ -242,6 +250,19 @@ describe('browser store with server commands', () => {
     await store.signOut()
     await store.signIn('mona@co.eg', 'x', 'inv-1')
     expect(store.currentWorkspace()!.id).toBe('ws_invited')
+  })
+
+  it('with two-factor on, the workspace opens only after the right code', async () => {
+    await store.signOut()
+    mfa.on = true
+    await store.signIn('mona@co.eg', 'x')
+    expect(store.getState().needCode).toBe(true)
+    expect(store.currentWorkspace()).toBeUndefined()
+    await expect(store.verifySignInCode('000000')).rejects.toThrow(/not right/)
+    await store.verifySignInCode('123 456')
+    expect(store.getState().needCode).toBe(false)
+    expect(store.currentWorkspace()!.id).toBe('ws_test')
+    expect(store.getState().twoFactor).toBe(true)
   })
 
   it('signs out even when the last send fails', async () => {
