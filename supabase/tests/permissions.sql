@@ -276,5 +276,28 @@ select pg_temp.allowed('declining an invitation', $q$select public.respond_invit
 select pg_temp.check('declining does not make you a member', (select count(*) = 0 from public.my_workspaces()));
 reset role;
 
+-- Joining by link (the join server function): only the server can accept by link, and only an open invitation.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+create temp table inv6 as select public.create_invitation('ws_books000001', 'link@test.dev', false) as token;
+grant select on inv6 to service_role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000f2","email":"link@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a person accepts by link without the server', $q$select public.accept_invitation_token((select token from inv6))$q$);
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select pg_temp.check('the server can read what a link is for', (select status = 'open' from public.invitation_by_token((select token from inv6))));
+select pg_temp.blocked('the server accepts with a wrong link', $q$select public.accept_invitation_token('ffffffffffffffffffffffffffffffff')$q$);
+select pg_temp.allowed('the server accepts an open invitation by its link', $q$select public.accept_invitation_token((select token from inv6))$q$);
+select pg_temp.blocked('the same link is used twice', $q$select public.accept_invitation_token((select token from inv6))$q$);
+reset role;
+set role authenticated;
+select pg_temp.blocked('a person looks up whether an e-mail has a login', $q$select * from public.login_for_email('owner@test.dev')$q$);
+reset role;
+set role service_role;
+select pg_temp.check('the server sees an unconfirmed login as unconfirmed', (select not confirmed from public.login_for_email('Owner@Test.dev')));
+reset role;
+select pg_temp.check('joining by link made them a member', (select count(*) = 1 from public.workspace_members where workspace_id = 'ws_books000001' and email = 'link@test.dev' and not is_admin));
+
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

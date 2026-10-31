@@ -4,3 +4,7 @@ project_id = "npnhoywlxidojqoijqdu"
 [functions.command]
 # The gateway checks the login token; the function then checks membership and rights itself.
 verify_jwt = true
+
+[functions.join]
+# People joining from an invitation link aren't signed in yet; the function itself requires a valid, open invitation.
+verify_jwt = false

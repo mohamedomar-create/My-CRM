@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, MailOpen } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { invitationByToken, register, signIn } from '../lib/store'
+import { invitationByToken, joinWithInvitation, register, signIn } from '../lib/store'
 
 const INVITE_PROBLEM: Record<string, string> = {
   accepted: 'This invitation was already accepted. Sign in to open the company.',
@@ -48,7 +48,11 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
     }
     setBusy(true)
     try {
-      if (creating) {
+      if (mode === 'join' && invite) {
+        // A valid invitation link: the login is created already confirmed, no e-mail needed.
+        await joinWithInvitation(token, name, password)
+        nav('/app')
+      } else if (creating) {
         const result = await register(mode === 'register' ? company : '', name, email, password, invite ? { id: invite.id, token } : undefined)
         if (result === 'confirm') setSent(true)
         else nav(mode === 'register' ? '/onboarding' : '/app')
