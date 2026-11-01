@@ -1,9 +1,10 @@
 // The accounting tools of Phase 2A.1: journal vouchers, the chart of accounts, opening balances, stock adjustments and
 // counts. Every action is a server command; the engine checks the rules (balance, control accounts, permissions).
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, booksHealth, list, money, onHand, profitAndLoss, round2, todayISO } from '../lib/engine'
+import { accountBalance, booksHealth, form41Csv, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
+import { whtName } from '../lib/tax'
 import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 
@@ -417,6 +418,121 @@ export function CloseBooks() {
           <div><button className="danger" type="submit"><Unlock size={14} /> Reopen</button></div>
         </form>
       )}
+    </div>
+  )
+}
+
+/* ---------------- VAT return and withholding tax (2A.4) ---------------- */
+
+function download(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function endedMonths(today: string, n = 24) {
+  const out: string[] = []
+  let [y, m] = today.slice(0, 7).split('-').map(Number)
+  for (let i = 0; i < n; i++) {
+    m -= 1
+    if (m === 0) { m = 12; y -= 1 }
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+  }
+  return out
+}
+
+export function TaxReturns() {
+  const { ws, schema, act } = useApp()
+  const cur = schema.company.currency
+  const today = todayISO()
+  const months = endedMonths(today)
+  const [month, setMonth] = useState(months[0])
+  const r = vatReturn(ws, schema, month)
+  const lock = ws.books?.lockDate
+  const closed = Boolean(lock && lock >= r.to)
+  const later = (ws.books?.vatReturns ?? []).some((v) => v.month > month)
+  const quarters = Array.from({ length: 8 }, (_, i) => {
+    const q0 = Math.floor((Number(today.slice(5, 7)) - 1) / 3) - i
+    const year = Number(today.slice(0, 4)) + Math.floor(q0 / 4)
+    return { year, quarter: (((q0 % 4) + 4) % 4 + 1) as 1 | 2 | 3 | 4 }
+  })
+  const [qi, setQi] = useState(quarters.length > 1 ? 1 : 0)
+  const { year, quarter } = quarters[qi]
+  const w = withholdingTax(ws, year, quarter)
+  const box = (title: string, rows: VatBox[], total: number) => (
+    <div className="table-wrap">
+      <table className="data">
+        <thead><tr><th>{title}</th><th className="num">Value before VAT</th><th className="num">VAT</th></tr></thead>
+        <tbody>
+          {rows.length === 0 && <tr><td colSpan={3} className="muted">Nothing this month.</td></tr>}
+          {rows.map((b) => <tr key={b.code}><td><span className="mono">{b.code}</span> {b.name}</td><td className="num">{money(b.base, cur)}</td><td className="num">{money(b.vat, cur)}</td></tr>)}
+        </tbody>
+        <tfoot><tr><td>Total</td><td className="num">{money(round2(rows.reduce((s, b) => s + b.base, 0)), cur)}</td><td className="num">{money(total, cur)}</td></tr></tfoot>
+      </table>
+    </div>
+  )
+  const whtTable = (rows: WhtRow[], who: string) => (
+    <div className="table-wrap">
+      <table className="data">
+        <thead><tr><th>Date</th><th>{who}</th><th>Tax reg. no.</th><th>Nature</th><th className="num">Before VAT</th><th className="num">Tax</th></tr></thead>
+        <tbody>
+          {rows.length === 0 && <tr><td colSpan={6} className="muted">None this quarter.</td></tr>}
+          {rows.map((x, i) => <tr key={i}><td>{x.date}</td><td>{x.name}</td><td className="mono">{x.taxId || <span className="pill red tiny">missing</span>}</td><td>{whtName(x.rate)}</td><td className="num">{money(x.base, cur)}</td><td className="num">{money(x.amount, cur)}</td></tr>)}
+        </tbody>
+      </table>
+    </div>
+  )
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <div className="row between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <h2 style={{ margin: 0 }}>VAT return</h2>
+          <label className="field" style={{ width: 200 }}>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{mo}</option>)}</select></label>
+        </div>
+        {box('Sales (output VAT)', r.sales, r.output)}
+        {box('Purchases (input VAT)', r.purchases, r.input)}
+        <div className="table-wrap">
+          <table className="data">
+            <tbody>
+              <tr><td>Output VAT − input VAT</td><td className="num">{money(r.due, cur)}</td></tr>
+              {r.carried > 0 && <tr><td>Credit carried from earlier months</td><td className="num">− {money(r.carried, cur)}</td></tr>}
+            </tbody>
+            <tfoot><tr><td>{r.due < 0 ? 'Credit to carry forward' : 'To pay to the Tax Authority'}</td><td className="num">{money(r.due < 0 ? -r.due : r.toPay, cur)}</td></tr></tfoot>
+          </table>
+        </div>
+        <div className={r.matches ? 'ok-box row' : 'error-box row'} style={{ gap: 8 }}>
+          {r.matches ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          {r.matches ? 'The documents agree with the VAT accounts (2200 and 1400) for this month.' : `The VAT accounts show output ${money(r.ledger.output, cur)} and input ${money(r.ledger.input, cur)}, which differ from the documents. Contact support before filing.`}
+        </div>
+        {r.settled
+          ? <div className="info row" style={{ gap: 8 }}><Lock size={16} /> Settled on {r.settled.at.slice(0, 10)}: {money(Math.abs(r.settled.due), cur)} {r.settled.due >= 0 ? 'moved to 2210 VAT due to the Tax Authority' : 'credit kept in 2210'}. Record the payment to the Authority with a journal voucher (debit 2210, credit the bank).</div>
+          : (
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <button className="primary" disabled={!closed || later || !r.matches} onClick={() => confirm(`Settle the VAT for ${month}? Output and input VAT move to 2210 VAT due to the Tax Authority, dated ${r.to}.`) && act('vat.settle', { month }, `VAT for ${month} settled`, `Settled VAT for ${month}`)}>
+                <FileCheck size={14} /> Settle VAT for {month}
+              </button>
+              {!closed && <span className="small muted">Close {month} first (Close the books tab), so its figures can’t change after you file.</span>}
+              {closed && later && <span className="small muted">A later month is already settled.</span>}
+            </div>
+          )}
+      </div>
+
+      <div className="card stack">
+        <div className="row between" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <h2 style={{ margin: 0 }}>Withholding tax (Form 41)</h2>
+          <label className="field" style={{ width: 200 }}>Quarter<select value={qi} onChange={(e) => setQi(Number(e.target.value))}>{quarters.map((q, i) => <option key={i} value={i}>Q{q.quarter} {q.year}</option>)}</select></label>
+        </div>
+        <p className="small muted" style={{ margin: 0 }}>Choose the withholding rate when you register a payment. What you keep back from suppliers is owed to the Tax Authority (account 2400) and goes on Form 41; what customers deduct from you is a claim (account 1450), to match against the certificates they send.</p>
+        <h3 style={{ margin: 0 }}>Kept back from suppliers: {money(w.totalWithheld, cur)}</h3>
+        {whtTable(w.withheld, 'Supplier')}
+        {w.missingTaxIds.length > 0 && <div className="error-box">Add the tax registration number of {w.missingTaxIds.join(', ')} before filing.</div>}
+        <div><button className="secondary" disabled={!w.withheld.length} onClick={() => download(`form-41-${year}-Q${quarter}.csv`, form41Csv(ws, year, quarter))}><Download size={14} /> Download Form 41 (CSV)</button></div>
+        <h3 style={{ margin: 0 }}>Deducted by customers: {money(w.totalDeducted, cur)}</h3>
+        {whtTable(w.deducted, 'Customer')}
+      </div>
     </div>
   )
 }

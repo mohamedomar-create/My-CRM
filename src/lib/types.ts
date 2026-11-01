@@ -11,6 +11,8 @@ export interface Line {
   price: number
   discount: number
   vat: number
+  /** the tax code (see tax.ts); when set, the VAT rate follows it */
+  taxCode?: string
   /** on a credit or debit note: the line of the original document it gives back */
   from?: string
 }
@@ -76,6 +78,8 @@ export interface Payment {
   sample?: boolean
   /** this row cancels the payment with this id (its amount is negative) */
   reverses?: string
+  /** withholding tax kept back from this payment: `amount` settles the document, `amount − wht.amount` changed hands */
+  wht?: { rate: number; base: number; amount: number }
 }
 
 export interface Note {
@@ -158,7 +162,12 @@ export interface Workspace {
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
   /** closing the books: nothing can be posted on or before lockDate; the years closed to retained earnings */
-  books?: { lockDate?: string; closedYears?: { year: number; at: string; by: string; entry: string }[] }
+  books?: {
+    lockDate?: string
+    closedYears?: { year: number; at: string; by: string; entry: string }[]
+    /** monthly VAT returns settled: output and input moved to 2210 by the entry */
+    vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
+  }
   /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
   chart?: import('./accounts').Account[]
   /** company-wide security settings (admins only) */
