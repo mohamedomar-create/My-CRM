@@ -11,6 +11,8 @@ export interface Line {
   price: number
   discount: number
   vat: number
+  /** on a credit or debit note: the line of the original document it gives back */
+  from?: string
 }
 
 export interface Rec {
@@ -72,6 +74,8 @@ export interface Payment {
   direction: 'in' | 'out'
   ref: string
   sample?: boolean
+  /** this row cancels the payment with this id (its amount is negative) */
+  reverses?: string
 }
 
 export interface Note {

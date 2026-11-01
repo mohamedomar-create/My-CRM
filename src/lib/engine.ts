@@ -3,7 +3,7 @@
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, Approval, JournalEntry, Line, Rec, User, Workspace } from './types'
+import type { AccountCode, Approval, JournalEntry, Line, Payment, Rec, User, Workspace } from './types'
 import { account as findAccount, chartOf, type AccountType } from './accounts'
 
 export class EngineError extends Error {}
@@ -638,7 +638,8 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   const mod = moduleById(ctx.schema, rec.module)!
   if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can void documents')
   if (rec.status === 'draft' || rec.status === 'void') throw new EngineError('Only posted documents can be voided')
-  if (Number(rec.values.paid) > 0) throw new EngineError('This document has payments. Refund or reverse them before voiding.')
+  if (Number(rec.values.paid) > 0) throw new EngineError(rec.values.credit_for ? 'This credit note was refunded. Reverse the refund before voiding.' : 'This document has payments. Reverse them before voiding.')
+  if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
   const date = todayISO()
   const moves = ctx.ws.data.stock.filter((s) => s.doc === rec.id && !s.ref.startsWith('VOID'))
   // A bill can only be voided while its goods are still in stock; otherwise they were sold and a purchase return is needed.
@@ -672,6 +673,12 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   }
   rec.status = 'void'
   rec.values.balance = 0
+  // A voided credit note no longer reduces what was owed on the original document.
+  const orig = rec.values.credit_for ? findRecord(ctx.ws, String(rec.values.credit_for)) : undefined
+  if (orig) {
+    orig.values.credited = round2(Number(orig.values.credited ?? 0) - Number(rec.values.applied ?? 0))
+    refreshBalance(orig)
+  }
   log(ctx, `voided ${mod.singular} ${rec.number}`, rec)
 }
 
@@ -679,6 +686,7 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   const mod = moduleById(ctx.schema, rec.module)!
   if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can register payments')
   if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('Post the document before registering a payment')
+  if (rec.values.credit_for) throw new EngineError('This is a credit note: use Refund to pay its credit back')
   amount = round2(amount)
   const balance = round2(Number(rec.values.balance))
   if (!(amount > 0)) throw new EngineError('Payment amount must be more than 0')
@@ -695,8 +703,7 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
       : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }],
   }, rec)
   rec.values.paid = round2(Number(rec.values.paid) + amount)
-  rec.values.balance = round2(Number(rec.values.total) - Number(rec.values.paid))
-  rec.status = Number(rec.values.balance) === 0 ? 'paid' : 'partial'
+  refreshBalance(rec)
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
 }
 
@@ -734,6 +741,200 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
 }
 
 /* ---------------- accounting views ---------------- */
+
+/* ---------------- credit and debit notes, refunds, payment reversals ---------------- */
+
+/**
+ * What is still owed on a document. Invoices and bills: total − paid − credited by credit notes. Credit notes (their
+ * total is negative): the credit not yet used against the original document or refunded, as a negative balance.
+ */
+function refreshBalance(rec: Rec) {
+  const total = Number(rec.values.total ?? 0)
+  const paid = Number(rec.values.paid ?? 0)
+  if (rec.values.credit_for) {
+    rec.values.balance = round2(total + Number(rec.values.applied ?? 0) + paid)
+  } else {
+    rec.values.balance = round2(total - paid - Number(rec.values.credited ?? 0))
+  }
+  if (rec.status === 'void' || rec.status === 'draft') return
+  rec.status = rec.values.balance === 0 ? 'paid' : paid !== 0 || Number(rec.values.credited ?? 0) !== 0 ? 'partial' : 'posted'
+}
+
+/** The credit (or debit) notes issued against a document and not voided. */
+export function creditNotesOf(ws: Workspace, rec: Rec): Rec[] {
+  return list(ws, rec.module).filter((r) => r.values.credit_for === rec.id && r.status !== 'void')
+}
+
+/** How much of an original line was already given back on earlier notes. */
+function creditedQty(ws: Workspace, rec: Rec, lineId: string) {
+  return round4(creditNotesOf(ws, rec).reduce((s, cn) => s + (cn.lines ?? []).filter((l) => l.from === lineId).reduce((t, l) => t + l.qty, 0), 0))
+}
+
+/** The cost per unit at which an invoice took a product out of stock (what returned units go back in at). */
+function issueCost(ws: Workspace, rec: Rec, product: string) {
+  const moves = ws.data.stock.filter((m) => m.doc === rec.id && m.product === product && m.qty < 0 && !m.ref.startsWith('VOID'))
+  const qty = moves.reduce((s, m) => s + -m.qty, 0)
+  const value = moves.reduce((s, m) => s + -(m.value ?? m.qty * m.cost), 0)
+  return qty ? value / qty : 0
+}
+
+export interface CreditLine {
+  /** the original document's line */
+  line: string
+  qty: number
+  /** price per unit to credit; defaults to the original price (lower = a price allowance) */
+  price?: number
+}
+
+/**
+ * A credit note (on a sales invoice) or debit note (on a purchase bill): goods returned or a price reduced after the
+ * document was posted. It reverses the revenue or cost, the VAT and, for returned goods, the stock; the credit first
+ * reduces what is still owed on the original document, and any rest stays as the customer's or supplier's credit.
+ */
+export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; date: string; reason: string; restock?: boolean }) {
+  needFinance(ctx, 'issue credit and debit notes')
+  const orig = findRecord(ctx.ws, origId)
+  const mod = orig ? moduleById(ctx.schema, orig.module) : undefined
+  if (!orig || !mod || (mod.role !== 'invoices' && mod.role !== 'purchases')) throw new EngineError('Credit notes are issued on posted invoices and bills')
+  if (orig.values.credit_for) throw new EngineError('A credit note can’t be credited again')
+  if (orig.status === 'draft' || orig.status === 'void') throw new EngineError('Only a posted document can be credited')
+  noRealPostingOverSamples(ctx)
+  const sales = mod.role === 'invoices'
+  const date = String(n.date ?? '')
+  if (!ISO_DATE.test(date)) throw new EngineError('Choose the date')
+  if (date < String(orig.values.date)) throw new EngineError('A credit note can’t be dated before the original document')
+  const reason = String(n.reason ?? '').trim()
+  if (reason.length < 3) throw new EngineError('Give the reason (e.g. goods returned, price agreed lower)')
+
+  const lines: Line[] = []
+  for (const c of n.lines ?? []) {
+    const qty = round4(Number(c.qty))
+    if (!qty) continue
+    const ol = (orig.lines ?? []).find((l) => l.id === c.line)
+    if (!ol) throw new EngineError('That line isn’t on the original document')
+    if (qty < 0) throw new EngineError('Quantities on a credit note are positive')
+    const left = round4(ol.qty - creditedQty(ctx.ws, orig, ol.id))
+    if (qty > left) throw new EngineError(`Only ${left} of “${ol.description}” can still be credited`)
+    const price = c.price === undefined || c.price === null ? ol.price : round2(Number(c.price))
+    if (!(price >= 0) || price > ol.price) throw new EngineError(`The price for “${ol.description}” can be lowered, but not above the original ${money(ol.price, ctx.schema.company.currency)}`)
+    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, from: ol.id })
+  }
+  if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
+  const t = totals(lines)
+  const already = creditNotesOf(ctx.ws, orig).reduce((s, cn) => s - Number(cn.values.total ?? 0), 0)
+  if (round2(already + t.total) > round2(Number(orig.values.total))) throw new EngineError('The credit notes would be more than the original document')
+
+  const prefix = sales ? 'CN' : 'DN'
+  const number = nextNumber(ctx, prefix, date, Boolean(ctx.sample || orig.sample))
+  const party = sales ? 'customer' : 'supplier'
+  const rec = createRecord(ctx, orig.module, { [party]: orig.values[party], date, due_date: date }, { silent: true, lines })
+  if (orig.sample) rec.sample = true
+
+  const restock = n.restock !== false
+  const jl: { account: string; debit: number; credit: number }[] = []
+  if (sales) {
+    jl.push({ account: '4000', debit: t.subtotal, credit: 0 }, { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
+    if (restock) {
+      for (const l of lines) {
+        const p = productRec(ctx, l.product)
+        if (!p || !p.values.track_stock) continue
+        const value = round2(l.qty * issueCost(ctx.ws, orig, p.id))
+        const oldValue = stockValue(ctx.ws, p)
+        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date }, rec))
+        setValuation(ctx.ws, p, oldValue + value)
+        jl.push(side('1300', value), side('5000', -value))
+      }
+    }
+  } else {
+    jl.push({ account: '2100', debit: t.total, credit: 0 }, { account: '1400', debit: 0, credit: t.tax })
+    let services = 0
+    for (const l of lines) {
+      const p = productRec(ctx, l.product)
+      const net = lineNet(l)
+      if (!p || !p.values.track_stock) { services = round2(services + net); continue }
+      if (!restock) { jl.push(side('5000', -net)); continue }
+      // Goods sent back leave stock at the price they were bought for.
+      const have = onHand(ctx.ws, p.id)
+      if (have < l.qty) throw new EngineError(`Only ${have} ${p.values.name} are in stock to send back`)
+      const oldValue = stockValue(ctx.ws, p)
+      const value = round2(net)
+      if (have - l.qty > 0 && oldValue - value < 0) throw new EngineError(`${p.values.name} was already charged to sales at a lower cost; record the return with less value or as a price reduction`)
+      const out = have === l.qty ? oldValue : value
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -l.qty, cost: round4(net / l.qty), value: -out, doc: rec.id, ref: number, date }, rec))
+      setValuation(ctx.ws, p, oldValue - out)
+      jl.push(side('1300', -out))
+      if (round2(value - out)) jl.push(side('5000', round2(out - value)))
+    }
+    if (services) jl.push(side('5100', -services))
+  }
+  journal(ctx, { date, ref: number, memo: `${sales ? 'Credit note' : 'Debit note'} ${number} for ${orig.number}: ${reason}`, doc: rec.id, lines: jl }, rec)
+
+  // The credit first reduces what is still owed on the original document.
+  const open = Math.max(0, Number(orig.values.balance ?? 0))
+  const applied = round2(Math.min(open, t.total))
+  orig.values.credited = round2(Number(orig.values.credited ?? 0) + applied)
+  refreshBalance(orig)
+  rec.number = number
+  rec.status = 'posted'
+  rec.postedAt = nowISO()
+  rec.values.subtotal = -t.subtotal
+  rec.values.tax = -t.tax
+  rec.values.total = -t.total
+  rec.values.credit_for = orig.id
+  rec.values.reason = reason
+  rec.values.applied = applied
+  rec.values.paid = 0
+  refreshBalance(rec)
+  log(ctx, `issued ${sales ? 'credit' : 'debit'} note ${number} for ${orig.number} (${reason})`, orig)
+  return rec
+}
+
+/** Pays back a credit: money to the customer for a credit note, or from the supplier for a debit note. */
+export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method']) {
+  needFinance(ctx, 'register refunds')
+  const rec = findRecord(ctx.ws, id)
+  const mod = rec ? moduleById(ctx.schema, rec.module) : undefined
+  if (!rec || !mod || !rec.values.credit_for) throw new EngineError('Refunds are made on credit and debit notes')
+  if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('There is no credit left to refund')
+  amount = round2(Number(amount))
+  const left = round2(-Number(rec.values.balance ?? 0))
+  if (!(amount > 0)) throw new EngineError('The refund must be more than 0')
+  if (amount > left) throw new EngineError(`Only ${money(left, ctx.schema.company.currency)} of credit is left`)
+  if (!ISO_DATE.test(String(date)) || date < String(rec.values.date)) throw new EngineError('The refund can’t be dated before the credit note')
+  const sales = mod.role === 'invoices'
+  const ref = `REF-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
+  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref }, rec))
+  journal(ctx, {
+    date, ref, memo: `Refund on ${rec.number}`, doc: rec.id,
+    lines: sales ? [{ account: '1200', debit: amount, credit: 0 }, { account: '1100', debit: 0, credit: amount }] : [{ account: '1100', debit: amount, credit: 0 }, { account: '2100', debit: 0, credit: amount }],
+  }, rec)
+  rec.values.paid = round2(Number(rec.values.paid ?? 0) + amount)
+  refreshBalance(rec)
+  log(ctx, `refunded ${money(amount, ctx.schema.company.currency)} on ${rec.number}`, rec)
+}
+
+/** Cancels a payment or refund entered by mistake: the original stays, an opposite row and entry cancel it. */
+export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date = todayISO()) {
+  needFinance(ctx, 'reverse payments')
+  const p = ctx.ws.data.payments.find((x) => x.id === paymentId)
+  if (!p) throw new EngineError('That payment doesn’t exist')
+  if (p.reverses || p.amount < 0) throw new EngineError('This is itself a reversal')
+  if (ctx.ws.data.payments.some((x) => x.reverses === p.id)) throw new EngineError('This payment was already reversed')
+  const why = String(reason ?? '').trim()
+  if (why.length < 3) throw new EngineError('Give the reason for reversing the payment')
+  if (!ISO_DATE.test(String(date)) || date < p.date) throw new EngineError('The reversal can’t be dated before the payment')
+  const rec = findRecord(ctx.ws, p.doc)
+  if (!rec) throw new EngineError('The payment’s document no longer exists')
+  if (rec.status === 'void') throw new EngineError('The document was voided')
+  const je = ctx.ws.data.journal.find((j) => j.ref === p.ref && j.doc === p.doc)
+  if (!je) throw new EngineError('The payment’s journal entry is missing')
+  const ref = `REV ${p.ref}`
+  ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id }, rec))
+  journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+  rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
+  refreshBalance(rec)
+  log(ctx, `reversed payment ${p.ref} (${why})`, rec)
+}
 
 /* ---------------- ledger: chart of accounts, journal vouchers, opening balances, stock adjustments ---------------- */
 
@@ -1375,11 +1576,12 @@ export function ageing(ws: Workspace, schema: AppSchema, role: 'invoices' | 'pur
   for (const r of list(ws, mod.id)) {
     if (r.status !== 'posted' && r.status !== 'partial') continue
     const bal = Number(r.values.balance ?? 0)
-    if (bal <= 0) continue
+    // An unused credit (a credit note not yet refunded or used) counts as not yet due, so the total matches the books.
+    if (bal === 0) continue
     const party = String(r.values[role === 'invoices' ? 'customer' : 'supplier'] ?? '')
     const row = rows.get(party) ?? { party, name: recordTitle(ws, schema, findRecord(ws, party)), current: 0, d30: 0, d60: 0, d90: 0, over90: 0, total: 0 }
     const late = Math.floor((Date.parse(today) - Date.parse(String(r.values.due_date ?? r.values.date))) / 86_400_000)
-    const bucket = late <= 0 ? 'current' : late <= 30 ? 'd30' : late <= 60 ? 'd60' : late <= 90 ? 'd90' : 'over90'
+    const bucket = late <= 0 || bal < 0 ? 'current' : late <= 30 ? 'd30' : late <= 60 ? 'd60' : late <= 90 ? 'd90' : 'over90'
     row[bucket] = round2(row[bucket] + bal)
     row.total = round2(row.total + bal)
     rows.set(party, row)

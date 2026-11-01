@@ -6,7 +6,7 @@ import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type Rec, type User, type Workspace } from './types'
 import {
-  accountBalance, addAccount, adjustStock, countStock, createRecord, list, manualJournal, onHand, openingBalance, postDocument, registerPayment,
+  accountBalance, addAccount, adjustStock, countStock, createRecord, creditNote, list, manualJournal, onHand, openingBalance, postDocument, refundCredit, registerPayment, reversePayment,
   reverseJournal, stockValue, trialBalance, updateAccount, voidDocument, type Ctx,
 } from './engine'
 import { chartOf } from './accounts'
@@ -191,5 +191,81 @@ describe('stock adjustments and counts', () => {
     const { ws, schema, ctx, product } = setup()
     seedSampleData(ws, schema, admin)
     expect(() => adjustStock(ctx, { product: product.id, qty: 1, unitCost: 1, reason: 'Found', date: '2026-01-01' })).toThrow(/sample data/)
+  })
+})
+
+describe('credit notes, debit notes, refunds and payment reversals', () => {
+  function sold() {
+    const s = setup()
+    const { ctx, mod, product, customer, supplier } = s
+    const line = (qty: number, price: number) => [{ id: uid('l'), product: product.id, description: 'Rice', qty, price, discount: 0, vat: 14 }]
+    const bill = createRecord(ctx, mod('purchases'), { supplier: supplier.id, date: '2026-01-02' }, { lines: line(10, 30) })
+    postDocument(ctx, bill)
+    const inv = createRecord(ctx, mod('invoices'), { customer: customer.id, date: '2026-01-05' }, { lines: line(4, 100) })
+    postDocument(ctx, inv)
+    return { ...s, bill, inv }
+  }
+
+  it('returned goods: revenue, VAT and receivable are reversed, the goods go back at what they cost', () => {
+    const { ws, schema, ctx, inv, product } = sold()
+    const cn = creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 1 }], date: '2026-01-06', reason: 'Damaged bag returned' })
+    expect(cn).toMatchObject({ number: 'CN-2026-0001', status: 'paid' })
+    expect(cn.values.total).toBe(-114)
+    expect(inv.values.balance).toBe(342)
+    expect(onHand(ws, product.id)).toBe(7)
+    expect(accountBalance(ws, '4000')).toBe(-300)
+    expect(accountBalance(ws, '5000')).toBe(90)
+    healthy(ws, schema)
+  })
+
+  it('a credit on a paid invoice stays as the customer’s credit, and can be refunded', () => {
+    const { ws, schema, ctx, inv } = sold()
+    registerPayment(ctx, inv, 456, '2026-01-07', 'cash')
+    const cn = creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 4, price: 25 }], date: '2026-01-08', reason: 'Price agreed lower', restock: false })
+    expect(cn.values.balance).toBe(-114)
+    healthy(ws, schema)
+    expect(() => refundCredit(ctx, cn.id, 200, '2026-01-09', 'cash')).toThrow(/Only/)
+    refundCredit(ctx, cn.id, 114, '2026-01-09', 'cash')
+    expect(cn.status).toBe('paid')
+    healthy(ws, schema)
+  })
+
+  it('can’t credit more than was sold, nor above the original price', () => {
+    const { ctx, inv } = sold()
+    creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 3 }], date: '2026-01-06', reason: 'Returned' })
+    expect(() => creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 2 }], date: '2026-01-06', reason: 'Returned' })).toThrow(/Only 1/)
+    expect(() => creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 1, price: 150 }], date: '2026-01-06', reason: 'Oops' })).toThrow(/not above/)
+  })
+
+  it('a debit note sends goods back to the supplier at their purchase price', () => {
+    const { ws, schema, ctx, bill, product } = sold()
+    const dn = creditNote(ctx, bill.id, { lines: [{ line: bill.lines![0].id, qty: 2 }], date: '2026-01-06', reason: 'Wrong grade sent back' })
+    expect(dn.number).toBe('DN-2026-0001')
+    expect(onHand(ws, product.id)).toBe(4)
+    expect(bill.values.balance).toBe(342 - 68.4)
+    healthy(ws, schema)
+  })
+
+  it('voiding: the original can’t be voided while it has credit notes; voiding the note restores the balance', () => {
+    const { ws, schema, ctx, inv } = sold()
+    const cn = creditNote(ctx, inv.id, { lines: [{ line: inv.lines![0].id, qty: 1 }], date: '2026-01-06', reason: 'Returned' })
+    expect(() => voidDocument(ctx, inv)).toThrow(/credit notes/)
+    voidDocument(ctx, cn)
+    expect(inv.values.balance).toBe(456)
+    voidDocument(ctx, inv)
+    healthy(ws, schema)
+  })
+
+  it('a payment entered by mistake is reversed, once, and the document is open again', () => {
+    const { ws, schema, ctx, inv } = sold()
+    registerPayment(ctx, inv, 100, '2026-01-07', 'cash')
+    const pay = ws.data.payments[0]
+    reversePayment(ctx, pay.id, 'Entered on the wrong invoice', '2026-01-07')
+    expect(inv.values.balance).toBe(456)
+    expect(inv.status).toBe('posted')
+    expect(() => reversePayment(ctx, pay.id, 'Again')).toThrow(/already reversed/)
+    expect(() => reversePayment(ctx, ws.data.payments[0].id, 'Undo the undo')).toThrow(/itself a reversal/)
+    voidDocument(ctx, inv)
+    healthy(ws, schema)
   })
 })

@@ -9,8 +9,8 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock,
-  type Ctx, type Adjustment, type VoucherLine,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment,
+  type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
 import { validate } from './validate'
@@ -53,6 +53,9 @@ export interface CommandArgs {
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'stock.adjust': Adjustment
   'stock.count': { date: string; counts: { product: string; counted: number }[]; note?: string }
+  'doc.creditNote': { id: string; lines: CreditLine[]; date: string; reason: string; restock?: boolean }
+  'doc.refund': { id: string; amount: number; date: string; method: Method }
+  'payment.reverse': { id: string; reason: string; date?: string }
   'security.setTwoFactor': { required: boolean }
 }
 
@@ -204,6 +207,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
   'stock.adjust': { run: (ws, u, a) => adjustStock(ctx(ws, u), a) },
   'stock.count': { run: (ws, u, a) => countStock(ctx(ws, u), a) },
+  'doc.creditNote': { run: (ws, u, a) => creditNote(ctx(ws, u), a.id, a).id },
+  'doc.refund': { run: (ws, u, a) => refundCredit(ctx(ws, u), a.id, Number(a.amount), String(a.date), a.method) },
+  'payment.reverse': { run: (ws, u, a) => reversePayment(ctx(ws, u), a.id, String(a.reason ?? ''), a.date) },
   'security.setTwoFactor': {
     admin: true,
     run: (ws, _u, a) => {
