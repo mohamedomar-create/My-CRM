@@ -15,6 +15,7 @@ import { NUMERIC_TYPES, isNumeric, slugKey, uid } from '../lib/schema'
 import { ROLES, buildModule } from '../lib/roles'
 import { fieldDependents, moduleDependents } from '../lib/validate'
 import { formulaRefs } from '../lib/formula'
+import { msg as msgText, tr } from '../lib/i18n'
 
 interface Props {
   focus: Focus
@@ -47,13 +48,13 @@ export default function ModulesTab({ focus, setFocus }: Props) {
         const via = mod.fields.find((f) => f.type === 'relation')
         const target = schema.modules.find((m) => m.id === via?.target)
         field.lookup = { via: via?.key ?? '', field: target?.fields.find((f) => f.key !== target.titleField)?.key ?? target?.titleField ?? '' }
-        field.label = target ? `${target.singular} ${target.fields.find((f) => f.key === field.lookup!.field)?.label.toLowerCase() ?? ''}`.trim() : 'Lookup'
+        field.label = target ? `${target.singular} ${target.fields.find((f) => f.key === field.lookup!.field)?.label.toLowerCase() ?? ''}`.trim() : tr('Lookup')
       }
       if (type === 'rollup') {
         const child = schema.modules.find((m) => m.id !== mod.id && m.fields.some((f) => f.type === 'relation' && f.target === mod.id))
         const via = child?.fields.find((f) => f.type === 'relation' && f.target === mod.id)
         field.rollup = { module: child?.id ?? '', via: via?.key ?? '', op: 'count' }
-        field.label = child ? `Number of ${child.name.toLowerCase()}` : 'Rollup'
+        field.label = child ? tr('Number of {what}', { what: child.name.toLowerCase() }) : tr('Rollup')
       }
       editMod((m) => {
         const idx = m.fields.findIndex((f) => f.id === over.id)
@@ -78,7 +79,7 @@ export default function ModulesTab({ focus, setFocus }: Props) {
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="three">
         <div className="pane side">
-          <h3>Modules</h3>
+          <h3>{tr('Modules')}</h3>
           {schema.modules.map((m) => (
             <button key={m.id} className={`mod-item ${m.id === mod.id ? 'on' : ''}`} onClick={() => setFocus({ moduleId: m.id })}>
               <span className="badge" style={{ background: m.color }}><Icon name={m.icon} size={15} /></span>
@@ -86,26 +87,26 @@ export default function ModulesTab({ focus, setFocus }: Props) {
               {modErrors(m.id) && <span className="err" />}
             </button>
           ))}
-          <button className="secondary" style={{ width: '100%', marginTop: 10 }} onClick={() => setAdding(true)}><Plus size={16} /> Add module</button>
+          <button className="secondary" style={{ width: '100%', marginTop: 10 }} onClick={() => setAdding(true)}><Plus size={16} /> {tr('Add module')}</button>
         </div>
 
         <div className="pane canvas">
           <div className="palette-bar">
-            <b className="small">Drag a field onto the form</b>
+            <b className="small">{tr('Drag a field onto the form')}</b>
             <div className="palette">
               {FIELD_TYPES.map((t) => <PaletteItem key={t.type} type={t.type} />)}
             </div>
-            <span className="tiny muted">Drag fields on the form to reorder them. Click one to edit it.</span>
+            <span className="tiny muted">{tr('Drag fields on the form to reorder them. Click one to edit it.')}</span>
           </div>
           <div className="form-preview">
             <div className="form-head" style={{ background: `linear-gradient(135deg, ${mod.color}, ${mod.color}bb)` }}>
               <Icon name={mod.icon} size={26} />
-              <input value={mod.name} onChange={(e) => editMod((m) => (m.name = e.target.value))} aria-label="Module name" />
+              <input value={mod.name} onChange={(e) => editMod((m) => (m.name = e.target.value))} aria-label={tr('Module name')} />
               <span className="grow" />
-              <span className="pill" style={{ background: '#ffffff26', color: '#fff' }}>{mod.role === 'custom' ? 'Custom module' : ROLES[mod.role].label}</span>
+              <span className="pill" style={{ background: '#ffffff26', color: '#fff' }}>{mod.role === 'custom' ? tr('Custom module') : ROLES[mod.role].label}</span>
             </div>
-            {mod.role !== 'custom' && <div className="info" style={{ margin: '14px 18px 0' }}>{ROLES[mod.role].description} Fields with a <Lock size={12} /> keep this working — rename and move them freely.</div>}
-            {mod.lines && <div className="note" style={{ margin: '10px 18px 0' }}>This is a document: it also gets a product lines table with quantity, price, discount and VAT. Totals are calculated by the system.</div>}
+            {mod.role !== 'custom' && <div className="info" style={{ margin: '14px 18px 0' }}>{msgText(ROLES[mod.role].description)} {tr('Fields with a')} <Lock size={12} /> {tr('keep this working — rename and move them freely.')}</div>}
+            {mod.lines && <div className="note" style={{ margin: '10px 18px 0' }}>{tr('This is a document: it also gets a product lines table with quantity, price, discount and VAT. Totals are calculated by the system.')}</div>}
             <Canvas mod={mod} selectedId={focus.fieldId} onSelect={(id) => setFocus({ moduleId: mod.id, fieldId: id })} />
           </div>
         </div>
@@ -140,7 +141,7 @@ function Canvas({ mod, selectedId, onSelect }: { mod: ModuleDef; selectedId?: st
     <SortableContext items={mod.fields.map((f) => f.id)} strategy={rectSortingStrategy}>
       <div ref={setNodeRef} className={`drop-zone ${isOver ? 'over' : ''}`}>
         {mod.fields.map((f) => <FieldCard key={f.id} field={f} selected={f.id === selectedId} title={f.key === mod.titleField} onSelect={() => onSelect(f.id)} />)}
-        {mod.fields.length === 0 && <div className="empty" style={{ gridColumn: 'span 2' }}>Drop fields here</div>}
+        {mod.fields.length === 0 && <div className="empty" style={{ gridColumn: 'span 2' }}>{tr('Drop fields here')}</div>}
       </div>
     </SortableContext>
   )
@@ -152,20 +153,20 @@ function FieldCard({ field, selected, title, onSelect }: { field: FieldDef; sele
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`fcard ${field.width === 2 ? 'w2' : ''} ${selected ? 'sel' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onSelect}>
       <div className="fl">
-        <span className="grip" {...listeners} {...attributes} aria-label="Drag to move"><GripVertical size={14} /></span>
+        <span className="grip" {...listeners} {...attributes} aria-label={tr('Drag to move')}><GripVertical size={14} /></span>
         <Icon name={info.icon} size={14} />
-        <span>{field.label || <i className="muted">Untitled</i>}{field.required && <span style={{ color: 'var(--danger)' }}> *</span>}</span>
+        <span>{field.label || <i className="muted">{tr('Untitled')}</i>}{field.required && <span style={{ color: 'var(--danger)' }}> *</span>}</span>
         <span className="tags">
-          {title && <span className="pill gray tiny">Title</span>}
-          {field.readOnly && <span className="pill amber tiny">Auto</span>}
-          {field.showIf && <span className="pill tiny">If</span>}
+          {title && <span className="pill gray tiny">{tr('Title')}</span>}
+          {field.readOnly && <span className="pill amber tiny">{tr('Auto')}</span>}
+          {field.showIf && <span className="pill tiny">{tr('If')}</span>}
           {field.system && <Lock size={12} className="lock" />}
         </span>
       </div>
       <div className="fake">
         {field.type === 'select' || field.type === 'multiselect' ? (
           <>{field.options?.slice(0, 3).map((o) => <span key={o.value} className="pill tiny" style={{ background: o.color + '22', color: o.color }}>{o.label}</span>)}<ChevronDown size={14} style={{ marginInlineStart: 'auto' }} /></>
-        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? 'From the linked record' : 'Calculated from linked records'}{field.showIf ? ' · conditional' : ''}</span> : field.type === 'checkbox' ? '☐ Yes / No' : field.type === 'formula' ? <span className="mono tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? 'Notes…' : field.readOnly ? 'Calculated by the system' : info.hint}
+        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ' · conditional' : ''}</span> : field.type === 'checkbox' ? '☐ Yes / No' : field.type === 'formula' ? <span className="mono tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : info.hint}
       </div>
     </div>
   )
@@ -196,7 +197,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
 
   function remove() {
     const all = fieldDependents(schema, mod, field.key)
-    if (all.length) return setMsg(`Can’t delete “${field.label}” because ${all.join('; ')}.`)
+    if (all.length) return setMsg(tr('Can’t delete “{name}” because {reasons}.', { name: field.label, reasons: all.map((x) => msgText(x)).join('؛ ') }))
     if (used && !confirm(`${used} record(s) have a value in “${field.label}”. Delete the field? The values are hidden, and come back if you add a field with the same key.`)) return
     edit((s) => {
       const m = s.modules.find((x) => x.id === mod.id)!
@@ -206,8 +207,8 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
   }
 
   function changeType(type: FieldType) {
-    if (field.system) return setMsg('This field’s type is fixed because the module relies on it.')
-    if (used) return setMsg(`${used} record(s) already have data in this field, so its type can’t change. Add a new field instead.`)
+    if (field.system) return setMsg(tr('This field’s type is fixed because the module relies on it.'))
+    if (used) return setMsg(tr('{n} record(s) already have data in this field, so its type can’t change. Add a new field instead.', { n: used }))
     const patch: Partial<FieldDef> = { type, options: undefined, target: undefined, formula: undefined, unique: undefined }
     if (type === 'select' || type === 'multiselect') patch.options = field.options ?? newField(type, []).options
     if (type === 'relation') patch.target = schema.modules.find((m) => m.id !== mod.id)?.id
@@ -228,60 +229,60 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
   return (
     <div className="stack">
       <div className="row between">
-        <h2 style={{ margin: 0 }}>Field</h2>
-        <button className="ghost icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <h2 style={{ margin: 0 }}>{tr('Field')}</h2>
+        <button className="ghost icon" onClick={onClose} aria-label={tr('Close')}><X size={18} /></button>
       </div>
-      {field.system && <div className="info"><Lock size={13} /> {field.readOnly ? 'Calculated by the system. You can rename and move it.' : `Required by ${ROLES[mod.role].label}. You can rename it, move it and change its help text.`}</div>}
-      <label className="field">Label<input value={field.label} onChange={(e) => set({ label: e.target.value })} /></label>
-      <div className="tiny muted">Internal key: <span className="mono">{field.key}</span>{!fresh && ' (locked — it is in use)'}</div>
+      {field.system && <div className="info"><Lock size={13} /> {field.readOnly ? tr('Calculated by the system. You can rename and move it.') : tr('Required by {what}. You can rename it, move it and change its help text.', { what: ROLES[mod.role].label })}</div>}
+      <label className="field">{tr('Label')}<input value={field.label} onChange={(e) => set({ label: e.target.value })} /></label>
+      <div className="tiny muted">{tr('Internal key:')} <span className="mono">{field.key}</span>{!fresh && ' (locked — it is in use)'}</div>
       <label className="field">Type
         <select value={field.type} onChange={(e) => changeType(e.target.value as FieldType)} disabled={field.system}>
           {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
         </select>
       </label>
-      <label className="field">Help text<input value={field.help ?? ''} onChange={(e) => set({ help: e.target.value })} placeholder="Shown under the field" /></label>
+      <label className="field">{tr('Help text')}<input value={field.help ?? ''} onChange={(e) => set({ help: e.target.value })} placeholder={tr('Shown under the field')} /></label>
       <div className="seg">
-        <button type="button" className={field.width !== 2 ? 'on' : ''} onClick={() => set({ width: 1 })}>Half width</button>
-        <button type="button" className={field.width === 2 ? 'on' : ''} onClick={() => set({ width: 2 })}>Full width</button>
+        <button type="button" className={field.width !== 2 ? 'on' : ''} onClick={() => set({ width: 1 })}>{tr('Half width')}</button>
+        <button type="button" className={field.width === 2 ? 'on' : ''} onClick={() => set({ width: 2 })}>{tr('Full width')}</button>
       </div>
       {!field.readOnly && !['formula', 'lookup', 'rollup'].includes(field.type) && (
-        <label className="inline"><input type="checkbox" checked={Boolean(field.required)} disabled={field.system && field.required} onChange={(e) => set({ required: e.target.checked })} /> Required</label>
+        <label className="inline"><input type="checkbox" checked={Boolean(field.required)} disabled={field.system && field.required} onChange={(e) => set({ required: e.target.checked })} /> {tr('Required')}</label>
       )}
       {['text', 'email', 'phone'].includes(field.type) && (
-        <label className="inline"><input type="checkbox" checked={Boolean(field.unique)} disabled={field.system && field.unique} onChange={(e) => set({ unique: e.target.checked })} /> No duplicates</label>
+        <label className="inline"><input type="checkbox" checked={Boolean(field.unique)} disabled={field.system && field.unique} onChange={(e) => set({ unique: e.target.checked })} /> {tr('No duplicates')}</label>
       )}
-      <label className="inline"><input type="checkbox" checked={Boolean(field.inList)} onChange={(e) => set({ inList: e.target.checked })} /> Show as a column in lists</label>
+      <label className="inline"><input type="checkbox" checked={Boolean(field.inList)} onChange={(e) => set({ inList: e.target.checked })} /> {tr('Show as a column in lists')}</label>
       {mod.titleField !== field.key && ['text'].includes(field.type) && mod.role === 'custom' && (
-        <button className="secondary" onClick={() => edit((s) => (s.modules.find((m) => m.id === mod.id)!.titleField = field.key))}>Use as record title</button>
+        <button className="secondary" onClick={() => edit((s) => (s.modules.find((m) => m.id === mod.id)!.titleField = field.key))}>{tr('Use as record title')}</button>
       )}
 
       {(field.type === 'select' || field.type === 'multiselect') && (
         <>
           <hr />
-          <b>Options</b>
+          <b>{tr('Options')}</b>
           {(field.options ?? []).map((o, i) => (
             <div className="opt-row" key={o.value}>
               <input type="color" value={o.color} onChange={(e) => set({ options: field.options!.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)) })} />
               <input value={o.label} onChange={(e) => set({ options: field.options!.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
-              <button className="ghost icon" aria-label="Remove option" onClick={() => {
+              <button className="ghost icon" aria-label={tr('Remove option')} onClick={() => {
                 const inUse = optionCount(o.value)
-                if (inUse) return setMsg(`${inUse} record(s) use “${o.label}”. Change them first, or rename the option instead.`)
-                if ((field.options?.length ?? 0) <= 1) return setMsg('A dropdown needs at least one option.')
+                if (inUse) return setMsg(tr('{n} record(s) use “{option}”. Change them first, or rename the option instead.', { n: inUse, option: o.label }))
+                if ((field.options?.length ?? 0) <= 1) return setMsg(tr('A dropdown needs at least one option.'))
                 set({ options: field.options!.filter((_, j) => j !== i) })
               }}><X size={14} /></button>
             </div>
           ))}
           <button className="secondary" onClick={() => {
-            const label = `Option ${(field.options?.length ?? 0) + 1}`
+            const label = tr('Option {n}', { n: (field.options?.length ?? 0) + 1 })
             set({ options: [...(field.options ?? []), { value: `${slugKey(label)}_${uid('o').slice(-4)}`, label, color: PALETTE[(field.options?.length ?? 0) % PALETTE.length] }] })
-          }}><Plus size={14} /> Add option</button>
+          }}><Plus size={14} /> {tr('Add option')}</button>
         </>
       )}
 
       {field.type === 'lookup' && (
         <>
           <hr />
-          <b>Lookup</b>
+          <b>{tr('Lookup')}</b>
           <label className="field">Through link
             <select value={field.lookup?.via ?? ''} onChange={(e) => set({ lookup: { via: e.target.value, field: '' } })}>
               <option value="">—</option>
@@ -291,7 +292,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
           {(() => {
             const target = schema.modules.find((m) => m.id === mod.fields.find((f) => f.key === field.lookup?.via)?.target)
             return target ? (
-              <label className="field">Show {target.singular.toLowerCase()}’s
+              <label className="field">{tr('Show from {what}', { what: target.singular.toLowerCase() })}
                 <select value={field.lookup?.field ?? ''} onChange={(e) => set({ lookup: { via: field.lookup!.via, field: e.target.value } })}>
                   <option value="">—</option>
                   {target.fields.map((f) => <option key={f.id} value={f.key}>{f.label}</option>)}
@@ -309,7 +310,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
         return (
           <>
             <hr />
-            <b>Rollup</b>
+            <b>{tr('Rollup')}</b>
             <label className="field">Add up records from
               <select value={r.module} onChange={(e) => {
                 const m = schema.modules.find((x) => x.id === e.target.value)
@@ -329,7 +330,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
                 <div className="form-grid">
                   <label className="field">Calculation
                     <select value={r.op} onChange={(e) => set({ rollup: { ...r, op: e.target.value as typeof r.op, field: e.target.value === 'count' ? undefined : r.field ?? child.fields.find((f) => isNumeric(f))?.key } })}>
-                      <option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option><option value="min">Lowest</option><option value="max">Highest</option>
+                      <option value="count">{tr('Count')}</option><option value="sum">{tr('Sum')}</option><option value="avg">{tr('Average')}</option><option value="min">{tr('Lowest')}</option><option value="max">{tr('Highest')}</option>
                     </select>
                   </label>
                   {r.op !== 'count' && (
@@ -342,7 +343,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
                 </div>
               </>
             )}
-            {children.length === 0 && <div className="note small">No module links to {mod.name} yet. Add a “Link to record” field in another module first.</div>}
+            {children.length === 0 && <div className="note small">{tr('No module links to {name} yet. Add a “Link to record” field in another module first.', { name: mod.name })}</div>}
           </>
         )
       })()}
@@ -350,7 +351,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
       {!(field.system && field.required) && (
         <>
           <hr />
-          <label className="inline"><input type="checkbox" checked={Boolean(field.showIf)} onChange={(e) => set({ showIf: e.target.checked ? { field: mod.fields.find((f) => f.id !== field.id && (f.type === 'select' || f.type === 'checkbox'))?.key ?? mod.fields.find((f) => f.id !== field.id)!.key, op: 'notempty' } : undefined })} /> Show only when…</label>
+          <label className="inline"><input type="checkbox" checked={Boolean(field.showIf)} onChange={(e) => set({ showIf: e.target.checked ? { field: mod.fields.find((f) => f.id !== field.id && (f.type === 'select' || f.type === 'checkbox'))?.key ?? mod.fields.find((f) => f.id !== field.id)!.key, op: 'notempty' } : undefined })} /> {tr('Show only when…')}</label>
           {field.showIf && (() => {
             const cond = field.showIf
             const src = mod.fields.find((f) => f.key === cond.field)
@@ -361,16 +362,16 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
                 </select>
                 <div className="row" style={{ gap: 6 }}>
                   <select value={cond.op} style={{ width: 'auto' }} onChange={(e) => set({ showIf: { ...cond, op: e.target.value as typeof cond.op } })}>
-                    <option value="eq">is</option><option value="neq">is not</option><option value="notempty">is filled</option><option value="empty">is empty</option><option value="gt">greater than</option><option value="lt">less than</option><option value="contains">contains</option>
+                    <option value="eq">{tr('is')}</option><option value="neq">{tr('is not')}</option><option value="notempty">{tr('is filled')}</option><option value="empty">{tr('is empty')}</option><option value="gt">{tr('greater than')}</option><option value="lt">{tr('less than')}</option><option value="contains">{tr('contains')}</option>
                   </select>
                   {!['empty', 'notempty'].includes(cond.op) && (src?.options || src?.type === 'checkbox' ? (
                     <select value={cond.value ?? ''} style={{ width: 'auto' }} onChange={(e) => set({ showIf: { ...cond, value: e.target.value } })}>
                       <option value="">—</option>
-                      {src?.type === 'checkbox' ? <><option value="true">Yes</option><option value="false">No</option></> : src!.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {src?.type === 'checkbox' ? <><option value="true">{tr('Yes')}</option><option value="false">{tr('No')}</option></> : src!.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   ) : <input value={cond.value ?? ''} onChange={(e) => set({ showIf: { ...cond, value: e.target.value } })} style={{ width: 120 }} />)}
                 </div>
-                <span className="tiny muted">Hidden fields are not required. Like layout rules in Zoho and Odoo.</span>
+                <span className="tiny muted">{tr('Hidden fields are not required. Like layout rules in Zoho and Odoo.')}</span>
               </div>
             )
           })()}
@@ -387,8 +388,8 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
 
       {field.type === 'formula' && (
         <>
-          <label className="field">Formula<input className="mono" value={field.formula ?? ''} onChange={(e) => set({ formula: e.target.value })} placeholder="quantity * price" /></label>
-          {formulaError ? <div className="error-box small">{formulaError}</div> : field.formula ? <div className="ok-box small">Formula is valid</div> : null}
+          <label className="field">{tr('Formula')}<input className="mono" value={field.formula ?? ''} onChange={(e) => set({ formula: e.target.value })} placeholder={tr('quantity * price')} /></label>
+          {formulaError ? <div className="error-box small">{formulaError}</div> : field.formula ? <div className="ok-box small">{tr('Formula is valid')}</div> : null}
           <div className="chips">
             {numericFields.map((f) => <button key={f.id} type="button" className="chip tiny" onClick={() => set({ formula: `${field.formula ?? ''}${field.formula ? ' ' : ''}${f.key}` })}>{f.label}</button>)}
             {['+', '-', '*', '/', '(', ')'].map((op) => <button key={op} type="button" className="chip mono" onClick={() => set({ formula: `${field.formula ?? ''} ${op} ` })}>{op}</button>)}
@@ -398,15 +399,15 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
 
       {['number', 'currency', 'percent'].includes(field.type) && !field.readOnly && (
         <div className="form-grid">
-          <label className="field">Minimum<input type="number" value={field.min ?? ''} onChange={(e) => set({ min: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
-          <label className="field">Maximum<input type="number" value={field.max ?? ''} onChange={(e) => set({ max: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+          <label className="field">{tr('Minimum')}<input type="number" value={field.min ?? ''} onChange={(e) => set({ min: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+          <label className="field">{tr('Maximum')}<input type="number" value={field.max ?? ''} onChange={(e) => set({ max: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
         </div>
       )}
 
       {deps.length > 0 && <div className="note small">Used by: {deps.join('; ')}</div>}
       {used > 0 && <div className="tiny muted">{used} record(s) have a value here.</div>}
       {msg && <div className="error-box small"><AlertTriangle size={14} /> {msg}</div>}
-      {!field.system && <button className="danger" onClick={remove}><Trash2 size={16} /> Delete field</button>}
+      {!field.system && <button className="danger" onClick={remove}><Trash2 size={16} /> {tr('Delete field')}</button>}
     </div>
   )
 }
@@ -418,10 +419,10 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
   const set = (patch: Partial<ModuleDef>) => edit((s) => Object.assign(s.modules.find((m) => m.id === mod.id)!, patch))
   function remove() {
     const deps = moduleDependents(schema, mod)
-    if (deps.length) return setMsg(`Can’t delete “${mod.name}”: ${deps.join('; ')}.`)
+    if (deps.length) return setMsg(tr('Can’t delete “{name}”: {reasons}.', { name: mod.name, reasons: deps.map((x) => msgText(x)).join('؛ ') }))
     const n = recordCount(mod.id)
-    if (n) return setMsg(`“${mod.name}” has ${n} record(s). Delete them in the app first.`)
-    if (!confirm(`Delete the “${mod.name}” module?`)) return
+    if (n) return setMsg(tr('“{name}” has {n} record(s). Delete them in the app first.', { name: mod.name, n }))
+    if (!confirm(tr('Delete the “{name}” module?', { name: mod.name }))) return
     edit((s) => {
       s.modules = s.modules.filter((m) => m.id !== mod.id)
       for (const r of s.roles) delete r.access[mod.id]
@@ -430,12 +431,12 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
   }
   return (
     <div className="stack">
-      <h2 style={{ margin: 0 }}>Module settings</h2>
-      <label className="field">Name (plural)<input value={mod.name} onChange={(e) => set({ name: e.target.value })} /></label>
-      <label className="field">One record is called<input value={mod.singular} onChange={(e) => set({ singular: e.target.value })} /></label>
-      <b className="small">Colour</b>
+      <h2 style={{ margin: 0 }}>{tr('Module settings')}</h2>
+      <label className="field">{tr('Name (plural)')}<input value={mod.name} onChange={(e) => set({ name: e.target.value })} /></label>
+      <label className="field">{tr('One record is called')}<input value={mod.singular} onChange={(e) => set({ singular: e.target.value })} /></label>
+      <b className="small">{tr('Colour')}</b>
       <div className="row">{PALETTE.map((c) => <button key={c} aria-label={c} onClick={() => set({ color: c })} style={{ width: 28, height: 28, borderRadius: 8, padding: 0, background: c, outline: mod.color === c ? '3px solid var(--primary-100)' : 'none' }} />)}</div>
-      <b className="small">Icon</b>
+      <b className="small">{tr('Icon')}</b>
       <div className="row">{MODULE_ICON_CHOICES.map((i) => <button key={i} className={mod.icon === i ? '' : 'secondary'} style={{ padding: 7 }} onClick={() => set({ icon: i })} aria-label={i}><Icon name={i} size={16} /></button>)}</div>
       <label className="field">Record title
         <select value={mod.titleField} onChange={(e) => set({ titleField: e.target.value })} disabled={mod.role !== 'custom'}>
@@ -444,13 +445,13 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
       </label>
       {mod.numberPrefix !== undefined && (
         <label className="field">Number prefix
-          <input value={mod.numberPrefix} disabled={posted > 0} title={posted > 0 ? `Locked: ${posted} documents already carry this prefix` : undefined} onChange={(e) => set({ numberPrefix: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) })} />
-          <span className="tiny muted">{posted > 0 ? `Locked, because ${posted} numbered documents already use it. Changing it would break your numbering series.` : `Numbers look like ${mod.numberPrefix || 'INV'}-${new Date().getFullYear()}-0001 and are given when a document is posted, without gaps.`}</span>
+          <input value={mod.numberPrefix} disabled={posted > 0} title={posted > 0 ? tr('Locked: {n} documents already carry this prefix', { n: posted }) : undefined} onChange={(e) => set({ numberPrefix: e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 6) })} />
+          <span className="tiny muted">{posted > 0 ? tr('Locked, because {n} numbered documents already use it. Changing it would break your numbering series.', { n: posted }) : tr('Numbers look like {example} and are given when a document is posted, without gaps.', { example: `${mod.numberPrefix || 'INV'}-${new Date().getFullYear()}-0001` })}</span>
         </label>
       )}
       <div className="info small">{mod.role === 'custom' ? ROLES.custom.description : ROLES[mod.role].description}</div>
       {msg && <div className="error-box small">{msg}</div>}
-      <button className="danger" onClick={remove}><Trash2 size={16} /> Delete module</button>
+      <button className="danger" onClick={remove}><Trash2 size={16} /> {tr('Delete module')}</button>
     </div>
   )
 }
@@ -478,7 +479,7 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
       <div className="overlay" onClick={onClose} />
       <div className="modal">
         <div className="card stack">
-          <div className="row between"><h2 style={{ margin: 0 }}>Add a module</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
+          <div className="row between"><h2 style={{ margin: 0 }}>{tr('Add a module')}</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
           <div className="tiles" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', marginTop: 0 }}>
             {available.map((r) => (
               <button key={r} type="button" className={`tile ${role === r ? 'on' : ''}`} style={{ padding: 12 }} onClick={() => { setRole(r); setName(r === 'custom' ? '' : ROLES[r].label) }}>
@@ -488,12 +489,12 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
             ))}
           </div>
           <div className="form-grid">
-            <label className="field">Name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Vehicles" autoFocus /></label>
-            <label className="field">One record is called<input value={singular} onChange={(e) => setSingular(e.target.value)} placeholder="e.g. Vehicle" /></label>
+            <label className="field">{tr('Name')}<input value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('e.g. Vehicles')} autoFocus /></label>
+            <label className="field">{tr('One record is called')}<input value={singular} onChange={(e) => setSingular(e.target.value)} placeholder={tr('e.g. Vehicle')} /></label>
           </div>
           <div className="row">{MODULE_ICON_CHOICES.slice(0, 16).map((i) => <button key={i} className={icon === i ? '' : 'secondary'} style={{ padding: 7 }} onClick={() => setIcon(i)}><Icon name={i} size={16} /></button>)}</div>
-          {missing.length > 0 && <div className="note">{info.label} also needs: {missing.map((n) => ROLES[n].label).join(', ')}. Add those too, or the health check will flag it.</div>}
-          <button className="glow" onClick={add} disabled={!name.trim()}><Plus size={16} /> Add {name || 'module'}</button>
+          {missing.length > 0 && <div className="note">{tr('{what} also needs: {list}. Add those too, or the health check will flag it.', { what: msgText(info.label), list: missing.map((n) => msgText(ROLES[n].label)).join('، ') })}</div>}
+          <button className="glow" onClick={add} disabled={!name.trim()}><Plus size={16} /> {name ? tr('Add {name}', { name }) : tr('Add module')}</button>
         </div>
       </div>
     </>

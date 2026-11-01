@@ -8,19 +8,20 @@ export interface Challenge {
   labelAr: string
   icon: string
   fix: string
+  fixAr: string
 }
 
 export const CHALLENGES: Challenge[] = [
-  { id: 'lost_leads', label: 'Leads get lost in WhatsApp and calls', labelAr: 'العملاء المحتملون يضيعون في الواتساب والمكالمات', icon: 'MessageCircleWarning', fix: 'Lead pipeline + automatic call-back task within 24 hours' },
-  { id: 'no_visibility', label: 'No clear view of the sales pipeline', labelAr: 'لا توجد رؤية واضحة للمبيعات', icon: 'EyeOff', fix: 'Pipeline value by stage, weighted forecast and won-this-month KPIs' },
-  { id: 'late_collections', label: 'Customers pay late', labelAr: 'تأخر التحصيل', icon: 'Hourglass', fix: 'Receivables report + collection task when an invoice is overdue' },
-  { id: 'stock_mismatch', label: 'Stock numbers never match', labelAr: 'المخزون غير مضبوط', icon: 'PackageX', fix: 'Stock kept automatically from posted documents + low-stock report' },
-  { id: 'no_followup', label: 'No follow-up after sending quotes', labelAr: 'لا متابعة بعد إرسال عروض الأسعار', icon: 'MailQuestion', fix: 'Follow-up task 3 days after every quotation' },
-  { id: 'manual_invoices', label: 'Invoices made in Excel or Word', labelAr: 'الفواتير على إكسل أو وورد', icon: 'FileSpreadsheet', fix: 'Numbered quotes and invoices with VAT, printable in one click' },
-  { id: 'slow_reports', label: 'Reports take days to prepare', labelAr: 'التقارير تأخذ أياماً', icon: 'Timer', fix: 'A live management dashboard' },
-  { id: 'service_delays', label: 'Slow after-sales service', labelAr: 'بطء خدمة ما بعد البيع', icon: 'Wrench', fix: 'Service tickets + alert for urgent requests' },
-  { id: 'accountability', label: "Unclear who owns what", labelAr: 'غياب المسؤولية الواضحة', icon: 'UserX', fix: 'Owner on every record, deals by owner and open tasks by person' },
-  { id: 'purchasing', label: 'Purchasing is not controlled', labelAr: 'المشتريات غير منضبطة', icon: 'ShoppingBag', fix: 'Supplier bills that update stock and cost + payables report' },
+  { id: 'lost_leads', label: 'Leads get lost in WhatsApp and calls', labelAr: 'العملاء المحتملون يضيعون في الواتساب والمكالمات', icon: 'MessageCircleWarning', fix: 'Lead pipeline + automatic call-back task within 24 hours', fixAr: 'مسار للعملاء المحتملين + مهمة اتصال تلقائية خلال ٢٤ ساعة' },
+  { id: 'no_visibility', label: 'No clear view of the sales pipeline', labelAr: 'لا توجد رؤية واضحة للمبيعات', icon: 'EyeOff', fix: 'Pipeline value by stage, weighted forecast and won-this-month KPIs', fixAr: 'قيمة المبيعات حسب المرحلة والتوقع المرجّح ومؤشرات ما تم كسبه هذا الشهر' },
+  { id: 'late_collections', label: 'Customers pay late', labelAr: 'تأخر التحصيل', icon: 'Hourglass', fix: 'Receivables report + collection task when an invoice is overdue', fixAr: 'تقرير الذمم المدينة + مهمة تحصيل عند تأخر الفاتورة' },
+  { id: 'stock_mismatch', label: 'Stock numbers never match', labelAr: 'المخزون غير مضبوط', icon: 'PackageX', fix: 'Stock kept automatically from posted documents + low-stock report', fixAr: 'مخزون يُحدّث تلقائياً من المستندات المرحّلة + تقرير المخزون المنخفض' },
+  { id: 'no_followup', label: 'No follow-up after sending quotes', labelAr: 'لا متابعة بعد إرسال عروض الأسعار', icon: 'MailQuestion', fix: 'Follow-up task 3 days after every quotation', fixAr: 'مهمة متابعة بعد ٣ أيام من كل عرض سعر' },
+  { id: 'manual_invoices', label: 'Invoices made in Excel or Word', labelAr: 'الفواتير على إكسل أو وورد', icon: 'FileSpreadsheet', fix: 'Numbered quotes and invoices with VAT, printable in one click', fixAr: 'عروض أسعار وفواتير مرقّمة بالضريبة، تُطبع بضغطة واحدة' },
+  { id: 'slow_reports', label: 'Reports take days to prepare', labelAr: 'التقارير تأخذ أياماً', icon: 'Timer', fix: 'A live management dashboard', fixAr: 'لوحة متابعة مباشرة للإدارة' },
+  { id: 'service_delays', label: 'Slow after-sales service', labelAr: 'بطء خدمة ما بعد البيع', icon: 'Wrench', fix: 'Service tickets + alert for urgent requests', fixAr: 'تذاكر خدمة + تنبيه للطلبات العاجلة' },
+  { id: 'accountability', label: "Unclear who owns what", labelAr: 'غياب المسؤولية الواضحة', icon: 'UserX', fix: 'Owner on every record, deals by owner and open tasks by person', fixAr: 'مسؤول عن كل سجل، والصفقات حسب المسؤول والمهام المفتوحة لكل شخص' },
+  { id: 'purchasing', label: 'Purchasing is not controlled', labelAr: 'المشتريات غير منضبطة', icon: 'ShoppingBag', fix: 'Supplier bills that update stock and cost + payables report', fixAr: 'فواتير موردين تُحدّث المخزون والتكلفة + تقرير الذمم الدائنة' },
 ]
 
 type Draft = Omit<ReportDef, 'id'>

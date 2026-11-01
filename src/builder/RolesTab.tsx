@@ -3,6 +3,7 @@ import { useDraft } from './useDraft'
 import { Icon } from '../components/Icon'
 import type { Permission, RoleDef } from '../lib/schema'
 import { uid } from '../lib/schema'
+import { tr } from '../lib/i18n'
 
 const PERMS: Permission[] = ['view', 'create', 'edit', 'delete']
 
@@ -29,10 +30,10 @@ export default function RolesTab() {
   return (
     <div className="pane" style={{ maxWidth: 1200 }}>
       <div className="page-head">
-        <h1><ShieldCheck size={26} /> Roles & access</h1>
-        <button onClick={() => edit((s) => s.roles.push({ id: uid('role'), name: 'New role', access: Object.fromEntries(s.modules.map((m) => [m.id, ['view'] as Permission[]])) }))}><Plus size={16} /> Add role</button>
+        <h1><ShieldCheck size={26} /> {tr('Roles & access')}</h1>
+        <button onClick={() => edit((s) => s.roles.push({ id: uid('role'), name: tr('New role'), access: Object.fromEntries(s.modules.map((m) => [m.id, ['view'] as Permission[]])) }))}><Plus size={16} /> {tr('Add role')}</button>
       </div>
-      <p className="muted">Admin can do everything. Only roles with <b>Post & collect</b> can post invoices and bills, void them, and register payments — a standard separation of duties.</p>
+      <p className="muted">{tr('Admin can do everything. Only roles with')} <b>{tr('Post & collect')}</b> {tr('can post invoices and bills, void them, and register payments — a standard separation of duties.')}</p>
       {errs.map((e, i) => <div key={i} className={e.level === 'error' ? 'error-box' : 'note'} style={{ marginBottom: 10 }}>{e.message}</div>)}
       <div className="stack">
         {schema.roles.map((role) => {
@@ -42,19 +43,19 @@ export default function RolesTab() {
               <div className="row">
                 <input value={role.name} onChange={(e) => setRole(role.id, (r) => (r.name = e.target.value))} style={{ fontWeight: 700, maxWidth: 260 }} disabled={role.admin} />
                 <span className="pill gray">{members} member{members === 1 ? '' : 's'}</span>
-                {role.admin ? <span className="pill green">Full access</span> : (
+                {role.admin ? <span className="pill green">{tr('Full access')}</span> : (
                   <>
-                    <label className="inline small"><input type="checkbox" checked={Boolean(role.finance)} onChange={(e) => setRole(role.id, (r) => (r.finance = e.target.checked))} /> Post & collect (finance)</label>
-                    <label className="inline small" title="Purchase cost, stock value and margins. Finance roles always see them."><input type="checkbox" checked={Boolean(role.costs || role.finance)} disabled={role.finance} onChange={(e) => setRole(role.id, (r) => (r.costs = e.target.checked))} /> See costs & margins</label>
+                    <label className="inline small"><input type="checkbox" checked={Boolean(role.finance)} onChange={(e) => setRole(role.id, (r) => (r.finance = e.target.checked))} /> {tr('Post & collect (finance)')}</label>
+                    <label className="inline small" title={tr('Purchase cost, stock value and margins. Finance roles always see them.')}><input type="checkbox" checked={Boolean(role.costs || role.finance)} disabled={role.finance} onChange={(e) => setRole(role.id, (r) => (r.costs = e.target.checked))} /> {tr('See costs & margins')}</label>
                   </>
                 )}
                 <span className="grow" />
-                {!role.admin && <button className="ghost icon" disabled={members > 0} title={members ? 'Move its members to another role first' : 'Delete role'} onClick={() => edit((s) => { s.roles = s.roles.filter((r) => r.id !== role.id) })}><Trash2 size={16} /></button>}
+                {!role.admin && <button className="ghost icon" disabled={members > 0} title={members ? tr('Move its members to another role first') : tr('Delete role')} onClick={() => edit((s) => { s.roles = s.roles.filter((r) => r.id !== role.id) })}><Trash2 size={16} /></button>}
               </div>
               {!role.admin && (
                 <div style={{ overflowX: 'auto', marginTop: 10 }}>
                   <table className="matrix">
-                    <thead><tr><th>Module</th>{PERMS.map((p) => <th key={p}>{p}</th>)}</tr></thead>
+                    <thead><tr><th>{tr('Module')}</th>{PERMS.map((p) => <th key={p}>{p}</th>)}</tr></thead>
                     <tbody>
                       {schema.modules.map((m) => (
                         <tr key={m.id}>

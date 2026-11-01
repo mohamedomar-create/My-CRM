@@ -493,7 +493,7 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
             <label className="field" style={{ width: 170 }}>{tr('Date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
             <label className="field grow">{tr('Reason')}<input required value={reason} onChange={(e) => setReason(e.target.value)} placeholder={sales ? 'e.g. 2 bags damaged, returned' : 'e.g. wrong grade sent back'} /></label>
           </div>
-          <div className="row"><button type="button" className="secondary" onClick={onClose}>{tr('Cancel')}</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>Issue {sales ? 'credit' : 'debit'} note</button></div>
+          <div className="row"><button type="button" className="secondary" onClick={onClose}>{tr('Cancel')}</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>{sales ? tr('Issue credit note') : tr('Issue debit note')}</button></div>
         </form>
       </div>
     </>

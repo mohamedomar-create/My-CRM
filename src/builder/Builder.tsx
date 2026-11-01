@@ -12,15 +12,16 @@ import AutomationsTab from './AutomationsTab'
 import RolesTab from './RolesTab'
 import SettingsTab from './SettingsTab'
 import RulesTab from './RulesTab'
+import { N_, msg, tr } from '../lib/i18n'
 
 const TABS: { id: Tab; label: string; icon: typeof Layers }[] = [
-  { id: 'modules', label: 'Modules', icon: Layers },
-  { id: 'pipelines', label: 'Pipelines', icon: Kanban },
-  { id: 'reports', label: 'Reports', icon: BarChart3 },
-  { id: 'automations', label: 'Automations', icon: Zap },
-  { id: 'rules', label: 'Rules & approvals', icon: ShieldAlert },
-  { id: 'roles', label: 'Access', icon: Shield },
-  { id: 'settings', label: 'Company', icon: Settings },
+  { id: 'modules', label: N_('Modules'), icon: Layers },
+  { id: 'pipelines', label: N_('Pipelines'), icon: Kanban },
+  { id: 'reports', label: N_('Reports'), icon: BarChart3 },
+  { id: 'automations', label: N_('Automations'), icon: Zap },
+  { id: 'rules', label: N_('Rules & approvals'), icon: ShieldAlert },
+  { id: 'roles', label: N_('Access'), icon: Shield },
+  { id: 'settings', label: N_('Company'), icon: Settings },
 ]
 
 export interface Focus {
@@ -53,13 +54,13 @@ export default function Builder() {
     }
     const first = !ws.published
     try {
-      run('setup.publish', {}, first ? 'Published the first version' : 'Published a new version')
+      run('setup.publish', {}, first ? tr('Published the first version') : tr('Published a new version'))
     } catch (e) {
       alert((e as Error).message)
       return
     }
     if (first) nav('/app')
-    else setPublished(`Version ${(ws.published?.version ?? 0) + 1} is live`)
+    else setPublished(tr('Version {n} is live', { n: (ws.published?.version ?? 0) + 1 }))
   }
 
   const ringColor = score >= 90 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444'
@@ -70,15 +71,15 @@ export default function Builder() {
         <div className="btabs">
           {TABS.map((t) => (
             <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-              <t.icon size={16} /> {t.label} {byTab(t.id) > 0 && <span className="count">{byTab(t.id)}</span>}
+              <t.icon size={16} /> {tr(t.label)} {byTab(t.id) > 0 && <span className="count">{byTab(t.id)}</span>}
             </button>
           ))}
         </div>
-        <button className="health-btn" onClick={() => setHealth(true)} title="System health check">
-          {errors.length ? <AlertTriangle size={16} color="#fca5a5" /> : <CheckCircle2 size={16} color="#6ee7b7" />} Health {score}%
+        <button className="health-btn" onClick={() => setHealth(true)} title={tr('System health check')}>
+          {errors.length ? <AlertTriangle size={16} color="#fca5a5" /> : <CheckCircle2 size={16} color="#6ee7b7" />} {tr('Health {n}%', { n: score })}
         </button>
-        {ws.published && <Link to="/app" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}><LayoutDashboard size={16} /> Open app</Link>}
-        <button className="glow" onClick={publish}><Rocket size={16} /> {ws.published ? 'Publish changes' : 'Publish & go live'}</button>
+        {ws.published && <Link to="/app" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}><LayoutDashboard size={16} /> {tr('Open app')}</Link>}
+        <button className="glow" onClick={publish}><Rocket size={16} /> {ws.published ? tr('Publish changes') : tr('Publish & go live')}</button>
       </div>
       <div className="bbody">
         {tab === 'modules' && <ModulesTab focus={focus} setFocus={setFocus} />}
@@ -97,34 +98,34 @@ export default function Builder() {
             <div className="health-head">
               <div className="health-ring" style={{ ['--p' as string]: score, ['--c' as string]: ringColor }}><span>{score}%</span></div>
               <div className="grow">
-                <h2 style={{ margin: 0 }}>System health</h2>
+                <h2 style={{ margin: 0 }}>{tr('System health')}</h2>
                 <p className="muted small" style={{ margin: '4px 0 0' }}>
-                  {errors.length ? `${errors.length} problem${errors.length > 1 ? 's' : ''} must be fixed before publishing.` : 'Everything checks out. Your system is ready to publish.'}
+                  {errors.length ? tr('{n} problem(s) must be fixed before publishing.', { n: errors.length }) : tr('Everything checks out. Your system is ready to publish.')}
                 </p>
               </div>
-              <button className="ghost icon" onClick={() => setHealth(false)} aria-label="Close"><X size={18} /></button>
+              <button className="ghost icon" onClick={() => setHealth(false)} aria-label={tr('Close')}><X size={18} /></button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {issues.length === 0 && (
                 <div className="empty">
                   <div className="big-ic" style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)' }}><CheckCircle2 size={34} /></div>
-                  <b>All {schema.modules.length} modules, {schema.reports.length} reports and {schema.workflows.length} automations pass every check.</b>
-                  <p className="small">Data links, formulas, pipelines, stock and accounting rules are consistent.</p>
+                  <b>{tr('All {m} modules, {r} reports and {w} automations pass every check.', { m: schema.modules.length, r: schema.reports.length, w: schema.workflows.length })}</b>
+                  <p className="small">{tr('Data links, formulas, pipelines, stock and accounting rules are consistent.')}</p>
                 </div>
               )}
               {issues.map((i, n) => (
                 <button key={n} className="issue" onClick={() => go(i)}>
                   {i.level === 'error' ? <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0 }} /> : <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0 }} />}
                   <span className="grow">
-                    <span>{i.message}</span>
+                    <span>{msg(i.message)}</span>
                     <br />
-                    <span className="tiny muted">{i.level === 'error' ? 'Must fix' : 'Suggestion'} · {TABS.find((t) => t.id === i.tab)?.label}</span>
+                    <span className="tiny muted">{i.level === 'error' ? tr('Must fix') : tr('Suggestion')} · {tr(TABS.find((t) => t.id === i.tab)?.label ?? '')}</span>
                   </span>
                 </button>
               ))}
             </div>
             <div style={{ padding: 16, borderTop: '1px solid var(--border)' }}>
-              <button className="glow" style={{ width: '100%' }} disabled={errors.length > 0} onClick={() => { setHealth(false); publish() }}><Rocket size={16} /> Publish</button>
+              <button className="glow" style={{ width: '100%' }} disabled={errors.length > 0} onClick={() => { setHealth(false); publish() }}><Rocket size={16} /> {tr('Publish')}</button>
             </div>
           </aside>
         </>

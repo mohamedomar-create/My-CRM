@@ -9,17 +9,18 @@ import { Icon } from '../components/Icon'
 import type { ModuleDef, Stage } from '../lib/schema'
 import { uid } from '../lib/schema'
 import { PALETTE } from '../lib/fieldTypes'
+import { tr } from '../lib/i18n'
 
 export default function PipelinesTab({ focus, setFocus }: { focus: Focus; setFocus: (f: Focus) => void }) {
   const { schema, issues } = useDraft()
   const pipes = schema.modules.filter((m) => m.stages)
   const mod = pipes.find((m) => m.id === focus.moduleId) ?? pipes[0]
-  if (!mod) return <div className="empty">No module has a pipeline. Add Leads, Deals or Service tickets to get one.</div>
+  if (!mod) return <div className="empty">{tr('No module has a pipeline. Add Leads, Deals or Service tickets to get one.')}</div>
   const errs = issues.filter((i) => i.tab === 'pipelines' && i.moduleId === mod.id)
   return (
     <div className="two">
       <div className="pane side">
-        <h3>Pipelines</h3>
+        <h3>{tr('Pipelines')}</h3>
         {pipes.map((m) => (
           <button key={m.id} className={`mod-item ${m.id === mod.id ? 'on' : ''}`} onClick={() => setFocus({ moduleId: m.id })}>
             <span className="badge" style={{ background: m.color }}><Icon name={m.icon} size={15} /></span>
@@ -27,12 +28,12 @@ export default function PipelinesTab({ focus, setFocus }: { focus: Focus; setFoc
             {issues.some((i) => i.level === 'error' && i.tab === 'pipelines' && i.moduleId === m.id) && <span className="err" />}
           </button>
         ))}
-        <h3>Rules</h3>
+        <h3>{tr('Rules')}</h3>
         <ul className="small muted" style={{ paddingInlineStart: 18, lineHeight: 1.7 }}>
-          <li>Open stages first, then one Won and one Lost.</li>
-          <li>Probability drives the weighted forecast.</li>
-          <li>Stage gates force the team to fill key fields before moving on.</li>
-          <li>Stages with records in them can’t be deleted.</li>
+          <li>{tr('Open stages first, then one Won and one Lost.')}</li>
+          <li>{tr('Probability drives the weighted forecast.')}</li>
+          <li>{tr('Stage gates force the team to fill key fields before moving on.')}</li>
+          <li>{tr('Stages with records in them can’t be deleted.')}</li>
         </ul>
       </div>
       <div className="pane">
@@ -67,16 +68,16 @@ function Designer({ mod }: { mod: ModuleDef }) {
     editStages((st) => {
       const idx = st.findIndex((x) => x.type !== 'open')
       const prev = st[Math.max(0, (idx < 0 ? st.length : idx) - 1)]
-      const n: Stage = { id: uid('st'), name: 'New stage', probability: Math.min(95, (prev?.probability ?? 0) + 10), type: 'open', color: PALETTE[st.length % PALETTE.length] }
+      const n: Stage = { id: uid('st'), name: tr('New stage'), probability: Math.min(95, (prev?.probability ?? 0) + 10), type: 'open', color: PALETTE[st.length % PALETTE.length] }
       st.splice(idx < 0 ? st.length : idx, 0, n)
     })
   }
   function remove(s: Stage) {
     const inStage = (ws.data.records[mod.id] ?? []).filter((r) => r.stage === s.id).length
-    if (inStage) return setMsg(`${inStage} record(s) are in “${s.name}”. Move them to another stage first.`)
+    if (inStage) return setMsg(tr('{n} record(s) are in “{stage}”. Move them to another stage first.', { n: inStage, stage: s.name }))
     const wf = schema.workflows.find((w) => w.trigger.stage === s.id)
-    if (wf) return setMsg(`Automation “${wf.name}” waits for “${s.name}”. Change it first.`)
-    if (s.type !== 'open' && stages.filter((x) => x.type === s.type).length === 1) return setMsg(`A pipeline needs one ${s.type === 'won' ? 'Won' : 'Lost'} stage. Rename this one instead.`)
+    if (wf) return setMsg(tr('Automation “{automation}” waits for “{stage}”. Change it first.', { automation: wf.name, stage: s.name }))
+    if (s.type !== 'open' && stages.filter((x) => x.type === s.type).length === 1) return setMsg(`A pipeline needs one ${s.type === 'won' ? tr('Won') : tr('Lost')} stage. Rename this one instead.`)
     editStages((st) => st.filter((x) => x.id !== s.id))
   }
 
@@ -86,7 +87,7 @@ function Designer({ mod }: { mod: ModuleDef }) {
     <>
       <div className="page-head">
         <h1><span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>{mod.name} pipeline</h1>
-        <button onClick={add}><Plus size={16} /> Add stage</button>
+        <button onClick={add}><Plus size={16} /> {tr('Add stage')}</button>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={stages.map((s) => s.id)} strategy={horizontalListSortingStrategy}>
@@ -99,7 +100,7 @@ function Designer({ mod }: { mod: ModuleDef }) {
       </DndContext>
       {msg && <div className="error-box" style={{ marginTop: 10 }} onClick={() => setMsg('')}>{msg}</div>}
       <div className="card" style={{ marginTop: 18, maxWidth: 560 }}>
-        <h2>Funnel preview</h2>
+        <h2>{tr('Funnel preview')}</h2>
         <div className="funnel-preview">
           {openTotal.map((s, i) => <div key={s.id} style={{ width: `${100 - i * (60 / Math.max(1, openTotal.length))}%`, background: s.color }}>{s.name} · {s.probability}%</div>)}
           <div className="closed">
@@ -119,29 +120,29 @@ function StageCard({ stage, fields, onChange, onRemove }: { stage: Stage; fields
         <span {...listeners} {...attributes} style={{ cursor: 'grab', color: 'var(--muted)', touchAction: 'none' }}><GripVertical size={16} /></span>
         <input type="color" value={stage.color} onChange={(e) => onChange({ color: e.target.value })} style={{ width: 30, height: 30 }} />
         <span className="grow" />
-        <button className="ghost icon" onClick={onRemove} aria-label="Delete stage"><Trash2 size={15} /></button>
+        <button className="ghost icon" onClick={onRemove} aria-label={tr('Delete stage')}><Trash2 size={15} /></button>
       </div>
-      <label className="field">Name<input value={stage.name} onChange={(e) => onChange({ name: e.target.value })} /></label>
+      <label className="field">{tr('Name')}<input value={stage.name} onChange={(e) => onChange({ name: e.target.value })} /></label>
       <label className="field">Type
         <select value={stage.type} onChange={(e) => {
           const type = e.target.value as Stage['type']
           onChange({ type, probability: type === 'won' ? 100 : type === 'lost' ? 0 : stage.probability })
         }}>
-          <option value="open">Open</option>
-          <option value="won">Won / Done</option>
-          <option value="lost">Lost / Cancelled</option>
+          <option value="open">{tr('Open')}</option>
+          <option value="won">{tr('Won / Done')}</option>
+          <option value="lost">{tr('Lost / Cancelled')}</option>
         </select>
       </label>
-      <label className="field">Probability {stage.probability}%
+      <label className="field">{tr('Probability {n}%', { n: stage.probability })}
         <input type="range" min={0} max={100} step={5} value={stage.probability} disabled={stage.type !== 'open'} onChange={(e) => onChange({ probability: Number(e.target.value) })} />
       </label>
       {stage.type === 'open' && (
         <label className="field">Flag as rotting after (days)
-          <input type="number" min={0} value={stage.rotDays ?? ''} placeholder="Off" onChange={(e) => onChange({ rotDays: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) })} />
+          <input type="number" min={0} value={stage.rotDays ?? ''} placeholder={tr('Off')} onChange={(e) => onChange({ rotDays: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) })} />
         </label>
       )}
       <div className="field">
-        <span className="small" style={{ fontWeight: 600 }}>Must be filled to enter</span>
+        <span className="small" style={{ fontWeight: 600 }}>{tr('Must be filled to enter')}</span>
         <div className="chips" style={{ marginTop: 6 }}>
           {fields.slice(0, 14).map((f) => {
             const on = stage.requires?.includes(f.key)
