@@ -21,6 +21,7 @@ import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
 import Legal from './pages/Legal'
+import { tr } from './lib/i18n'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -29,7 +30,7 @@ function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | '
   const user = useStore((s) => currentUser(s))
   const loadError = useStore((s) => s.loadError)
   const needCode = useStore((s) => s.needCode)
-  if (!ready) return <div className="empty">Loading…</div>
+  if (!ready) return <div className="empty">{tr('Loading…')}</div>
   if (needCode) return <CodeModal />
   if (loadError) return <LoadError message={loadError} />
   if (!ws || !user) return <Navigate to="/signin" replace />
@@ -45,7 +46,7 @@ function Home() {
   const ws = useStore((s) => currentWorkspace(s))
   const loadError = useStore((s) => s.loadError)
   const needCode = useStore((s) => s.needCode)
-  if (!ready) return <div className="empty">Loading…</div>
+  if (!ready) return <div className="empty">{tr('Loading…')}</div>
   if (needCode) return <CodeModal />
   if (loadError) return <LoadError message={loadError} />
   if (!ws) return <Landing />
@@ -107,13 +108,13 @@ function LoadError({ message }: { message: string }) {
   return (
     <div className="modal">
       <div className="card stack">
-        <h2>We couldn't open your workspace</h2>
+        <h2>{tr('We couldn’t open your workspace')}</h2>
         <p>{message}</p>
-        {/two-factor|authenticator/i.test(message) && <Link className="btn" to="/security">Set up two-factor login</Link>}
+        {/two-factor|authenticator/i.test(message) && <Link className="btn" to="/security">{tr('Set up two-factor login')}</Link>}
         <Invitations />
         <div className="row">
-          <button onClick={() => void init()}>Try again</button>
-          <button className="secondary" onClick={() => void signOut()}>Sign out</button>
+          <button onClick={() => void init()}>{tr('Try again')}</button>
+          <button className="secondary" onClick={() => void signOut()}>{tr('Sign out')}</button>
         </div>
       </div>
     </div>
@@ -132,7 +133,7 @@ function NoticeDialog() {
           <h2 id="notice-title">{notice.title}</h2>
           <p>{notice.text}</p>
           {notice.items && notice.items.length > 0 && <ul>{notice.items.map((t, i) => <li key={i}>{t}</li>)}</ul>}
-          <div className="row"><button autoFocus onClick={dismissNotice}>{notice.signOut ? 'Sign out' : 'OK'}</button></div>
+          <div className="row"><button autoFocus onClick={dismissNotice}>{notice.signOut ? tr('Sign out') : tr('OK')}</button></div>
         </div>
       </div>
     </>
@@ -142,7 +143,7 @@ function NoticeDialog() {
 export default function App() {
   useIdleLock()
   return (
-    <Suspense fallback={<div className="empty">Loading…</div>}>
+    <Suspense fallback={<div className="empty">{tr('Loading…')}</div>}>
     <NoticeDialog />
     <Routes>
       <Route path="/" element={<Home />} />

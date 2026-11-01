@@ -32,6 +32,18 @@ const DONE = [
   'src/workspace/Ledger.tsx',
   'src/workspace/Treasury.tsx',
   'src/workspace/Statements.tsx',
+  'src/builder/Builder.tsx',
+  'src/builder/ModulesTab.tsx',
+  'src/builder/PipelinesTab.tsx',
+  'src/builder/ReportsTab.tsx',
+  'src/builder/RolesTab.tsx',
+  'src/builder/RulesTab.tsx',
+  'src/builder/SettingsTab.tsx',
+  'src/builder/AutomationsTab.tsx',
+  'src/pages/Onboarding.tsx',
+  'src/pages/Suggest.tsx',
+  'src/App.tsx',
+  'src/components/Chart.tsx',
 ]
 
 describe('Arabic translation', () => {

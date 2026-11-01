@@ -15,7 +15,7 @@ export function extractKeys(src: string): string[] {
         let j = i + 1
         let text = ''
         while (j < src.length && src[j] !== ch) {
-          if (src[j] === '\\') { text += src[j + 1]; j += 2; continue }
+          if (src[j] === '\\') { const e = src[j + 1]; text += e === 'n' ? '\n' : e === 't' ? '\t' : e; j += 2; continue }
           text += src[j]
           j++
         }
@@ -23,7 +23,7 @@ export function extractKeys(src: string): string[] {
         const before = src.slice(Math.max(0, i - 4), i).trimEnd()
         const after = src.slice(j + 1, j + 5).trimStart()
         const compared = /[=!]==?$/.test(before) || /^[=!]==?/.test(after)
-        if (!compared && (ch !== '`' || !text.includes('${'))) keys.push(text)
+        if (!compared && text !== '' && (ch !== '`' || !text.includes('${'))) keys.push(text)
         i = j
         continue
       }
@@ -43,9 +43,19 @@ export function rawText(src: string): string[] {
     // TypeScript generics and comparisons can look like tags; real JSX text has no arrows, operators or statements.
     if (t && !/=>|&&|\|\||===|!==|\breturn\b|\s=\s|^\)|\($|^[=:?]|\s[?:]\s|^[\w.]+\.\w+$|^[a-z]+[A-Z]\w*$/.test(t)) found.push(t)
   }
+  // Text between a value and a tag or another value: "<b>{n}</b> rows found", "Show {name}’s".
+  const code = /=>|&&|\|\||===|!==|\breturn\b|\s=\s|[;?:(),.[\]]\s*$|^\s*[;?:(),.[\]]|^\s*\w+\s*$|\b(?:const|let|if|else|new|typeof|as|of|in)\b|[=+*/%!]/
+  // Quoted strings (already wrapped, or not screen text) are left out of this check.
+  const bare = src.replace(/'(?:[^'\\\n]|\\.)*'|`[^`]*`|"(?:[^"\\\n]|\\.)*"/g, "''")
+  for (const m of bare.matchAll(/(?<=[>}])([^<>{}\n`'"]*[A-Za-z]{2,}[^<>{}\n`'"]*)(?=[{<])/g)) {
+    const t = m[1].trim()
+    if (t.split(/\s+/).filter((w) => /[A-Za-z]{2,}/.test(w)).length >= 2 && !code.test(m[1])) found.push(t)
+  }
+  // A single word in front of a value: "Rule {i + 1}", "New {name}".
+  for (const m of bare.matchAll(/>\s*([A-Z][a-z]+)\s*\{/g)) found.push(m[1])
   for (const m of src.matchAll(/\b(?:placeholder|title|aria-label|alt)="([^"]*[A-Za-z]{2,}[^"]*)"/g)) {
     // E-mail addresses and web addresses are the same in every language.
     if (!/^[\w.@+-]+@[\w.-]+$/.test(m[1]) && !/^[a-z]+:\/\//.test(m[1])) found.push(m[1])
   }
-  return found
+  return [...new Set(found)]
 }

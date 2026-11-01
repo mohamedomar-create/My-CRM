@@ -1,5 +1,6 @@
 import type { ChartType } from '../lib/schema'
 import type { ReportResult } from '../lib/reports'
+import { tr } from '../lib/i18n'
 
 export function compact(n: number) {
   const a = Math.abs(n)
@@ -32,7 +33,7 @@ export function Chart({ type, result, color, prefix = '', height = 220 }: Props)
       </div>
     )
   }
-  if (!rows.length) return <div className="chart-empty">No data yet — records will appear here as your team works.</div>
+  if (!rows.length) return <div className="chart-empty">{tr('No data yet — records will appear here as your team works.')}</div>
 
   if (type === 'table') {
     return (
@@ -90,7 +91,7 @@ export function Chart({ type, result, color, prefix = '', height = 220 }: Props)
         <svg viewBox="0 0 200 200" width={height * 0.8} height={height * 0.8}>
           {arcs.map((a) => <path key={a.key} d={a.d} fill={a.color}><title>{`${a.label}: ${fmt(a.value)}`}</title></path>)}
           <text x="100" y="98" textAnchor="middle" className="pie-total">{fmt(total)}</text>
-          <text x="100" y="116" textAnchor="middle" className="pie-sub">total</text>
+          <text x="100" y="116" textAnchor="middle" className="pie-sub">{tr('total')}</text>
         </svg>
         <ul className="legend">
           {rows.slice(0, 8).map((r) => (

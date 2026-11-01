@@ -21,7 +21,7 @@ export default function ModuleView() {
   const { ws, user, schema } = useApp()
   const mod = moduleById(schema, moduleId ?? '')
   if (!mod) return <div className="page">{tr('This module no longer exists.')}</div>
-  if (!can({ schema, user }, mod.id, 'view')) return <div className="page">Your role can’t see {mod.name}.</div>
+  if (!can({ schema, user }, mod.id, 'view')) return <div className="page">{tr('Your role can’t see {what}.', { what: mod.name })}</div>
   return <View key={mod.id} mod={mod} ws={ws} schema={schema} />
 }
 
@@ -114,7 +114,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
           <div className="big-ic" style={{ background: mod.color }}><Icon name={mod.icon} size={32} /></div>
           <b>{tr('No {what} yet', { what: mod.name.toLowerCase() })}</b>
           <p className="small">{tr('Create the first one to get started.')}</p>
-          {can({ schema, user }, mod.id, 'create') && <Link className="btn" to={`/app/new/${mod.id}`}><Plus size={16} /> New {mod.singular.toLowerCase()}</Link>}
+          {can({ schema, user }, mod.id, 'create') && <Link className="btn" to={`/app/new/${mod.id}`}><Plus size={16} /> {tr('New {what}', { what: mod.singular.toLowerCase() })}</Link>}
         </div>
       ) : view === 'calendar' && dateField ? (
         <Calendar rows={rows} dateKey={dateField.key} ws={ws} schema={schema} color={mod.color} />
