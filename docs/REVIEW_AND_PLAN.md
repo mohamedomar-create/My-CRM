@@ -388,6 +388,7 @@ Two tracks run in parallel so visible UX progress does not wait for back-end wor
 | 0 | Make it safe (launch blockers) | A + B | Now | 5–7 weeks | — |
 | 1 | Foundations: the server becomes the boss | A (back end) | Week 7 | 3–4 months | Phase 0 |
 | 2A | Accounting core and Egypt compliance | A | Month 3 (engine work in parallel with Phase 1) | 3–4 months | Phase 1 for server posting |
+| H | Bring your history in (data migration, [plan](DATA_MIGRATION_PLAN.md)) | A + B | After Arabic (4.1) | 4–5 months; H1–H3 about 2–2.5 | 2A (opening balances, cheques, close) |
 | 2B | Supply-chain depth | A | Month 6 | 4–5 months | 2A (chart of accounts, adjustments) |
 | 3 | CRM and builder depth | A + B | Month 6 | ~3 months | Phase 1 (record scope, events) |
 | 4 | UX, visual and dashboard overhaul | B (front end and design) | Month 2 (design system and Arabic first) | 6–8 months, in waves | Design system first; drill-down needs Phase 1 queries |
@@ -397,7 +398,7 @@ Two tracks run in parallel so visible UX progress does not wait for back-end wor
 **Milestones**
 
 - **M1, closed pilot (end of Phase 0, about week 7).** 3–5 friendly companies, CRM features only, no legal tax invoices.
-- **M2, paid launch in Egypt (about month 7–8).** After Phase 1, Phase 2A (including ETA), full Arabic and the core design system.
+- **M2, paid launch in Egypt (about month 7–8).** After Phase 1, Phase 2A (including ETA), full Arabic, the core design system and Phase H steps H1–H3 (a new company can bring its customers, open invoices, cheques, stock and opening books).
 - **M3, "beats global peers" release (about month 12).** After Phases 2B, 3, 4, 5 and the main parts of Phase 6.
 
 *Team assumption behind these durations:* about 8 people:
@@ -556,6 +557,25 @@ A smaller team stretches the timeline roughly in proportion.
 - [ ] Nothing can be posted into a locked period.
 
 **Rough effort:** 3–4 months (several L/XL items in parallel).
+
+---
+
+### Phase H: Bring your history in (data migration)
+
+**Goal.** A company that joins with years of history brings it in once, correctly, across every module, and works in Bonyan as if it had always been there. The full plan is in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md).
+
+**Work items**
+- **H1:** import engine (Excel, large files, dry run, update by key, links by old id, value mapping, original dates and owners, batches with undo, no side effects).
+- **H2:** opening books (go-live date, trial balance, open invoices and bills, credits, cheques, bank starting point, bulk opening stock, WHT for the quarter, 3900 = 0, Go live).
+- **H3:** the migration wizard.
+- **H4:** CRM and activity history.
+- **H5:** history store and document history.
+- **H6:** earlier periods in the books.
+- **H7:** presets, AI mapping, files, partner migrations.
+
+**Acceptance checks**
+- [ ] An accountant migrates a test company and the ageing, cheques, stock and opening balance sheet match the old system, with 3900 at zero.
+- [ ] Three years of history import without slowing the app or changing any figure in the books.
 
 ---
 
