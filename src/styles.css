@@ -85,6 +85,7 @@ button.icon { padding: 7px; border-radius: 8px; }
 .pill.gray { background: #f1f5f9; color: #475569; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 8px; flex-shrink: 0; }
 .error-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; }
+.warn-box { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; }
 .ok-box { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; }
 .toast { position: fixed; inset-inline-end: 20px; bottom: 20px; z-index: 100; max-width: 420px; box-shadow: var(--shadow-lg); animation: rise .25s ease; }
 @keyframes rise { from { transform: translateY(12px); opacity: 0 } to { transform: none; opacity: 1 } }

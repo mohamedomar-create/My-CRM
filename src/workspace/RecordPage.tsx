@@ -149,6 +149,15 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {' '}{money(Number(rec.values.applied ?? 0), schema.company.currency)} reduced what was owed{Number(rec.values.balance) < 0 ? `; ${money(-Number(rec.values.balance), schema.company.currency)} is left as ${mod.role === 'invoices' ? 'the customer’s' : 'the supplier’s'} credit (refund it, or keep it for later).` : '.'}
         </div>
       )}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && (
+        <div className={rec.values.eta_uuid ? 'info row' : mod.role === 'invoices' ? 'warn-box row' : 'info row'} style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
+          <FileCheck2 size={16} />
+          {rec.values.eta_uuid
+            ? <span>E-invoice no.: <b className="mono">{String(rec.values.eta_uuid)}</b></span>
+            : <span>{mod.role === 'invoices' ? 'Not yet issued on the e-invoicing portal: issue it there, then enter the number it gives.' : 'Supplier’s e-invoice number not entered (optional).'}</span>}
+          {canPost({ schema, user }) && <button className="ghost small" onClick={() => { const n = prompt('E-invoice number from the ETA portal (leave empty to remove)', String(rec.values.eta_uuid ?? '')); if (n !== null) act('doc.eInvoice', { id: rec.id, number: n }, n.trim() ? 'E-invoice number saved' : 'E-invoice number removed', `E-invoice number on ${rec.number}`) }}>{rec.values.eta_uuid ? 'Change' : 'Enter number'}</button>}
+        </div>
+      )}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? 'Credit notes' : 'Debit notes'}: {credits.map((c, i) => <span key={c.id}>{i > 0 && ', '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
@@ -513,6 +522,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
           <div style={{ textAlign: 'end' }}>
             <h2 style={{ marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</h2>
             <div className="mono">{rec.number ?? 'DRAFT'}</div>
+            {rec.values.eta_uuid ? <div className="small">E-invoice no.: <span className="mono">{String(rec.values.eta_uuid)}</span></div> : null}
             <div className="small">Date: {String(rec.values.date ?? '')}</div>
             {rec.values.due_date ? <div className="small">Due: {String(rec.values.due_date)}</div> : null}
             {rec.values.valid_until ? <div className="small">Valid until: {String(rec.values.valid_until)}</div> : null}

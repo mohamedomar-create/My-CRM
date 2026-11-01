@@ -1309,6 +1309,8 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   checks.push({ id: 'cheques', ok: chequesOk, blocking: true, title: 'Cheques match the register', detail: chequesOk ? `In hand ${money(held('in_hand'), cur)}, under collection ${money(held('deposited'), cur)}, issued ${money(held('issued'), cur)}` : 'The cheque accounts (1150, 1160, 2150) differ from the cheque register. Contact support before closing.' })
   const sample = ws.data.journal.some((j) => j.sample)
   checks.push({ id: 'sample', ok: !sample, blocking: true, title: 'No sample data in the books', detail: sample ? 'Remove the sample data first.' : 'Only real figures.' })
+  const noEInvoice = missingEInvoices(ws, schema, start, end)
+  checks.push({ id: 'einvoice', ok: noEInvoice.length === 0, blocking: false, title: 'E-invoice numbers recorded', detail: noEInvoice.length ? `${noEInvoice.length} invoice${noEInvoice.length > 1 ? 's' : ''} of ${month} ha${noEInvoice.length > 1 ? 've' : 's'} no e-invoice number yet: ${noEInvoice.slice(0, 5).map((r) => r.number).join(', ')}${noEInvoice.length > 5 ? '…' : ''}` : 'Every invoice of the month has its e-invoice number.' })
   const vat = vatForPeriod(ws, start, end)
   checks.push({ id: 'vat', ok: true, blocking: false, title: `VAT for ${month}`, detail: `Output ${money(vat.output, cur)} − input ${money(vat.input, cur)} = ${vat.due >= 0 ? `${money(vat.due, cur)} to pay` : `${money(-vat.due, cur)} credit`}` })
   return checks
@@ -1404,6 +1406,41 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
     vatReturns: (ctx.ws.books?.vatReturns ?? []).filter((v) => !refiled.includes(v)),
   }
   logLedger(ctx, `reopened the books after ${date} (was closed up to ${lock}): ${why}`)
+}
+
+/* ---------------- e-invoice number (issued on the ETA portal, typed in here) ---------------- */
+
+const E_INVOICE = /^[A-Za-z0-9-]{3,64}$/
+
+/**
+ * Records the number the Tax Authority's e-invoicing portal gave a posted invoice (or the supplier's e-invoice number
+ * on a bill). Nothing is sent to the Tax Authority: the invoice is issued on the portal, and its number is kept here
+ * and printed on the invoice. An empty number clears it.
+ */
+export function setEInvoiceNumber(ctx: Ctx, id: string, number: string) {
+  needFinance(ctx, 'record e-invoice numbers')
+  const rec = findRecord(ctx.ws, id)
+  const role = rec ? moduleById(ctx.schema, rec.module)?.role : undefined
+  if (!rec || (role !== 'invoices' && role !== 'purchases')) throw new EngineError('E-invoice numbers are kept on invoices, bills and their credit or debit notes')
+  if (rec.status === 'draft') throw new EngineError('Post the document first, then issue it on the e-invoicing portal')
+  if (rec.status === 'void') throw new EngineError('This document was voided')
+  const value = String(number ?? '').trim()
+  if (value && !E_INVOICE.test(value)) throw new EngineError('The e-invoice number is the code the portal shows (letters, digits and dashes, 3 to 64 characters)')
+  const clash = value && list(ctx.ws, rec.module).find((r) => r.id !== rec.id && r.status !== 'void' && String(r.values.eta_uuid ?? '').toLowerCase() === value.toLowerCase())
+  if (clash) throw new EngineError(`This e-invoice number is already on ${clash.number}`)
+  const before = String(rec.values.eta_uuid ?? '')
+  if (value) rec.values.eta_uuid = value
+  else delete rec.values.eta_uuid
+  rec.updatedAt = nowISO()
+  log(ctx, value ? `recorded e-invoice number ${value} on ${rec.number}${before ? ` (was ${before})` : ''}` : `removed the e-invoice number from ${rec.number}`, rec)
+}
+
+/** Sales invoices and credit notes dated from…to that are posted but have no e-invoice number yet. */
+export function missingEInvoices(ws: Workspace, schema: AppSchema, from: string, to: string) {
+  const m = moduleByRole(schema, 'invoices')
+  if (!m) return []
+  return list(ws, m.id).filter((r) => r.status !== 'draft' && r.status !== 'void' && r.number && !r.values.opening && (r.lines ?? []).length > 0 && !r.values.eta_uuid
+    && String(r.values.date ?? '') >= from && String(r.values.date ?? '') <= to)
 }
 
 /* ---------------- VAT return and withholding tax (Form 41) ---------------- */
