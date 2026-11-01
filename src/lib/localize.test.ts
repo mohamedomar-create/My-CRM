@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { TEMPLATES } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { validate } from './validate'
-import { localizeSchema } from './localize'
+import { localizeSchema, unlocalizeSchema } from './localize'
+import { AR } from '../locales/ar'
 import { seedSampleData } from './seed'
 import { createRecord, hasSampleData, list, postDocument, removeSampleData, trialBalance, type Ctx } from './engine'
 import { emptyData, type User, type Workspace } from './types'
@@ -45,5 +46,32 @@ describe('a system built in Arabic', () => {
     const tb = trialBalance(ws)
     expect(tb.length).toBeGreaterThan(0)
     expect(tb.reduce((s, [, r]) => s + r.debit - r.credit, 0)).toBeCloseTo(0)
+  })
+
+  it('editing in Arabic saves only the names the company changed; the rest keep their saved English', () => {
+    const saved = generateSchema(TEMPLATES.find((t) => t.id === 'distribution')!, { ...emptyAnswers('X'), taxId: '1' })
+    const edited = structuredClone(localizeSchema(saved, 'ar'))
+    const customers = edited.modules.find((m) => m.role === 'accounts')!
+    const phone = customers.fields.find((f) => f.key === 'phone')!
+    phone.label = 'رقم الموبايل'
+    customers.fields.push({ id: 'f_new', key: 'notes2', label: 'ملاحظات العميل', type: 'text', width: 1 })
+    edited.modules.reverse()
+    edited.reports.pop()
+    const out = unlocalizeSchema(edited, saved)
+    const outCustomers = out.modules.find((m) => m.role === 'accounts')!
+    const savedCustomers = saved.modules.find((m) => m.role === 'accounts')!
+    expect(outCustomers.name).toBe(savedCustomers.name)
+    expect(outCustomers.fields.find((f) => f.key === 'phone')!.label).toBe('رقم الموبايل')
+    expect(outCustomers.fields.find((f) => f.key === 'notes2')!.label).toBe('ملاحظات العميل')
+    // Every other name is exactly what was saved, whatever order things are in now.
+    const names = (s: typeof saved) => s.modules.flatMap((m) => [m.name, m.singular, ...m.fields.filter((f) => f.key !== 'phone' && f.key !== 'notes2').flatMap((f) => [f.label, ...(f.options ?? []).map((o) => o.label)]), ...(m.stages ?? []).map((x) => x.name)]).sort()
+    expect(names(out)).toEqual(names(saved))
+    expect(out.reports.map((r) => r.name)).toEqual(saved.reports.slice(0, -1).map((r) => r.name))
+    expect(out.workflows).toEqual(saved.workflows)
+    expect(out.roles).toEqual(saved.roles)
+    // A name changed to the Arabic of another text is the company's own choice and is kept.
+    const again = structuredClone(localizeSchema(saved, 'ar'))
+    again.modules.find((m) => m.role === 'accounts')!.name = AR['Buyers']
+    expect(unlocalizeSchema(again, saved).modules.find((m) => m.role === 'accounts')!.name).toBe(AR['Buyers'])
   })
 })
