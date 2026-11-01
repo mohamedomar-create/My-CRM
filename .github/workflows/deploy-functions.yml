@@ -34,8 +34,8 @@ jobs:
         run: |
           for dir in supabase/functions/*/; do
             name=$(basename "$dir")
-            # "join" is for people who aren't signed in yet (it checks the invitation itself); the rest need a login.
+            # "join" (people not signed in yet) and "scheduler" (the nightly job) check their callers themselves; the rest need a login.
             flags=""
-            if [ "$name" = join ]; then flags="--no-verify-jwt"; fi
+            if [ "$name" = join ] || [ "$name" = scheduler ]; then flags="--no-verify-jwt"; fi
             supabase functions deploy "$name" --project-ref "$PROJECT_REF" --use-api $flags
           done

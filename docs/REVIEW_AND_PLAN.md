@@ -18,7 +18,7 @@
 >
 > **Phase 1.3, second part (SECU-11, SECU-12).** Two-factor login with an authenticator app, enforced by the server for anyone who turned it on, and optionally required by the company for admins and finance. Idle sign-out after 30 minutes. Limits: 120 changes per person per minute, 200,000 records and 200 people per workspace. Not done: CAPTCHA on sign-up (needs a CAPTCHA account; Supabase supports hCaptcha and Turnstile) and a list of active sessions.
 >
-> **Phase 1.4, first part (SECU-04 base, SECU-07).** Live updates: screens catch up with colleagues' saves within a second (Realtime broadcast with the version only, members-only private channel). Approvals tied to a content fingerprint; maker is never checker; admin override with a reason. Not yet: "Ahmed is editing" presence and a field-level merge prompt. **Second part, next:** server scheduler with a run log (SECU-17) and setup versions in their own table (BUIL-M1).
+> **Phase 1.4, first part (SECU-04 base, SECU-07).** Live updates: screens catch up with colleagues' saves within a second (Realtime broadcast with the version only, members-only private channel). Approvals tied to a content fingerprint; maker is never checker; admin override with a reason. Not yet: "Ahmed is editing" presence and a field-level merge prompt. **Second part (SECU-17 base, BUIL-M1 part).** A nightly server job runs every workspace's date-based automations and keeps a run log (Audit page). People who aren't admins no longer receive the setup draft or earlier versions. Setup versions still live in the company file (only admins can change or see them); a separate table can follow with the builder work in Phase 3.
 
 ## Executive summary
 

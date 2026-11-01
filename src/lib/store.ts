@@ -815,6 +815,21 @@ export interface AuditEvent {
 }
 
 /** The latest entries of the server's audit trail (admins only; the database refuses everyone else). */
+export interface AutomationRun {
+  id: number
+  at: string
+  ok: boolean
+  ran: number
+  error: string | null
+}
+
+/** The nightly automation runs (admins only), newest first. */
+export async function loadAutomationRuns(workspaceId: string, limit = 30): Promise<AutomationRun[]> {
+  const { data, error } = await supabase.from('automation_runs').select('id, at, ok, ran, error').eq('workspace_id', workspaceId).order('at', { ascending: false }).limit(limit)
+  if (error) throw new Error(friendly(error.message))
+  return data as AutomationRun[]
+}
+
 export async function loadAudit(workspaceId: string, limit = 300): Promise<AuditEvent[]> {
   const { data, error } = await supabase
     .from('audit_events')

@@ -8,3 +8,7 @@ verify_jwt = true
 [functions.join]
 # People joining from an invitation link aren't signed in yet; the function itself requires a valid, open invitation.
 verify_jwt = false
+
+[functions.scheduler]
+# Called by the nightly database job, which has no login; the function checks the database-held key itself.
+verify_jwt = false
