@@ -5,6 +5,7 @@ import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
 import type { AccountCode, Approval, JournalEntry, Line, Payment, Rec, User, Workspace } from './types'
 import { account as findAccount, chartOf, type AccountType } from './accounts'
+import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
 export class EngineError extends Error {}
 
@@ -481,6 +482,11 @@ function checkLines(lines: Line[]) {
     if (!(l.price >= 0)) throw new EngineError(`Price can’t be negative (${l.description || 'line'})`)
     if (l.discount < 0 || l.discount > 100) throw new EngineError('Discount must be between 0 and 100%')
     if (l.vat < 0 || l.vat > 100) throw new EngineError('VAT must be between 0 and 100%')
+    if (l.taxCode) {
+      const code = taxCode(l.taxCode)
+      if (!code) throw new EngineError(`Unknown tax code ${l.taxCode} (${l.description || 'line'})`)
+      l.vat = code.rate
+    }
   }
 }
 
@@ -644,7 +650,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (rec.status === 'draft' || rec.status === 'void') throw new EngineError('Only posted documents can be voided')
   if (Number(rec.values.paid) > 0) throw new EngineError(rec.values.credit_for ? 'This credit note was refunded. Reverse the refund before voiding.' : 'This document has payments. Reverse them before voiding.')
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
-  const date = todayISO()
+  const date = ctx.today ?? todayISO()
   const moves = ctx.ws.data.stock.filter((s) => s.doc === rec.id && !s.ref.startsWith('VOID'))
   // A bill can only be voided while its goods are still in stock; otherwise they were sold and a purchase return is needed.
   for (const mv of moves) {
@@ -686,7 +692,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   log(ctx, `voided ${mod.singular} ${rec.number}`, rec)
 }
 
-export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') {
+export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', whtRate = 0) {
   const mod = moduleById(ctx.schema, rec.module)!
   if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can register payments')
   if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('Post the document before registering a payment')
@@ -697,14 +703,22 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   if (amount > balance) throw new EngineError(`Payment is more than the balance due (${money(balance, ctx.schema.company.currency)})`)
   if (date < String(rec.values.date)) throw new EngineError('Payment date can’t be before the document date')
   const incoming = mod.role === 'invoices'
+  // Withholding tax is worked out on the value before VAT: the part of this payment that isn't VAT.
+  whtRate = Number(whtRate) || 0
+  if (whtRate && !WHT_RATES.some((w) => w.rate === whtRate)) throw new EngineError('Choose a withholding tax rate of 1%, 3% or 5%')
+  const total = Number(rec.values.total ?? 0)
+  const base = whtRate ? round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount) : 0
+  const withheld = round2((base * whtRate) / 100)
+  const wht = whtRate ? { rate: whtRate, base, amount: withheld } : undefined
+  const handed = round2(amount - withheld)
   const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref }, rec))
+  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref, ...(wht ? { wht } : {}) }, rec))
   const cash: AccountCode = '1100'
   journal(ctx, {
-    date, ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}`, doc: rec.id,
+    date, ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}${wht ? `, ${whtName(whtRate)} withheld` : ''}`, doc: rec.id,
     lines: incoming
-      ? [{ account: cash, debit: amount, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
-      : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }],
+      ? [{ account: cash, debit: handed, credit: 0 }, { account: '1450', debit: withheld, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
+      : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: handed }, { account: '2400', debit: 0, credit: withheld }],
   }, rec)
   rec.values.paid = round2(Number(rec.values.paid) + amount)
   refreshBalance(rec)
@@ -821,7 +835,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
     if (qty > left) throw new EngineError(`Only ${left} of “${ol.description}” can still be credited`)
     const price = c.price === undefined || c.price === null ? ol.price : round2(Number(c.price))
     if (!(price >= 0) || price > ol.price) throw new EngineError(`The price for “${ol.description}” can be lowered, but not above the original ${money(ol.price, ctx.schema.company.currency)}`)
-    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, from: ol.id })
+    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), from: ol.id })
   }
   if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
   const t = totals(lines)
@@ -933,7 +947,7 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   const je = ctx.ws.data.journal.find((j) => j.ref === p.ref && j.doc === p.doc)
   if (!je) throw new EngineError('The payment’s journal entry is missing')
   const ref = `REV ${p.ref}`
-  ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id }, rec))
+  ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
   journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
   refreshBalance(rec)
@@ -990,7 +1004,7 @@ export function vatForPeriod(ws: Workspace, from: string, to: string) {
   let output = 0
   let input = 0
   for (const j of ws.data.journal) {
-    if (j.date < from || j.date > to) continue
+    if (j.date < from || j.date > to || j.ref.startsWith('VAT ')) continue
     for (const l of j.lines) {
       if (l.account === '2200') output += l.credit - l.debit
       if (l.account === '1400') input += l.debit - l.credit
@@ -1111,8 +1125,153 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
   } finally {
     ctx.closing = false
   }
-  ctx.ws.books = { lockDate: date, closedYears: (ctx.ws.books?.closedYears ?? []).filter((c) => !reopened.includes(c)) }
+  // A settled VAT return in the reopened months is undone too, so it is filed again (amended) after the correction.
+  const refiled = (ctx.ws.books?.vatReturns ?? []).filter((v) => monthEnd(v.month) > date)
+  ctx.closing = true
+  try {
+    for (const v of refiled) {
+      const je = ctx.ws.data.journal.find((j) => j.id === v.entry)
+      if (je) journal(ctx, { date: je.date, ref: `VAT REOPEN ${v.month}`, memo: `Reversal of the ${v.month} VAT settlement: ${why}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+    }
+  } finally {
+    ctx.closing = false
+  }
+  ctx.ws.books = {
+    lockDate: date,
+    closedYears: (ctx.ws.books?.closedYears ?? []).filter((c) => !reopened.includes(c)),
+    vatReturns: (ctx.ws.books?.vatReturns ?? []).filter((v) => !refiled.includes(v)),
+  }
   logLedger(ctx, `reopened the books after ${date} (was closed up to ${lock}): ${why}`)
+}
+
+/* ---------------- VAT return and withholding tax (Form 41) ---------------- */
+
+export interface VatBox {
+  code: string
+  name: string
+  base: number
+  vat: number
+}
+
+/**
+ * The monthly VAT return, from the documents posted (or voided) in the month, per tax code: sales with their output
+ * VAT, purchases with their input VAT. A document voided in a later month stays in its own month and comes off in the
+ * month of the void, as the ledger has it. `ledger` is the same VAT from the accounts, so the two can be compared.
+ */
+export function vatReturn(ws: Workspace, schema: AppSchema, month: string) {
+  const from = `${month}-01`
+  const to = monthEnd(month)
+  const boxes = { sales: new Map<string, VatBox>(), purchases: new Map<string, VatBox>() }
+  const docs = new Map<string, { rec: Rec; side: 'sales' | 'purchases' }>()
+  for (const role of ['invoices', 'purchases'] as const) {
+    const m = moduleByRole(schema, role)
+    if (m) for (const r of list(ws, m.id)) docs.set(r.id, { rec: r, side: role === 'invoices' ? 'sales' : 'purchases' })
+  }
+  for (const j of ws.data.journal) {
+    if (j.date < from || j.date > to || !j.doc) continue
+    const d = docs.get(j.doc)
+    if (!d || !d.rec.number || !(d.rec.lines ?? []).length) continue
+    const sign = j.ref === d.rec.number ? 1 : j.ref === `VOID ${d.rec.number}` ? -1 : 0
+    if (!sign) continue
+    const credit = d.rec.values.credit_for ? -1 : 1
+    for (const l of d.rec.lines ?? []) {
+      const code = lineTaxCode(l)
+      const box = boxes[d.side].get(code) ?? { code, name: taxCode(code)?.name ?? `VAT ${l.vat}%`, base: 0, vat: 0 }
+      box.base = round2(box.base + sign * credit * lineNet(l))
+      box.vat = round2(box.vat + sign * credit * lineTax(l))
+      boxes[d.side].set(code, box)
+    }
+  }
+  const order = (m: Map<string, VatBox>) => [...m.values()].sort((a, b) => TAX_CODES.findIndex((t) => t.code === a.code) - TAX_CODES.findIndex((t) => t.code === b.code))
+  const sales = order(boxes.sales)
+  const purchases = order(boxes.purchases)
+  const output = round2(sales.reduce((s, b) => s + b.vat, 0))
+  const input = round2(purchases.reduce((s, b) => s + b.vat, 0))
+  const ledger = vatForPeriod(ws, from, to)
+  // What the Tax Authority already owes us from earlier months (a debit balance on 2210 before this month).
+  let carried = 0
+  for (const j of ws.data.journal) if (j.date < from) for (const l of j.lines) if (l.account === '2210') carried += l.debit - l.credit
+  carried = round2(Math.max(0, carried))
+  const due = round2(output - input)
+  const settled = ws.books?.vatReturns?.find((v) => v.month === month)
+  return { month, from, to, sales, purchases, output, input, due, carried, toPay: round2(Math.max(0, due - carried)), ledger, matches: ledger.output === output && ledger.input === input, settled }
+}
+
+/**
+ * Files the month's VAT: once the month is closed (so its figures can't change), output VAT and input VAT are moved to
+ * 2210 VAT due to the Tax Authority by one entry dated the month end. Paying the Authority is then a voucher from 2210.
+ */
+export function settleVat(ctx: Ctx, month: string) {
+  needFinance(ctx, 'settle VAT')
+  if (!/^\d{4}-\d{2}$/.test(String(month))) throw new EngineError('Choose the month')
+  const end = monthEnd(month)
+  const lock = ctx.ws.books?.lockDate
+  if (!lock || lock < end) throw new EngineError(`Close ${month} first, so its figures can’t change after the return is filed`)
+  const done = ctx.ws.books?.vatReturns ?? []
+  if (done.some((v) => v.month === month)) throw new EngineError(`The VAT for ${month} is already settled`)
+  if (done.some((v) => v.month > month)) throw new EngineError('A later month is already settled: settle the months in order')
+  const r = vatReturn(ctx.ws, ctx.schema, month)
+  if (!r.matches) throw new EngineError('The documents and the VAT accounts disagree for this month. Contact support before filing.')
+  const lines = [side('2200', r.output), side('1400', -r.input), side('2210', -r.due)]
+  let entry = ''
+  if (lines.some((l) => l.debit || l.credit)) {
+    ctx.closing = true
+    try {
+      journal(ctx, { date: end, ref: `VAT ${month}`, memo: `VAT return ${month}: output ${money(r.output, ctx.schema.company.currency)} − input ${money(r.input, ctx.schema.company.currency)}`, lines })
+    } finally {
+      ctx.closing = false
+    }
+    entry = ctx.ws.data.journal[0].id
+  }
+  ctx.ws.books = { ...ctx.ws.books, vatReturns: [...done, { month, output: r.output, input: r.input, due: r.due, at: nowISO(), by: ctx.user.id, entry }] }
+  logLedger(ctx, `settled VAT for ${month}: ${r.due >= 0 ? `${money(r.due, ctx.schema.company.currency)} due` : `${money(-r.due, ctx.schema.company.currency)} credit`}`)
+  return r.due
+}
+
+export interface WhtRow {
+  date: string
+  ref: string
+  doc: string
+  party: string
+  name: string
+  taxId: string
+  rate: number
+  base: number
+  amount: number
+}
+
+/**
+ * Withholding tax of a quarter. `withheld`: what we kept back from suppliers, which goes on Form 41 and is paid to
+ * the Tax Authority. `deducted`: what customers kept back from us, to match against their certificates.
+ */
+export function withholdingTax(ws: Workspace, year: number, quarter: 1 | 2 | 3 | 4) {
+  const from = `${year}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}-01`
+  const to = monthEnd(`${year}-${String(quarter * 3).padStart(2, '0')}`)
+  const rows = (direction: 'in' | 'out'): WhtRow[] => ws.data.payments
+    .filter((p) => p.wht && p.direction === direction && p.date >= from && p.date <= to)
+    .map((p) => {
+      const rec = findRecord(ws, p.doc)
+      const partyId = String(rec?.values[direction === 'out' ? 'supplier' : 'customer'] ?? '')
+      const party = partyId ? findRecord(ws, partyId) : undefined
+      return { date: p.date, ref: p.ref, doc: p.doc, party: partyId, name: String(party?.values.name ?? ''), taxId: String(party?.values.tax_id ?? ''), rate: p.wht!.rate, base: p.wht!.base, amount: p.wht!.amount }
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const withheld = rows('out')
+  const deducted = rows('in')
+  const sum = (r: WhtRow[]) => round2(r.reduce((s, x) => s + x.amount, 0))
+  return { from, to, withheld, deducted, totalWithheld: sum(withheld), totalDeducted: sum(deducted), missingTaxIds: [...new Set(withheld.filter((r) => !r.taxId).map((r) => r.name))] }
+}
+
+/** Form 41 as a spreadsheet (CSV, UTF-8 with BOM so Excel shows Arabic), one row per payment, for the e-tax portal. */
+export function form41Csv(ws: Workspace, year: number, quarter: 1 | 2 | 3 | 4) {
+  const { withheld } = withholdingTax(ws, year, quarter)
+  const cell = (v: string | number) => {
+    const t = String(v)
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+  }
+  const head = ['Tax registration no.', 'Supplier name', 'Date', 'Transaction nature', 'Amount before VAT', 'Rate %', 'Tax withheld', 'Our reference']
+  const lines = withheld.map((r) => [r.taxId, r.name, r.date, whtName(r.rate), r.base.toFixed(2), r.rate, r.amount.toFixed(2), r.ref].map(cell).join(','))
+  return '\ufeff' + [head.map(cell).join(','), ...lines].join('\r\n') + '\r\n'
 }
 
 /* ---------------- ledger: chart of accounts, journal vouchers, opening balances, stock adjustments ---------------- */

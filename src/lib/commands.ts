@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -30,7 +30,7 @@ export interface CommandArgs {
   'quote.toInvoice': { id: string }
   'doc.post': { id: string }
   'doc.void': { id: string }
-  'doc.pay': { id: string; amount: number; date: string; method: Method }
+  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number }
   'approval.request': { id: string; rule: string }
   'approval.decide': { approval: string; approve: boolean; note?: string }
   'approval.override': { id: string; rule: string; reason: string }
@@ -59,6 +59,7 @@ export interface CommandArgs {
   'books.closeMonth': { month: string }
   'books.closeYear': { year: number }
   'books.reopen': { date: string; reason: string }
+  'vat.settle': { month: string }
   'security.setTwoFactor': { required: boolean }
 }
 
@@ -116,7 +117,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'quote.toInvoice': { run: (ws, u, a) => ({ id: quoteToInvoice(ctx(ws, u), rec(ws, a.id)).id }) },
   'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id)) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
-  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method) },
+  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, Number(a.wht ?? 0)) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },
   'approval.override': { admin: true, run: (ws, u, a) => void overrideApproval(ctx(ws, u), rec(ws, a.id), a.rule, String(a.reason ?? '')) },
@@ -216,6 +217,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'books.closeMonth': { run: (ws, u, a) => closeMonth(ctx(ws, u), String(a.month)) },
   'books.closeYear': { run: (ws, u, a) => closeYear(ctx(ws, u), Number(a.year)).profit },
   'books.reopen': { admin: true, run: (ws, u, a) => reopenBooks(ctx(ws, u), String(a.date), String(a.reason ?? '')) },
+  'vat.settle': { run: (ws, u, a) => settleVat(ctx(ws, u), String(a.month)) },
   'security.setTwoFactor': {
     admin: true,
     run: (ws, _u, a) => {

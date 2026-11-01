@@ -5,12 +5,13 @@ import { useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, creditNotesOf, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, creditNotesOf, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
 import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
+import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -226,7 +227,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       </div>
       {paying && rec && (isCredit
         ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, 'Refund registered')) setPaying(false) }} />
-        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.pay', { id: rec.id, amount, date, method }, 'Payment registered')) setPaying(false) }} />)}
+        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, wht) => { if (act('doc.pay', { id: rec.id, amount, date, method, wht }, 'Payment registered')) setPaying(false) }} />)}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
   )
@@ -319,14 +320,15 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
     const p = items.find((x) => x.id === pid)
     if (!p) return upd(i, { product: undefined })
     const price = mod.role === 'purchases' ? Number(p.values.cost || p.values.price || 0) : Number(p.values.price ?? 0)
-    upd(i, { product: p.id, description: String(p.values.name), price, vat: Number(p.values.vat_rate ?? schema.company.vatRate) })
+    const vat = Number(p.values.vat_rate ?? schema.company.vatRate)
+    upd(i, { product: p.id, description: String(p.values.name), price, vat, taxCode: codeForRate(vat) })
   }
   return (
     <div className="card">
-      <div className="row between"><h2 style={{ margin: 0 }}>Lines</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate }])}><Plus size={15} /> Add line</button>}</div>
+      <div className="row between"><h2 style={{ margin: 0 }}>Lines</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate) }])}><Plus size={15} /> Add line</button>}</div>
       <div style={{ overflowX: 'auto' }}>
         <table className="lines">
-          <thead><tr><th style={{ minWidth: 200 }}>Product / service</th><th>Qty</th><th>Unit price</th><th>Disc %</th><th>VAT %</th><th className="num">Net</th><th className="num">VAT</th><th /></tr></thead>
+          <thead><tr><th style={{ minWidth: 200 }}>Product / service</th><th>Qty</th><th>Unit price</th><th>Disc %</th><th>Tax code</th><th className="num">Net</th><th className="num">VAT</th><th /></tr></thead>
           <tbody>
             {lines.length === 0 && <tr><td colSpan={8} className="muted small" style={{ padding: 16 }}>No lines yet. Add the products or services you are {mod.role === 'purchases' ? 'buying' : 'selling'}.</td></tr>}
             {lines.map((l, i) => {
@@ -345,7 +347,12 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
                   <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
                   <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
-                  <td><input type="number" min={0} max={100} value={l.vat} onChange={(e) => upd(i, { vat: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
+                  <td>
+                    <select value={lineTaxCode(l)} onChange={(e) => upd(i, { taxCode: e.target.value, vat: TAX_CODES.find((t) => t.code === e.target.value)?.rate ?? l.vat })} disabled={disabled} style={{ width: 150 }} title="VAT treatment of this line">
+                      {!TAX_CODES.some((t) => t.code === lineTaxCode(l)) && <option value={lineTaxCode(l)}>VAT {l.vat}%</option>}
+                      {TAX_CODES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+                    </select>
+                  </td>
                   <td className="num">{lineNet(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td className="num">{lineTax(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td>{!disabled && <button className="ghost icon" onClick={() => onChange(lines.filter((_, j) => j !== i))}><X size={14} /></button>}</td>
@@ -364,10 +371,19 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   )
 }
 
-function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') => void }) {
+function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', wht: number) => void }) {
+  const { ws } = useApp()
   const [amount, setAmount] = useState(Math.abs(Number(rec.values.balance)))
   const [date, setDate] = useState(todayISO())
   const [method, setMethod] = useState<'cash' | 'bank' | 'cheque' | 'instapay' | 'card'>('bank')
+  const sales = Boolean(rec.values.customer)
+  // Start from the rate last used with this customer or supplier.
+  const party = String(rec.values.customer ?? rec.values.supplier ?? '')
+  const last = ws.data.payments.find((p) => !p.reverses && p.amount > 0 && findRecord(ws, p.doc)?.values[sales ? 'customer' : 'supplier'] === party)
+  const [wht, setWht] = useState(last?.wht?.rate ?? 0)
+  const total = Number(rec.values.total ?? 0)
+  const base = round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount)
+  const withheld = round2((base * wht) / 100)
   return (
     <>
       <div className="overlay" onClick={onClose} />
@@ -378,7 +394,20 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
           <label className="field">Amount<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
           <label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
-          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method)}><CheckCircle2 size={16} /> Register</button></div>
+          {!refund && (
+            <label className="field">{sales ? 'Withholding tax the customer deducted' : 'Withholding tax to keep back'}
+              <select value={wht} onChange={(e) => setWht(Number(e.target.value))}>
+                <option value={0}>None</option>
+                {WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{w.name}</option>)}
+              </select>
+            </label>
+          )}
+          {!refund && wht > 0 && (
+            <p className="small muted" style={{ margin: 0 }}>
+              {wht}% of {money(base, currency)} (the amount before VAT) = <b>{money(withheld, currency)}</b> {sales ? 'deducted by the customer, claimed back from the Tax Authority' : 'kept back and paid to the Tax Authority with Form 41'}. {sales ? 'Received' : 'Paid'}: <b>{money(amount - withheld, currency)}</b>.
+            </p>
+          )}
+          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method, refund ? 0 : wht)}><CheckCircle2 size={16} /> Register</button></div>
         </div>
       </div>
     </>
@@ -478,7 +507,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
           <thead><tr><th>#</th><th>Description</th><th className="num">Qty</th><th className="num">Unit price</th><th className="num">Disc.</th><th className="num">VAT</th><th className="num">Amount</th></tr></thead>
           <tbody>
             {(rec.lines ?? []).map((l, i) => (
-              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
+              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%{lineTaxCode(l) === 'Z0' ? ' (zero-rated)' : lineTaxCode(l) === 'EX' ? ' (exempt)' : lineTaxCode(l) === 'OS' ? ' (out of scope)' : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
             ))}
           </tbody>
         </table>

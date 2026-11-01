@@ -5,11 +5,11 @@ import { useApp } from './useApp'
 import { accountBalance, ageing, canPost, money, round2, trialBalance } from '../lib/engine'
 import { account, accountName, debitNormal } from '../lib/accounts'
 import { useLang } from '../lib/i18n'
-import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton } from './Ledger'
+import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close'>('tb')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax'>('tb')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">Only Admin and finance roles can see accounting.</div>
   const cur = schema.company.currency
@@ -26,7 +26,8 @@ export default function Accounting() {
   const reversed = new Set(ws.data.journal.filter((j) => j.reverses).map((j) => j.reverses))
   const revenue = bal('4000')
   const cogs = bal('5000') + bal('5100')
-  const vatDue = round2(bal('2200') - bal('1400'))
+  // Not yet settled (2200 − 1400) plus settled but not yet paid to the Tax Authority (2210)
+  const vatDue = round2(bal('2200') - bal('1400') + bal('2210'))
   return (
     <div className="page">
       <div className="page-head"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>Accounting</h1></div>
@@ -48,6 +49,7 @@ export default function Accounting() {
         <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>Chart of accounts</button>
         <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>Opening balances</button>
         <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>Payments</button>
+        <button className={tab === 'tax' ? 'on' : ''} onClick={() => setTab('tax')}>VAT &amp; withholding</button>
         <button className={tab === 'close' ? 'on' : ''} onClick={() => setTab('close')}>Close the books</button>
       </div>
       {tab === 'tb' && (
@@ -102,6 +104,7 @@ export default function Accounting() {
       {tab === 'chart' && <ChartOfAccounts />}
       {tab === 'opening' && <OpeningBalances />}
       {tab === 'close' && <CloseBooks />}
+      {tab === 'tax' && <TaxReturns />}
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">

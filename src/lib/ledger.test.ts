@@ -339,7 +339,7 @@ describe('closing the books', () => {
     expect(() => reopenBooks(ctx, '2025-10-31', 'oops')).toThrow(/at least 10/)
     expect(() => reopenBooks(ctx, '2026-01-31', 'Missed a supplier bill')).toThrow(/before the current lock/)
     reopenBooks(ctx, '2025-10-31', 'Missed a supplier bill')
-    expect(ws.books).toEqual({ lockDate: '2025-10-31', closedYears: [] })
+    expect(ws.books).toEqual({ lockDate: '2025-10-31', closedYears: [], vatReturns: [] })
     expect(ws.data.journal[0].ref).toBe('REOPEN 2025')
     expect(accountBalance(ws, '3100')).toBe(0)
     expect(accountBalance(ws, '4000')).toBe(-400)
