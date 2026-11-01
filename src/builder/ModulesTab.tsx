@@ -83,7 +83,7 @@ export default function ModulesTab({ focus, setFocus }: Props) {
           {schema.modules.map((m) => (
             <button key={m.id} className={`mod-item ${m.id === mod.id ? 'on' : ''}`} onClick={() => setFocus({ moduleId: m.id })}>
               <span className="badge" style={{ background: m.color }}><Icon name={m.icon} size={15} /></span>
-              <span className="grow" style={{ textAlign: 'start' }}>{m.name}<br /><span className="tiny muted">{m.fields.length} fields · {m.role === 'custom' ? 'custom' : ROLES[m.role].label}</span></span>
+              <span className="grow" style={{ textAlign: 'start' }}>{m.name}<br /><span className="tiny muted">{tr('{n} fields', { n: m.fields.length })} · {m.role === 'custom' ? tr('custom') : msgText(ROLES[m.role].label)}</span></span>
               {modErrors(m.id) && <span className="err" />}
             </button>
           ))}
@@ -103,7 +103,7 @@ export default function ModulesTab({ focus, setFocus }: Props) {
               <Icon name={mod.icon} size={26} />
               <input value={mod.name} onChange={(e) => editMod((m) => (m.name = e.target.value))} aria-label={tr('Module name')} />
               <span className="grow" />
-              <span className="pill" style={{ background: '#ffffff26', color: '#fff' }}>{mod.role === 'custom' ? tr('Custom module') : ROLES[mod.role].label}</span>
+              <span className="pill" style={{ background: '#ffffff26', color: '#fff' }}>{mod.role === 'custom' ? tr('Custom module') : msgText(ROLES[mod.role].label)}</span>
             </div>
             {mod.role !== 'custom' && <div className="info" style={{ margin: '14px 18px 0' }}>{msgText(ROLES[mod.role].description)} {tr('Fields with a')} <Lock size={12} /> {tr('keep this working — rename and move them freely.')}</div>}
             {mod.lines && <div className="note" style={{ margin: '10px 18px 0' }}>{tr('This is a document: it also gets a product lines table with quantity, price, discount and VAT. Totals are calculated by the system.')}</div>}
@@ -129,8 +129,8 @@ function PaletteItem({ type }: { type: FieldType }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `pal:${type}` })
   const info = typeInfo(type)
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes} className="pal-item" title={info.hint}>
-      <Icon name={info.icon} size={15} /> {info.label}
+    <div ref={setNodeRef} {...listeners} {...attributes} className="pal-item" title={msgText(info.hint)}>
+      <Icon name={info.icon} size={15} /> {msgText(info.label)}
     </div>
   )
 }
@@ -237,7 +237,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
       <div className="tiny muted">{tr('Internal key:')} <span className="mono">{field.key}</span>{!fresh && ' (locked — it is in use)'}</div>
       <label className="field">Type
         <select value={field.type} onChange={(e) => changeType(e.target.value as FieldType)} disabled={field.system}>
-          {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+          {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{msgText(t.label)}</option>)}
         </select>
       </label>
       <label className="field">{tr('Help text')}<input value={field.help ?? ''} onChange={(e) => set({ help: e.target.value })} placeholder={tr('Shown under the field')} /></label>
@@ -449,7 +449,7 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
           <span className="tiny muted">{posted > 0 ? tr('Locked, because {n} numbered documents already use it. Changing it would break your numbering series.', { n: posted }) : tr('Numbers look like {example} and are given when a document is posted, without gaps.', { example: `${mod.numberPrefix || 'INV'}-${new Date().getFullYear()}-0001` })}</span>
         </label>
       )}
-      <div className="info small">{mod.role === 'custom' ? ROLES.custom.description : ROLES[mod.role].description}</div>
+      <div className="info small">{msgText(mod.role === 'custom' ? ROLES.custom.description : ROLES[mod.role].description)}</div>
       {msg && <div className="error-box small">{msg}</div>}
       <button className="danger" onClick={remove}><Trash2 size={16} /> {tr('Delete module')}</button>
     </div>
@@ -467,7 +467,7 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
   const missing = (info.needs ?? []).filter((n) => !schema.modules.some((m) => m.role === n))
 
   function add() {
-    const m = buildModule({ role, name: name.trim() || info.label, singular: singular.trim() || name.trim() || info.label, icon, color: PALETTE[schema.modules.length % PALETTE.length] }, schema.company.vatRate)
+    const m = buildModule({ role, name: name.trim() || msgText(info.label), singular: singular.trim() || name.trim() || msgText(info.label), icon, color: PALETTE[schema.modules.length % PALETTE.length] }, schema.company.vatRate)
     edit((s) => {
       s.modules.push(m)
       for (const r of s.roles) if (!r.admin && Object.keys(r.access).length) r.access[m.id] = ['view']
@@ -482,9 +482,9 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
           <div className="row between"><h2 style={{ margin: 0 }}>{tr('Add a module')}</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
           <div className="tiles" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', marginTop: 0 }}>
             {available.map((r) => (
-              <button key={r} type="button" className={`tile ${role === r ? 'on' : ''}`} style={{ padding: 12 }} onClick={() => { setRole(r); setName(r === 'custom' ? '' : ROLES[r].label) }}>
-                <b className="small">{ROLES[r].label}</b>
-                <small className="tiny">{ROLES[r].description.split('.')[0]}.</small>
+              <button key={r} type="button" className={`tile ${role === r ? 'on' : ''}`} style={{ padding: 12 }} onClick={() => { setRole(r); setName(r === 'custom' ? '' : msgText(ROLES[r].label)) }}>
+                <b className="small">{msgText(ROLES[r].label)}</b>
+                <small className="tiny">{msgText(ROLES[r].description).split(/[.。]/)[0]}.</small>
               </button>
             ))}
           </div>

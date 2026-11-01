@@ -12,7 +12,7 @@ import { PSEUDO_FIELDS } from '../lib/validate'
 import { runReport } from '../lib/reports'
 import { seedSampleData } from '../lib/seed'
 import { emptyData, type Workspace } from '../lib/types'
-import { N_, tr } from '../lib/i18n'
+import { N_, msg, tr } from '../lib/i18n'
 
 const CHARTS: { id: ChartType; label: string; icon: typeof BarChart3 }[] = [
   { id: 'kpi', label: N_('Number'), icon: Gauge },
@@ -47,7 +47,7 @@ export function usePreviewWorkspace(ws: Workspace, schema: AppSchema) {
 }
 
 export function fieldOptions(mod: ModuleDef) {
-  const pseudo = Object.entries(PSEUDO_FIELDS).filter(([, p]) => p.applies(mod)).map(([key, p]) => ({ key, label: p.label, icon: 'Sparkles', numeric: false }))
+  const pseudo = Object.entries(PSEUDO_FIELDS).filter(([, p]) => p.applies(mod)).map(([key, p]) => ({ key, label: msg(p.label), icon: 'Sparkles', numeric: false }))
   return [...pseudo, ...mod.fields.map((f) => ({ key: f.key, label: f.label, icon: typeInfo(f.type).icon, numeric: isNumeric(f) }))]
 }
 

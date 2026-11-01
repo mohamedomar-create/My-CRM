@@ -106,7 +106,8 @@ export function translateMessage(l: Lang, msg: string) {
   })
   for (const p of patterns) {
     const m = p.re.exec(msg)
-    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, m[i + 1]])))
+    // Values that are themselves known texts ("Invoice", "you keep stock") are translated too.
+    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, AR[m[i + 1]] ?? m[i + 1]])))
   }
   return msg
 }

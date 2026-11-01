@@ -1,7 +1,7 @@
 // Every screen text wrapped for translation has its Arabic, and the screens marked done have no English left unwrapped.
 import { describe, expect, it } from 'vitest'
 import { AR } from './ar'
-import { extractKeys, rawText } from './extract'
+import { extractKeys, extractLabels, extractMessages, extractTable, rawText } from './extract'
 import { translate, translateMessage } from '../lib/i18n'
 
 // Every source file's text (Vite reads them; test files and the translation code itself aren't screen text).
@@ -52,6 +52,16 @@ describe('Arabic translation', () => {
     expect(missing).toEqual([])
   })
 
+  it('every message from the engine and the server, and every name in the library tables, has its Arabic', () => {
+    const lib = Object.entries(SOURCES).filter(([f]) => f.startsWith('src/lib/'))
+    const keys = new Set([
+      ...lib.flatMap(([, src]) => extractMessages(src)),
+      ...['src/lib/fieldTypes.ts', 'src/lib/roles.ts', 'src/lib/validate.ts'].flatMap((f) => extractLabels(read(f))),
+      ...extractTable(read('src/lib/recommend.ts'), 'FEATURE_LABEL'),
+    ])
+    expect([...keys].filter((k) => !AR[k])).toEqual([])
+  })
+
   it('the finished screens have no English left unwrapped', () => {
     const left = DONE.flatMap((f) => rawText(read(f)).map((t) => `${f}: ${t}`))
     expect(left).toEqual([])
@@ -60,7 +70,8 @@ describe('Arabic translation', () => {
   it('placeholders keep their names in Arabic, and every Arabic text is Arabic', () => {
     for (const [en, ar] of Object.entries(AR)) {
       const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
-      expect(names(ar), en).toEqual(names(en))
+      // The Arabic may leave a value out (an English plural ending, say) but never invents one.
+      expect(names(ar).every((n) => names(en).includes(n)), en).toBe(true)
       expect(/[؀-ۿ]/.test(ar), en).toBe(true)
     }
   })
