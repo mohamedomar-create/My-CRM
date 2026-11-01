@@ -38,13 +38,14 @@ export function extractKeys(src: string): string[] {
 /** English text left in JSX (between tags, or in placeholder / title / aria-label / alt) that isn't wrapped. */
 export function rawText(src: string): string[] {
   const found: string[] = []
-  for (const m of src.matchAll(/>([^<>{}]*[A-Za-z]{2,}[^<>{}]*)</g)) {
+  for (const m of src.matchAll(/>([^<>{}\n]*[A-Za-z]{2,}[^<>{}\n]*)</g)) {
     const t = m[1].trim()
-    // TypeScript generics and comparisons can look like tags; real JSX text has words separated by spaces or is one word.
-    if (t && !/[=;()]|=>|&&/.test(t)) found.push(t)
+    // TypeScript generics and comparisons can look like tags; real JSX text has no arrows, operators or statements.
+    if (t && !/=>|&&|\|\||;|\s=\s|^\)|\($/.test(t)) found.push(t)
   }
   for (const m of src.matchAll(/\b(?:placeholder|title|aria-label|alt)="([^"]*[A-Za-z]{2,}[^"]*)"/g)) {
-    if (!/^[\w.@+-]+@[\w.-]+$/.test(m[1])) found.push(m[1])
+    // E-mail addresses and web addresses are the same in every language.
+    if (!/^[\w.@+-]+@[\w.-]+$/.test(m[1]) && !/^[a-z]+:\/\//.test(m[1])) found.push(m[1])
   }
   return found
 }

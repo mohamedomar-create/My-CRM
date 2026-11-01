@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
-import { useApp } from './useApp'
+import { methodLabel, statusLabel, useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
@@ -13,14 +13,15 @@ import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 import { moneyAccounts } from '../lib/accounts'
+import { dateLocale, msg, tr } from '../lib/i18n'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
   const { ws, schema, user } = useApp()
   const rec = id ? findRecord(ws, id) : undefined
   const mod = moduleById(schema, rec?.module ?? moduleId ?? '')
-  if (!mod || (id && !rec)) return <div className="page">This record no longer exists. <Link to="/app">Back to dashboard</Link></div>
-  if (!can({ schema, user }, mod.id, rec ? 'view' : 'create')) return <div className="page">Your role doesn’t have access to {mod.name.toLowerCase()}. <Link to="/app">Back to dashboard</Link></div>
+  if (!mod || (id && !rec)) return <div className="page">{tr('This record no longer exists.')} <Link to="/app">{tr('Back to dashboard')}</Link></div>
+  if (!can({ schema, user }, mod.id, rec ? 'view' : 'create')) return <div className="page">{tr('Your role doesn’t have access to {what}.', { what: mod.name.toLowerCase() })} <Link to="/app">{tr('Back to dashboard')}</Link></div>
   return <Editor key={rec?.id ?? `new-${mod.id}`} mod={mod} rec={rec} ws={ws} schema={schema} />
 }
 
@@ -81,11 +82,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       if (created) nav(`/app/r/${created.id}`, { replace: true })
       return
     }
-    if (act('record.update', { id: rec!.id, ...edits() }, 'Saved')) settle()
+    if (act('record.update', { id: rec!.id, ...edits() }, tr('Saved'))) settle()
   }
 
   function saveAndPost() {
-    const ok = act('record.saveAndPost', { id: rec!.id, ...edits() }, 'Saved and posted. Stock and accounts are updated.')
+    const ok = act('record.saveAndPost', { id: rec!.id, ...edits() }, tr('Saved and posted. Stock and accounts are updated.'))
     if (ok) settle()
   }
 
@@ -101,66 +102,67 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     <div className="page">
       <div className="page-head">
         <h1>
-          <button className="ghost icon" onClick={() => nav(`/app/m/${mod.id}`)} aria-label="Back"><ArrowLeft size={18} /></button>
+          <button className="ghost icon" onClick={() => nav(`/app/m/${mod.id}`)} aria-label={tr('Back')}><ArrowLeft size={18} /></button>
           <span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>
-          {isNew ? `New ${mod.singular.toLowerCase()}` : recordTitle(ws, schema, rec)}
-          {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title="Score from the scoring rules"><Flame size={13} /> {score(ws, schema, rec)}</span>}
-          {rec && rotting(schema, rec).rotting && <span className="pill red" title="No progress for a while"><Clock size={13} /> idle {rotting(schema, rec).days} days</span>}
-          {rec?.status && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{rec.status}</span>}
+          {isNew ? tr('New {what}', { what: mod.singular.toLowerCase() }) : recordTitle(ws, schema, rec)}
+          {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title={tr('Score from the scoring rules')}><Flame size={13} /> {score(ws, schema, rec)}</span>}
+          {rec && rotting(schema, rec).rotting && <span className="pill red" title={tr('No progress for a while')}><Clock size={13} /> {tr('idle {n} days', { n: rotting(schema, rec).days })}</span>}
+          {rec?.status && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{statusLabel(rec.status)}</span>}
         </h1>
         <div className="row">
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
-            <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, 'Lead converted: customer, contact and deal created'); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> Convert to customer</button>
+            <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, tr('Lead converted: customer, contact and deal created')); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> {tr('Convert to customer')}</button>
           )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
-              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? 'Save first' : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, 'Marked as sent and numbered')}><Send size={15} /> Mark sent</button>}
-              {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, 'The customer accepted the quotation')}><CheckCircle2 size={15} /> Mark accepted</button>}
-              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, 'Invoice draft created from the quotation'); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> Create invoice</button>}
-              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, 'Marked as declined')}><X size={15} /> Declined</button>}
+              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
+              {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
+              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
             dirty
-              ? <button className="success" onClick={saveAndPost} title="Save your changes and post in one step"><Lock size={15} /> Save & post</button>
-              : <button className="success" onClick={() => act('doc.post', { id: rec.id }, 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
+              ? <button className="success" onClick={saveAndPost} title={tr('Save your changes and post in one step')}><Lock size={15} /> {tr('Save & post')}</button>
+              : <button className="success" onClick={() => act('doc.post', { id: rec.id }, tr('Posted. Stock and accounts are updated.'))}><Lock size={15} /> {tr('Post')}</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && !isCredit && (
-            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Register payment</button>
+            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> {tr('Register payment')}</button>
           )}
           {isCredit && rec && Number(rec.values.balance) < 0 && canPost({ schema, user }) && (
-            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Refund</button>
+            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> {tr('Refund')}</button>
           )}
           {mod.lines && rec && mod.role !== 'quotes' && !isCredit && ['posted', 'partial', 'paid'].includes(rec.status ?? '') && canPost({ schema, user }) && (
-            <button className="secondary" onClick={() => setCrediting(true)}><Undo2 size={15} /> {mod.role === 'invoices' ? 'Credit note' : 'Debit note'}</button>
+            <button className="secondary" onClick={() => setCrediting(true)}><Undo2 size={15} /> {mod.role === 'invoices' ? tr('Credit note') : tr('Debit note')}</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) && canPost({ schema, user }) && (
-            <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act('doc.void', { id: rec.id }, 'Voided and reversed')}><Ban size={15} /> Void</button>
+            <button className="danger" onClick={() => confirm(tr('Void this document? Stock and journal entries will be reversed. This can’t be undone.')) && act('doc.void', { id: rec.id }, tr('Voided and reversed'))}><Ban size={15} /> {tr('Void')}</button>
           )}
-          {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? 'Save first' : sync !== 'saved' ? 'Waiting for the save to be confirmed, so the printed number is final' : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
-          {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? 'Create' : 'Save'}</button>}
+          {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? tr('Save first') : sync !== 'saved' ? tr('Waiting for the save to be confirmed, so the printed number is final') : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> {tr('Print')}</button>}
+          {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? tr('Create') : tr('Save')}</button>}
         </div>
       </div>
 
       {rec && <ApprovalBanner rec={rec} mod={mod} />}
       {rec && isCredit && (
         <div className="info" style={{ marginBottom: 14 }}>
-          {mod.role === 'invoices' ? 'Credit note' : 'Debit note'} for <Link to={`/app/r/${String(rec.values.credit_for)}`}>{findRecord(ws, String(rec.values.credit_for))?.number ?? 'the original document'}</Link>: {String(rec.values.reason ?? '')}.
-          {' '}{money(Number(rec.values.applied ?? 0), schema.company.currency)} reduced what was owed{Number(rec.values.balance) < 0 ? `; ${money(-Number(rec.values.balance), schema.company.currency)} is left as ${mod.role === 'invoices' ? 'the customer’s' : 'the supplier’s'} credit (refund it, or keep it for later).` : '.'}
+          {mod.role === 'invoices' ? tr('Credit note for') : tr('Debit note for')} <Link to={`/app/r/${String(rec.values.credit_for)}`}>{findRecord(ws, String(rec.values.credit_for))?.number ?? tr('the original document')}</Link>: {String(rec.values.reason ?? '')}.
+          {' '}{tr('{amount} reduced what was owed.', { amount: money(Number(rec.values.applied ?? 0), schema.company.currency) })}
+          {Number(rec.values.balance) < 0 && <> {tr(mod.role === 'invoices' ? '{amount} is left as the customer’s credit (refund it, or keep it for later).' : '{amount} is left as the supplier’s credit (refund it, or keep it for later).', { amount: money(-Number(rec.values.balance), schema.company.currency) })}</>}
         </div>
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && (
         <div className={rec.values.eta_uuid ? 'info row' : mod.role === 'invoices' ? 'warn-box row' : 'info row'} style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
           <FileCheck2 size={16} />
           {rec.values.eta_uuid
-            ? <span>E-invoice no.: <b className="mono">{String(rec.values.eta_uuid)}</b></span>
-            : <span>{mod.role === 'invoices' ? 'Not yet issued on the e-invoicing portal: issue it there, then enter the number it gives.' : 'Supplier’s e-invoice number not entered (optional).'}</span>}
-          {canPost({ schema, user }) && <button className="ghost small" onClick={() => { const n = prompt('E-invoice number from the ETA portal (leave empty to remove)', String(rec.values.eta_uuid ?? '')); if (n !== null) act('doc.eInvoice', { id: rec.id, number: n }, n.trim() ? 'E-invoice number saved' : 'E-invoice number removed', `E-invoice number on ${rec.number}`) }}>{rec.values.eta_uuid ? 'Change' : 'Enter number'}</button>}
+            ? <span>{tr('E-invoice no.:')} <b className="mono">{String(rec.values.eta_uuid)}</b></span>
+            : <span>{mod.role === 'invoices' ? tr('Not yet issued on the e-invoicing portal: issue it there, then enter the number it gives.') : tr('Supplier’s e-invoice number not entered (optional).')}</span>}
+          {canPost({ schema, user }) && <button className="ghost small" onClick={() => { const n = prompt(tr('E-invoice number from the ETA portal (leave empty to remove)'), String(rec.values.eta_uuid ?? '')); if (n !== null) act('doc.eInvoice', { id: rec.id, number: n }, n.trim() ? tr('E-invoice number saved') : tr('E-invoice number removed'), `E-invoice number on ${rec.number}`) }}>{rec.values.eta_uuid ? tr('Change') : tr('Enter number')}</button>}
         </div>
       )}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
-          {mod.role === 'invoices' ? 'Credit notes' : 'Debit notes'}: {credits.map((c, i) => <span key={c.id}>{i > 0 && ', '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
+          {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
         </div>
       )}
 
@@ -169,7 +171,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.stages.map((s, i) => {
             const cur = mod.stages!.findIndex((x) => x.id === rec.stage)
             return (
-              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act('record.moveStage', { id: rec.id, stage: s.id }, `Moved to ${s.name}`)} disabled={!can({ schema, user }, mod.id, 'edit')}>
+              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act('record.moveStage', { id: rec.id, stage: s.id }, tr('Moved to {stage}', { stage: s.name }))} disabled={!can({ schema, user }, mod.id, 'edit')}>
                 {s.name}
               </button>
             )
@@ -180,7 +182,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       <div className="record-grid">
         <div className="stack">
           <div className="card">
-            {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? 'This quotation was turned into an invoice.' : 'Posted documents are locked to keep your books correct. Void it and create a new one to make changes.'}</div>}
+            {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? tr('This quotation was turned into an invoice.') : tr('Posted documents are locked to keep your books correct. Void it and create a new one to make changes.')}</div>}
             <div className="form-grid">
               {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && !(!costs && secret.includes(f.key)) && isVisible(mod, f, values)).map((f) => (
                 <div key={f.id} className={f.width === 2 || f.type === 'longtext' ? 'w2' : ''}>
@@ -196,13 +198,13 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.lines && <LinesEditor mod={mod} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
           {payments.length > 0 && (
             <div className="card">
-              <h2>Payments</h2>
+              <h2>{tr('Payments')}</h2>
               <table className="data"><tbody>{payments.map((p) => {
                 const reversed = payments.some((x) => x.reverses === p.id)
                 return (
                   <tr key={p.id} style={{ cursor: 'default', opacity: reversed ? 0.55 : 1 }}>
-                    <td className="mono">{p.ref}</td><td>{p.date}</td><td>{p.method}</td><td className="num">{money(p.amount, schema.company.currency)}</td>
-                    <td>{reversed ? <span className="pill gray tiny">reversed</span> : !p.reverses && rec?.status !== 'void' && canPost({ schema, user }) && <button className="ghost small" onClick={() => { const why = prompt('Why reverse this payment? (e.g. entered on the wrong invoice)'); if (why) act('payment.reverse', { id: p.id, reason: why }, 'Payment reversed', `Reversed payment ${p.ref}`) }}><Undo2 size={13} /> Reverse</button>}</td>
+                    <td className="mono">{p.ref}</td><td>{p.date}</td><td>{methodLabel(p.method)}</td><td className="num">{money(p.amount, schema.company.currency)}</td>
+                    <td>{reversed ? <span className="pill gray tiny">{tr('reversed')}</span> : !p.reverses && rec?.status !== 'void' && canPost({ schema, user }) && <button className="ghost small" onClick={() => { const why = prompt(tr('Why reverse this payment? (e.g. entered on the wrong invoice)')); if (why) act('payment.reverse', { id: p.id, reason: why }, tr('Payment reversed'), `Reversed payment ${p.ref}`) }}><Undo2 size={13} /> {tr('Reverse')}</button>}</td>
                   </tr>
                 )
               })}</tbody></table>
@@ -212,7 +214,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         <div className="stack">
           {related.length > 0 && (
             <div className="card">
-              <h2>Linked records</h2>
+              <h2>{tr('Linked records')}</h2>
               {related.map(({ m, r }) => (
                 <Link key={r.id} to={`/app/r/${r.id}`} className="row" style={{ padding: '7px 0', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                   <Icon name={m.icon} size={15} style={{ color: m.color }} /> <span className="grow small">{recordTitle(ws, schema, r)}</span> <span className="tiny muted">{m.singular}</span>
@@ -223,21 +225,21 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {rec && <Comments rec={rec} />}
           {rec && (
             <div className="card">
-              <h2>History</h2>
+              <h2>{tr('History')}</h2>
               <ul className="timeline">
-                {history.map((a) => <li key={a.id}><b>{a.user}</b> {a.text}<br /><span className="tiny muted">{new Date(a.at).toLocaleString()}</span></li>)}
-                <li>Created {new Date(rec.createdAt).toLocaleDateString()} by {ws.users.find((u) => u.id === rec.createdBy)?.name ?? '—'}</li>
+                {history.map((a) => <li key={a.id}><b>{a.user}</b> {msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>)}
+                <li>{tr('Created {date} by {name}', { date: new Date(rec.createdAt).toLocaleDateString(dateLocale()), name: ws.users.find((u) => u.id === rec.createdBy)?.name ?? '—' })}</li>
               </ul>
             </div>
           )}
           {rec && can({ schema, user }, mod.id, 'delete') && (
-            <button className="danger" onClick={() => confirm(`Delete this ${mod.singular.toLowerCase()}?`) && act('record.delete', { id: rec.id }, 'Deleted') && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> Delete</button>
+            <button className="danger" onClick={() => confirm(tr('Delete this {what}?', { what: mod.singular.toLowerCase() })) && act('record.delete', { id: rec.id }, tr('Deleted')) && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> {tr('Delete')}</button>
           )}
         </div>
       </div>
       {paying && rec && (isCredit
-        ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, 'Refund registered')) setPaying(false) }} />
-        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, 'Payment registered')) setPaying(false) }} />)}
+        ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, tr('Refund registered'))) setPaying(false) }} />
+        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
   )
@@ -314,7 +316,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema }: { field: F
     case 'phone':
       return <input type="tel" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="+20 10 0000 0000" />
     case 'url':
-      return <input type="url" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="https://" />
+      return <input type="url" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="https://" dir="ltr" />
     default:
       return <input value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} dir="auto" />
   }
@@ -335,12 +337,12 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   }
   return (
     <div className="card">
-      <div className="row between"><h2 style={{ margin: 0 }}>Lines</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate) }])}><Plus size={15} /> Add line</button>}</div>
+      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate) }])}><Plus size={15} /> {tr('Add line')}</button>}</div>
       <div style={{ overflowX: 'auto' }}>
         <table className="lines">
-          <thead><tr><th style={{ minWidth: 200 }}>Product / service</th><th>Qty</th><th>Unit price</th><th>Disc %</th><th>Tax code</th><th className="num">Net</th><th className="num">VAT</th><th /></tr></thead>
+          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Tax code')}</th><th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
           <tbody>
-            {lines.length === 0 && <tr><td colSpan={8} className="muted small" style={{ padding: 16 }}>No lines yet. Add the products or services you are {mod.role === 'purchases' ? 'buying' : 'selling'}.</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={8} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
             {lines.map((l, i) => {
               const p = items.find((x) => x.id === l.product)
               const stock = p?.values.track_stock ? onHand(ws, p.id) : undefined
@@ -348,17 +350,17 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
                 <tr key={l.id}>
                   <td>
                     <select value={l.product ?? ''} onChange={(e) => pick(i, e.target.value)} disabled={disabled}>
-                      <option value="">— free text —</option>
+                      <option value="">{tr('— free text —')}</option>
                       {items.map((x) => <option key={x.id} value={x.id}>{String(x.values.name)} {x.values.sku ? `(${x.values.sku})` : ''}</option>)}
                     </select>
-                    {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder="Description" style={{ marginTop: 4 }} />}
-                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>On hand: {stock}</span>}
+                    {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
+                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
                   </td>
                   <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
                   <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
                   <td>
-                    <select value={lineTaxCode(l)} onChange={(e) => upd(i, { taxCode: e.target.value, vat: TAX_CODES.find((t) => t.code === e.target.value)?.rate ?? l.vat })} disabled={disabled} style={{ width: 150 }} title="VAT treatment of this line">
+                    <select value={lineTaxCode(l)} onChange={(e) => upd(i, { taxCode: e.target.value, vat: TAX_CODES.find((t) => t.code === e.target.value)?.rate ?? l.vat })} disabled={disabled} style={{ width: 150 }} title={tr('VAT treatment of this line')}>
                       {!TAX_CODES.some((t) => t.code === lineTaxCode(l)) && <option value={lineTaxCode(l)}>VAT {l.vat}%</option>}
                       {TAX_CODES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
                     </select>
@@ -373,9 +375,9 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
         </table>
       </div>
       <div className="totals">
-        <span>Subtotal</span><b className="num">{money(t.subtotal, cur)}</b>
-        <span>VAT</span><b className="num">{money(t.tax, cur)}</b>
-        <span className="grand">Total</span><span className="grand num">{money(t.total, cur)}</span>
+        <span>{tr('Subtotal')}</span><b className="num">{money(t.subtotal, cur)}</b>
+        <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
+        <span className="grand">{tr('Total')}</span><span className="grand num">{money(t.total, cur)}</span>
       </div>
     </div>
   )
@@ -409,34 +411,35 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
       <div className="overlay" onClick={onClose} />
       <div className="modal">
         <div className="card stack">
-          <h2><Banknote size={18} /> {refund ? 'Refund' : 'Register payment for'} {rec.number}</h2>
-          <p className="muted small" style={{ margin: 0 }}>{refund ? 'Credit left' : 'Balance due'}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
-          <label className="field">Amount<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
-          <label className="field">Date<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <div className="seg">{(refund ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+          <h2><Banknote size={18} /> {tr(refund ? 'Refund on {doc}' : 'Register payment for {doc}', { doc: rec.number ?? '' })}</h2>
+          <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
+          <label className="field">{tr('Amount')}<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
+          <label className="field">{tr('Date')}<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <div className="seg">{(refund ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
           {method === 'cheque' ? (
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <label className="field" style={{ width: 130 }}>Cheque no.<input required value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
-              <label className="field" style={{ width: 150 }}>Bank<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="e.g. NBE" /></label>
-              <label className="field" style={{ width: 160 }}>Cheque date<input type="date" value={chequeDue} onChange={(e) => setChequeDue(e.target.value)} /></label>
+              <label className="field" style={{ width: 130 }}>{tr('Cheque no.')}<input required value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
+              <label className="field" style={{ width: 150 }}>{tr('Bank')}<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder={tr('e.g. NBE')} /></label>
+              <label className="field" style={{ width: 160 }}>{tr('Cheque date')}<input type="date" value={chequeDue} onChange={(e) => setChequeDue(e.target.value)} /></label>
             </div>
           ) : !refund && accounts.length > 1 && (
-            <label className="field">{kind === 'cash' ? 'Cash box' : 'Bank account'}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
+            <label className="field">{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
           )}
           {!refund && (
-            <label className="field">{sales ? 'Withholding tax the customer deducted' : 'Withholding tax to keep back'}
+            <label className="field">{sales ? tr('Withholding tax the customer deducted') : tr('Withholding tax to keep back')}
               <select value={wht} onChange={(e) => setWht(Number(e.target.value))}>
-                <option value={0}>None</option>
+                <option value={0}>{tr('None')}</option>
                 {WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{w.name}</option>)}
               </select>
             </label>
           )}
           {!refund && wht > 0 && (
             <p className="small muted" style={{ margin: 0 }}>
-              {wht}% of {money(base, currency)} (the amount before VAT) = <b>{money(withheld, currency)}</b> {sales ? 'deducted by the customer, claimed back from the Tax Authority' : 'kept back and paid to the Tax Authority with Form 41'}. {sales ? 'Received' : 'Paid'}: <b>{money(amount - withheld, currency)}</b>.
+              {tr(sales ? '{rate}% of {base} (the amount before VAT) = {tax} deducted by the customer, claimed back from the Tax Authority.' : '{rate}% of {base} (the amount before VAT) = {tax} kept back and paid to the Tax Authority with Form 41.', { rate: wht, base: money(base, currency), tax: money(withheld, currency) })}{' '}
+              {sales ? tr('Received') : tr('Paid')}: <b>{money(amount - withheld, currency)}</b>.
             </p>
           )}
-          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method, extra())}><CheckCircle2 size={16} /> Register</button></div>
+          <div className="row"><button className="secondary" onClick={onClose}>{tr('Cancel')}</button><button className="success" onClick={() => onPay(amount, date, method, extra())}><CheckCircle2 size={16} /> {tr('Register')}</button></div>
         </div>
       </div>
     </>
@@ -457,7 +460,7 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const lines = Object.entries(rows).filter(([, r]) => Number(r.qty) > 0).map(([line, r]) => ({ line, qty: Number(r.qty), price: r.price === '' ? undefined : Number(r.price) }))
-    const id = act<string>('doc.creditNote', { id: rec.id, lines, date, reason, restock }, `${sales ? 'Credit' : 'Debit'} note issued`, `${sales ? 'Credit' : 'Debit'} note for ${rec.number}`)
+    const id = act<string>('doc.creditNote', { id: rec.id, lines, date, reason, restock }, sales ? tr('Credit note issued') : tr('Debit note issued'), `${sales ? 'Credit' : 'Debit'} note for ${rec.number}`)
     if (typeof id === 'string') onDone(id)
   }
   return (
@@ -465,11 +468,11 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
       <div className="overlay" onClick={onClose} />
       <div className="modal">
         <form className="card stack" onSubmit={submit} style={{ maxWidth: 720 }}>
-          <h2><Undo2 size={18} /> {sales ? 'Credit note' : 'Debit note'} for {rec.number}</h2>
-          <p className="small muted" style={{ margin: 0 }}>{sales ? 'For goods the customer returned or a price you agreed to lower.' : 'For goods you send back to the supplier or a price they agreed to lower.'} The VAT is corrected, and the credit first reduces what is still owed on {rec.number}.</p>
+          <h2><Undo2 size={18} /> {tr(sales ? 'Credit note for {doc}' : 'Debit note for {doc}', { doc: rec.number ?? '' })}</h2>
+          <p className="small muted" style={{ margin: 0 }}>{sales ? tr('For goods the customer returned or a price you agreed to lower.') : tr('For goods you send back to the supplier or a price they agreed to lower.')} {tr('The VAT is corrected, and the credit first reduces what is still owed on {doc}.', { doc: rec.number ?? '' })}</p>
           <div className="table-wrap">
             <table className="data">
-              <thead><tr><th>Item</th><th className="num">On the document</th><th className="num">Already credited</th><th className="num">Credit now</th><th className="num">Price</th></tr></thead>
+              <thead><tr><th>{tr('Item')}</th><th className="num">{tr('On the document')}</th><th className="num">{tr('Already credited')}</th><th className="num">{tr('Credit now')}</th><th className="num">{tr('Price')}</th></tr></thead>
               <tbody>{(rec.lines ?? []).map((l) => {
                 const left = Math.round((l.qty - done(l.id)) * 10000) / 10000
                 const r = rows[l.id] ?? { qty: '', price: '' }
@@ -485,12 +488,12 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
               })}</tbody>
             </table>
           </div>
-          {tracked && <label className="row" style={{ gap: 8 }}><input type="checkbox" style={{ width: 'auto' }} checked={restock} onChange={(e) => setRestock(e.target.checked)} /> {sales ? 'The goods came back into stock' : 'The goods are sent back to the supplier'}</label>}
+          {tracked && <label className="row" style={{ gap: 8 }}><input type="checkbox" style={{ width: 'auto' }} checked={restock} onChange={(e) => setRestock(e.target.checked)} /> {sales ? tr('The goods came back into stock') : tr('The goods are sent back to the supplier')}</label>}
           <div className="row" style={{ gap: 8 }}>
-            <label className="field" style={{ width: 170 }}>Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-            <label className="field grow">Reason<input required value={reason} onChange={(e) => setReason(e.target.value)} placeholder={sales ? 'e.g. 2 bags damaged, returned' : 'e.g. wrong grade sent back'} /></label>
+            <label className="field" style={{ width: 170 }}>{tr('Date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+            <label className="field grow">{tr('Reason')}<input required value={reason} onChange={(e) => setReason(e.target.value)} placeholder={sales ? 'e.g. 2 bags damaged, returned' : 'e.g. wrong grade sent back'} /></label>
           </div>
-          <div className="row"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>Issue {sales ? 'credit' : 'debit'} note</button></div>
+          <div className="row"><button type="button" className="secondary" onClick={onClose}>{tr('Cancel')}</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>Issue {sales ? 'credit' : 'debit'} note</button></div>
         </form>
       </div>
     </>
@@ -504,37 +507,37 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const cur = schema.company.currency
   const draft = rec.status === 'draft' && mod.role !== 'quotes'
   // A draft is not a tax document: it says so in the title and across the page.
-  const title = draft ? (mod.role === 'invoices' ? 'Proforma / draft – not a tax invoice' : 'Draft – not posted') : rec.values.credit_for ? (mod.role === 'invoices' ? 'Tax credit note' : 'Debit note') : mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
+  const title = draft ? (mod.role === 'invoices' ? tr('Proforma / draft – not a tax invoice') : tr('Draft – not posted')) : rec.values.credit_for ? (mod.role === 'invoices' ? tr('Tax credit note') : tr('Debit note')) : mod.role === 'invoices' ? tr('Tax invoice') : mod.role === 'quotes' ? tr('Quotation') : tr('Purchase bill')
   return (
     <div className="page">
       <div className="row no-print" style={{ marginBottom: 12 }}>
-        <button className="secondary" onClick={onClose}><ArrowLeft size={16} /> Back</button>
-        <button onClick={() => window.print()}><Printer size={16} /> Print / save as PDF</button>
+        <button className="secondary" onClick={onClose}><ArrowLeft size={16} /> {tr('Back')}</button>
+        <button onClick={() => window.print()}><Printer size={16} /> {tr('Print / save as PDF')}</button>
       </div>
       <div className="print-doc" style={{ position: 'relative' }}>
-        {draft && <div aria-hidden style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', fontSize: '5rem', fontWeight: 800, color: 'rgba(220, 38, 38, 0.12)', transform: 'rotate(-24deg)' }}>DRAFT</div>}
+        {draft && <div aria-hidden style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', fontSize: '5rem', fontWeight: 800, color: 'rgba(220, 38, 38, 0.12)', transform: 'rotate(-24deg)' }}>{tr('DRAFT')}</div>}
         <div className="row between" style={{ alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ marginBottom: 4 }}>{schema.company.name}</h1>
             <div className="muted small">{schema.company.city}, {schema.company.country}</div>
-            {schema.company.taxId && <div className="small">Tax registration no.: <b>{schema.company.taxId}</b></div>}
+            {schema.company.taxId && <div className="small">{tr('Tax registration no.:')} <b>{schema.company.taxId}</b></div>}
           </div>
           <div style={{ textAlign: 'end' }}>
             <h2 style={{ marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</h2>
             <div className="mono">{rec.number ?? 'DRAFT'}</div>
-            {rec.values.eta_uuid ? <div className="small">E-invoice no.: <span className="mono">{String(rec.values.eta_uuid)}</span></div> : null}
+            {rec.values.eta_uuid ? <div className="small">{tr('E-invoice no.:')} <span className="mono">{String(rec.values.eta_uuid)}</span></div> : null}
             <div className="small">Date: {String(rec.values.date ?? '')}</div>
             {rec.values.due_date ? <div className="small">Due: {String(rec.values.due_date)}</div> : null}
-            {rec.values.valid_until ? <div className="small">Valid until: {String(rec.values.valid_until)}</div> : null}
+            {rec.values.valid_until ? <div className="small">{tr('Valid until: {date}', { date: String(rec.values.valid_until) })}</div> : null}
           </div>
         </div>
         <div style={{ margin: '24px 0', padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
-          <div className="tiny muted">{mod.role === 'purchases' ? 'Supplier' : 'Bill to'}</div>
+          <div className="tiny muted">{mod.role === 'purchases' ? tr('Supplier') : tr('Bill to')}</div>
           <b>{recordTitle(ws, schema, party)}</b>
           {party?.values.tax_id ? <div className="small">Tax ID: {String(party.values.tax_id)}</div> : null}
         </div>
         <table className="lines">
-          <thead><tr><th>#</th><th>Description</th><th className="num">Qty</th><th className="num">Unit price</th><th className="num">Disc.</th><th className="num">VAT</th><th className="num">Amount</th></tr></thead>
+          <thead><tr><th>#</th><th>{tr('Description')}</th><th className="num">{tr('Qty')}</th><th className="num">{tr('Unit price')}</th><th className="num">{tr('Disc.')}</th><th className="num">{tr('VAT')}</th><th className="num">{tr('Amount')}</th></tr></thead>
           <tbody>
             {(rec.lines ?? []).map((l, i) => (
               <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%{lineTaxCode(l) === 'Z0' ? ' (zero-rated)' : lineTaxCode(l) === 'EX' ? ' (exempt)' : lineTaxCode(l) === 'OS' ? ' (out of scope)' : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
@@ -542,12 +545,12 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
           </tbody>
         </table>
         <div className="totals">
-          <span>Subtotal</span><b className="num">{money(t.subtotal, cur)}</b>
-          <span>VAT</span><b className="num">{money(t.tax, cur)}</b>
-          <span className="grand">Total</span><span className="grand num">{money(t.total, cur)}</span>
-          {mod.role !== 'quotes' && <><span>Paid</span><span className="num">{money(Number(rec.values.paid ?? 0), cur)}</span><span><b>Balance due</b></span><b className="num">{money(Number(rec.values.balance ?? t.total), cur)}</b></>}
+          <span>{tr('Subtotal')}</span><b className="num">{money(t.subtotal, cur)}</b>
+          <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
+          <span className="grand">{tr('Total')}</span><span className="grand num">{money(t.total, cur)}</span>
+          {mod.role !== 'quotes' && <><span>{tr('Paid')}</span><span className="num">{money(Number(rec.values.paid ?? 0), cur)}</span><span><b>{tr('Balance due')}</b></span><b className="num">{money(Number(rec.values.balance ?? t.total), cur)}</b></>}
         </div>
-        {rec.status === 'void' && <h2 style={{ color: 'var(--danger)', textAlign: 'center', marginTop: 30 }}>VOID</h2>}
+        {rec.status === 'void' && <h2 style={{ color: 'var(--danger)', textAlign: 'center', marginTop: 30 }}>{tr('VOID')}</h2>}
       </div>
     </div>
   )
@@ -575,8 +578,8 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   const roleName = (id: string) => schema.roles.find((x) => x.id === id)?.name ?? 'an approver'
   const what = (r: (typeof rules)[number]) => (r.action === 'post' ? 'posting' : `moving to “${mod.stages?.find((s) => s.id === r.stage)?.name}”`)
   function override(r: (typeof rules)[number]) {
-    const reason = prompt(`Override “${r.name}” without a second person. Write the reason (it is kept in the history and the audit trail):`)
-    if (reason !== null) act('approval.override', { id: rec.id, rule: r.id, reason }, 'Approved by override', `Overrode “${r.name}”`)
+    const reason = prompt(tr('Override “{rule}” without a second person. Write the reason (it is kept in the history and the audit trail):', { rule: r.name }))
+    if (reason !== null) act('approval.override', { id: rec.id, rule: r.id, reason }, tr('Approved by override'), `Overrode “${r.name}”`)
   }
   return (
     <div className="stack" style={{ marginBottom: 14 }}>
@@ -592,8 +595,8 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
             {state === 'rejected' && `rejected. Change the record and request approval again.`}
             {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
           </span>
-          {(state === 'needed' || state === 'rejected' || state === 'own') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, 'Approval requested')}><Send size={14} /> Request approval</button>}
-          {isAdmin && state !== 'approved' && state !== 'self' && <button className="ghost small" onClick={() => override(r)} title="Approve without a second person, with a reason">Override…</button>}
+          {(state === 'needed' || state === 'rejected' || state === 'own') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, tr('Approval requested'))}><Send size={14} /> {tr('Request approval')}</button>}
+          {isAdmin && state !== 'approved' && state !== 'self' && <button className="ghost small" onClick={() => override(r)} title={tr('Approve without a second person, with a reason')}>{tr('Override…')}</button>}
         </div>
       ))}
     </div>
@@ -607,14 +610,14 @@ function Comments({ rec }: { rec: Rec }) {
   const name = (id: string) => ws.users.find((u) => u.id === id)?.name ?? '—'
   return (
     <div className="card">
-      <h2><MessageSquare size={17} /> Notes & comments</h2>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add a note. Type @name to notify a colleague." dir="auto" style={{ minHeight: 64 }} />
+      <h2><MessageSquare size={17} /> {tr('Notes & comments')}</h2>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={tr('Add a note. Type @name to notify a colleague.')} dir="auto" style={{ minHeight: 64 }} />
       <div className="row between" style={{ marginTop: 6 }}>
         <span className="tiny muted">{ws.users.slice(0, 4).map((u) => `@${u.name.split(' ')[0]}`).join(' ')}</span>
-        <button onClick={() => { if (act('comment.add', { id: rec.id, text }, undefined, 'Added a note')) setText('') }} disabled={!text.trim()}><Send size={14} /> Add note</button>
+        <button onClick={() => { if (act('comment.add', { id: rec.id, text }, undefined, 'Added a note')) setText('') }} disabled={!text.trim()}><Send size={14} /> {tr('Add note')}</button>
       </div>
       <ul className="timeline" style={{ marginTop: 10 }}>
-        {comments.map((c) => <li key={c.id}><b>{name(c.user)}</b> <span dir="auto">{c.text}</span><br /><span className="tiny muted">{new Date(c.at).toLocaleString()}</span></li>)}
+        {comments.map((c) => <li key={c.id}><b>{name(c.user)}</b> <span dir="auto">{c.text}</span><br /><span className="tiny muted">{new Date(c.at).toLocaleString(dateLocale())}</span></li>)}
       </ul>
     </div>
   )

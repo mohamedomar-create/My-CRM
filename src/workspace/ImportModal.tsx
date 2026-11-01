@@ -3,6 +3,7 @@ import { CheckCircle2, Download, FileSpreadsheet, Upload, X } from 'lucide-react
 import { useApp } from './useApp'
 import { type ImportResult } from '../lib/engine'
 import type { ModuleDef } from '../lib/schema'
+import { msg, tr } from '../lib/i18n'
 
 /** Parses CSV exported from Excel or Google Sheets (quotes, commas or semicolons, BOM). */
 export function parseCsv(text: string): string[][] {
@@ -82,20 +83,20 @@ export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => v
       <div className="overlay" onClick={onClose} />
       <div className="modal">
         <div className="card stack" style={{ width: 'min(760px, 100%)' }}>
-          <div className="row between"><h2 style={{ margin: 0 }}><FileSpreadsheet size={18} /> Import {mod.name.toLowerCase()}</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
+          <div className="row between"><h2 style={{ margin: 0 }}><FileSpreadsheet size={18} /> {tr('Import {what}', { what: mod.name.toLowerCase() })}</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
           {!header.length && (
             <>
-              <p className="muted small" style={{ margin: 0 }}>Upload a CSV from Excel or Google Sheets (File → Save as → CSV). The first row must be the column names. Each row is checked like a normal save: good rows are imported, and problem rows are listed so you can fix them.</p>
-              <label className="btn big" style={{ cursor: 'pointer' }}><Upload size={18} /> Choose CSV file<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>
-              <button className="ghost" onClick={template}><Download size={15} /> Download an empty template</button>
+              <p className="muted small" style={{ margin: 0 }}>{tr('Upload a CSV from Excel or Google Sheets (File → Save as → CSV). The first row must be the column names. Each row is checked like a normal save: good rows are imported, and problem rows are listed so you can fix them.')}</p>
+              <label className="btn big" style={{ cursor: 'pointer' }}><Upload size={18} /> {tr('Choose CSV file')}<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>
+              <button className="ghost" onClick={template}><Download size={15} /> {tr('Download an empty template')}</button>
             </>
           )}
           {header.length > 0 && !result && (
             <>
-              <p className="small" style={{ margin: 0 }}><b>{rows.length}</b> rows found. Match each column to a field:</p>
+              <p className="small" style={{ margin: 0 }}>{tr('{n} rows found. Match each column to a field:', { n: rows.length })}</p>
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                 <table className="data">
-                  <thead><tr><th>Column in your file</th><th>Example</th><th>Goes into</th></tr></thead>
+                  <thead><tr><th>{tr('Column in your file')}</th><th>{tr('Example')}</th><th>{tr('Goes into')}</th></tr></thead>
                   <tbody>
                     {header.map((h, i) => (
                       <tr key={h + i} style={{ cursor: 'default' }}>
@@ -103,7 +104,7 @@ export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => v
                         <td className="muted">{rows[0]?.[i] ?? ''}</td>
                         <td>
                           <select value={mapping[h] ?? ''} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
-                            <option value="">— skip —</option>
+                            <option value="">{tr('— skip —')}</option>
                             {fields.map((f) => <option key={f.id} value={f.key} disabled={Object.entries(mapping).some(([c, k]) => k === f.key && c !== h)}>{f.label}</option>)}
                           </select>
                         </td>
@@ -112,20 +113,20 @@ export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => v
                   </tbody>
                 </table>
               </div>
-              {missing.length > 0 && <div className="note small">Required fields not matched: {missing.map((f) => f.label).join(', ')}. Rows without them will be skipped.</div>}
-              <div className="row"><button className="secondary" onClick={() => setHeader([])}>Choose another file</button><button className="glow" onClick={run}><Upload size={16} /> Import {rows.length} rows</button></div>
+              {missing.length > 0 && <div className="note small">{tr('Required fields not matched: {fields}. Rows without them will be skipped.', { fields: missing.map((f) => f.label).join('، ') })}</div>}
+              <div className="row"><button className="secondary" onClick={() => setHeader([])}>{tr('Choose another file')}</button><button className="glow" onClick={run}><Upload size={16} /> {tr('Import {n} rows', { n: rows.length })}</button></div>
             </>
           )}
           {result && (
             <>
-              <div className="ok-box row"><CheckCircle2 size={18} /> {result.created} {mod.name.toLowerCase()} imported.</div>
+              <div className="ok-box row"><CheckCircle2 size={18} /> {tr('{n} {what} imported.', { n: result.created, what: mod.name.toLowerCase() })}</div>
               {result.errors.length > 0 && (
                 <div className="error-box" style={{ maxHeight: 220, overflowY: 'auto' }}>
-                  <b>{result.errors.length} rows skipped:</b>
-                  <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>{result.errors.map((e) => <li key={e.row}>Row {e.row}: {e.message}</li>)}</ul>
+                  <b>{tr('{n} rows skipped:', { n: result.errors.length })}</b>
+                  <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>{result.errors.map((e) => <li key={e.row}>{tr('Row {n}', { n: e.row })}: {msg(e.message)}</li>)}</ul>
                 </div>
               )}
-              <button onClick={onClose}>Done</button>
+              <button onClick={onClose}>{tr('Done')}</button>
             </>
           )}
         </div>
