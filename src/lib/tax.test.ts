@@ -4,7 +4,7 @@ import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type Line, type User, type Workspace } from './types'
 import {
-  accountBalance, closeMonth, createRecord, creditNote, form41Csv, list, postDocument, registerPayment, reopenBooks, reversePayment, settleVat, stockValue,
+  accountBalance, booksHealth, closeMonth, createRecord, creditNote, form41Csv, list, missingEInvoices, postDocument, setEInvoiceNumber, registerPayment, reopenBooks, reversePayment, settleVat, stockValue,
   trialBalance, vatReturn, voidDocument, withholdingTax, type Ctx,
 } from './engine'
 import { lineTaxCode } from './tax'
@@ -164,5 +164,34 @@ describe('withholding tax', () => {
     expect(withholdingTax(ws, 2025, 4).totalWithheld).toBe(0)
     expect(bill.values.balance).toBe(342)
     healthy(ws, schema)
+  })
+})
+
+describe('e-invoice numbers (issued on the ETA portal, recorded here)', () => {
+  it('is entered on a posted invoice, printed with it, unique, and counted in the month-end checks', () => {
+    const { ws, schema, ctx, inv, exp, customer, rice, mod } = november()
+    expect(missingEInvoices(ws, schema, '2025-11-01', '2025-11-30').map((r) => r.number)).toEqual([exp.number, inv.number])
+    expect(booksHealth(ws, schema, '2025-11').find((c) => c.id === 'einvoice')).toMatchObject({ ok: false, blocking: false })
+    setEInvoiceNumber(ctx, inv.id, ' 7XK2M9QWERTY12345ABCDEFGH ')
+    expect(inv.values.eta_uuid).toBe('7XK2M9QWERTY12345ABCDEFGH')
+    expect(() => setEInvoiceNumber(ctx, exp.id, '7xk2m9qwerty12345abcdefgh')).toThrow(/already on/)
+    expect(() => setEInvoiceNumber(ctx, exp.id, 'not valid!')).toThrow(/letters, digits and dashes/)
+    setEInvoiceNumber(ctx, exp.id, 'EXP-0001')
+    expect(missingEInvoices(ws, schema, '2025-11-01', '2025-11-30')).toEqual([])
+    expect(booksHealth(ws, schema, '2025-11').find((c) => c.id === 'einvoice')!.ok).toBe(true)
+    setEInvoiceNumber(ctx, exp.id, '')
+    expect(exp.values.eta_uuid).toBeUndefined()
+    const draft = createRecord(ctx, mod('invoices'), { customer: customer.id, date: '2025-11-29' }, { lines: rice(1, 100) })
+    expect(() => setEInvoiceNumber(ctx, draft.id, 'ABC-123')).toThrow(/Post the document first/)
+  })
+
+  it('works on a closed month (it changes no figures), but only for finance', () => {
+    const { ws, schema, ctx, inv } = november()
+    closeMonth(ctx, '2025-11')
+    setEInvoiceNumber(ctx, inv.id, 'ABC-123')
+    expect(inv.values.eta_uuid).toBe('ABC-123')
+    const rep: User = { id: 'u_rep', name: 'Rep', email: 'r@x.com', roleId: schema.roles.find((r) => r.name === 'Sales')!.id }
+    ws.users.push(rep)
+    expect(() => setEInvoiceNumber({ ws, schema, user: rep }, inv.id, 'ABC-999')).toThrow(/finance/)
   })
 })

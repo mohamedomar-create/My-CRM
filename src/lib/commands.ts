@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -65,6 +65,7 @@ export interface CommandArgs {
   'books.closeYear': { year: number }
   'books.reopen': { date: string; reason: string }
   'vat.settle': { month: string }
+  'doc.eInvoice': { id: string; number: string }
   'security.setTwoFactor': { required: boolean }
 }
 
@@ -228,6 +229,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'books.closeYear': { run: (ws, u, a) => closeYear(ctx(ws, u), Number(a.year)).profit },
   'books.reopen': { admin: true, run: (ws, u, a) => reopenBooks(ctx(ws, u), String(a.date), String(a.reason ?? '')) },
   'vat.settle': { run: (ws, u, a) => settleVat(ctx(ws, u), String(a.month)) },
+  'doc.eInvoice': { run: (ws, u, a) => setEInvoiceNumber(ctx(ws, u), String(a.id), String(a.number ?? '')) },
   'security.setTwoFactor': {
     admin: true,
     run: (ws, _u, a) => {

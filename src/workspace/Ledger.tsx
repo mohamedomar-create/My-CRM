@@ -1,9 +1,10 @@
 // The accounting tools of Phase 2A.1: journal vouchers, the chart of accounts, opening balances, stock adjustments and
 // counts. Every action is a server command; the engine checks the rules (balance, control accounts, permissions).
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, booksHealth, form41Csv, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
+import { accountBalance, booksHealth, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { whtName } from '../lib/tax'
 import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
@@ -454,6 +455,7 @@ export function TaxReturns() {
   const months = endedMonths(today)
   const [month, setMonth] = useState(months[0])
   const r = vatReturn(ws, schema, month)
+  const missing = missingEInvoices(ws, schema, r.from, r.to)
   const lock = ws.books?.lockDate
   const closed = Boolean(lock && lock >= r.to)
   const later = (ws.books?.vatReturns ?? []).some((v) => v.month > month)
@@ -510,6 +512,12 @@ export function TaxReturns() {
           {r.matches ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {r.matches ? 'The documents agree with the VAT accounts (2200 and 1400) for this month.' : `The VAT accounts show output ${money(r.ledger.output, cur)} and input ${money(r.ledger.input, cur)}, which differ from the documents. Contact support before filing.`}
         </div>
+        {missing.length > 0 && (
+          <div className="warn-box">
+            <b>{missing.length} invoice{missing.length > 1 ? 's' : ''} of {month} without an e-invoice number</b> (issue {missing.length > 1 ? 'them' : 'it'} on the ETA portal and enter the number on the invoice):{' '}
+            {missing.map((x, i) => <span key={x.id}>{i > 0 && ', '}<Link className="mono" to={`/app/r/${x.id}`}>{x.number}</Link></span>)}
+          </div>
+        )}
         {r.settled
           ? <div className="info row" style={{ gap: 8 }}><Lock size={16} /> Settled on {r.settled.at.slice(0, 10)}: {money(Math.abs(r.settled.due), cur)} {r.settled.due >= 0 ? 'moved to 2210 VAT due to the Tax Authority' : 'credit kept in 2210'}. Record the payment to the Authority with a journal voucher (debit 2210, credit the bank).</div>
           : (
