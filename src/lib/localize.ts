@@ -5,31 +5,36 @@ import type { AppSchema } from './schema'
 import { AR } from '../locales/ar'
 import type { Lang } from './i18n'
 
-/** A copy of the schema with every name passed through t. */
-export function mapSchemaNames(s: AppSchema, t: (en: string) => string): AppSchema {
+/**
+ * A copy of the schema with every name passed through t. Each name comes with a path that stays the same however
+ * the name changes (module, field and stage ids, option values), so two versions of a schema can be compared name by name.
+ */
+export function mapSchemaNames(s: AppSchema, t: (en: string, path: string) => string): AppSchema {
   const c = structuredClone(s)
   for (const m of c.modules) {
-    m.name = t(m.name)
-    m.singular = t(m.singular)
+    const p = `m:${m.id}`
+    m.name = t(m.name, `${p}.name`)
+    m.singular = t(m.singular, `${p}.singular`)
     for (const f of m.fields) {
-      f.label = t(f.label)
-      if (f.help) f.help = t(f.help)
-      if (f.section) f.section = t(f.section)
-      for (const o of f.options ?? []) o.label = t(o.label)
+      const q = `${p}.f:${f.id}`
+      f.label = t(f.label, `${q}.label`)
+      if (f.help) f.help = t(f.help, `${q}.help`)
+      if (f.section) f.section = t(f.section, `${q}.section`)
+      for (const o of f.options ?? []) o.label = t(o.label, `${q}.o:${o.value}`)
     }
-    for (const st of m.stages ?? []) st.name = t(st.name)
-    for (const r of m.rules ?? []) r.message = t(r.message)
+    for (const st of m.stages ?? []) st.name = t(st.name, `${p}.st:${st.id}`)
+    for (const r of m.rules ?? []) r.message = t(r.message, `${p}.rule:${r.id}`)
   }
-  for (const r of c.reports) r.name = t(r.name)
+  for (const r of c.reports) r.name = t(r.name, `report:${r.id}`)
   for (const w of c.workflows) {
-    w.name = t(w.name)
-    for (const a of w.actions) {
-      if (a.type === 'create_task') a.title = t(a.title)
-      if (a.type === 'notify') a.message = t(a.message)
-    }
+    w.name = t(w.name, `wf:${w.id}.name`)
+    w.actions.forEach((a, i) => {
+      if (a.type === 'create_task') a.title = t(a.title, `wf:${w.id}.a${i}.title`)
+      if (a.type === 'notify') a.message = t(a.message, `wf:${w.id}.a${i}.message`)
+    })
   }
-  for (const r of c.roles) r.name = t(r.name)
-  for (const a of c.approvals ?? []) a.name = t(a.name)
+  for (const r of c.roles) r.name = t(r.name, `role:${r.id}`)
+  for (const a of c.approvals ?? []) a.name = t(a.name, `ap:${a.id}`)
   return c
 }
 
@@ -41,4 +46,17 @@ export function localizeSchema(s: AppSchema, lang: Lang): AppSchema {
   let out = cache.get(s)
   if (!out) cache.set(s, (out = mapSchemaNames(s, (en) => AR[en] ?? en)))
   return out
+}
+
+/**
+ * Before a schema edited in its translated form is saved: every name still showing the translation of what is saved
+ * goes back to the saved text, so editing in Arabic changes only the names the company actually changed.
+ */
+export function unlocalizeSchema(edited: AppSchema, saved: AppSchema): AppSchema {
+  const before = new Map<string, string>()
+  mapSchemaNames(saved, (en, path) => (before.set(path, en), en))
+  return mapSchemaNames(edited, (v, path) => {
+    const was = before.get(path)
+    return was !== undefined && v !== was && AR[was] === v ? was : v
+  })
 }
