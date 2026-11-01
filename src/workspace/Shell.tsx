@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, BarChart3, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
@@ -65,6 +65,7 @@ export default function Shell() {
         ))}
         <div className="sect">{tr('Operations')}</div>
         {schema.modules.some((m) => m.role === 'products') && <NavLink to="/app/inventory"><Boxes size={18} /> {tr('Stock')}</NavLink>}
+        {schema.modules.some((m) => (m.role === 'invoices' || m.role === 'purchases') && (canPost({ schema, user }) || can({ schema, user }, m.id, 'view'))) && <NavLink to="/app/sales"><BarChart3 size={18} /> {tr('Sales analysis')}</NavLink>}
         {canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> {tr('Accounting')}</NavLink>}
         {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> {tr('Approvals')} {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> {tr('Team')}</NavLink>}

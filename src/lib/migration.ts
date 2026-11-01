@@ -7,6 +7,7 @@ import type { User } from './types'
 import { importKey } from './engine'
 import { SHEETS, TITLES, type Column } from './openingSheets'
 import { N_ } from './i18n'
+import { HISTORY_COLUMNS } from './historyDocs'
 import { sheetName, type SheetSpec } from './xlsxWrite'
 import type { Sheet } from './xlsx'
 
@@ -14,6 +15,7 @@ export type MigrationStep =
   | { kind: 'module'; id: string; module: ModuleDef }
   | { kind: 'activities'; id: 'activities' }
   | { kind: 'books'; id: string; step: string }
+  | { kind: 'history'; id: 'history-sales' | 'history-purchases'; side: 'sales' | 'purchases' }
 
 /** The sheet of calls, meetings, visits, e-mails and notes (Phase H4), each on the record it was about. */
 export const ACTIVITY_COLUMNS: Column[] = [
@@ -71,12 +73,18 @@ export function migrationSteps(schema: AppSchema): MigrationStep[] {
   const has = (role: ModuleRole) => Boolean(moduleByRole(schema, role))
   const books = ['tb', ...(has('invoices') ? ['customers'] : []), ...(has('purchases') ? ['suppliers'] : []), ...(has('invoices') || has('purchases') ? ['cheques'] : []), ...(has('products') ? ['stock'] : []), 'wht']
   for (const b of books) steps.push({ kind: 'books', id: b, step: b })
+  // Past invoices and bills (Phase H5) last: they link to customers, suppliers, products and what is still owed.
+  if (has('invoices')) steps.push({ kind: 'history', id: 'history-sales', side: 'sales' })
+  if (has('purchases')) steps.push({ kind: 'history', id: 'history-purchases', side: 'purchases' })
   return steps
 }
 
 /** What a sheet is called in the workbook, in the language given. */
 export function stepSheetName(step: MigrationStep, t: (en: string) => string) {
-  return step.kind === 'module' ? step.module.name : step.kind === 'activities' ? t('Calls, visits and notes') : t(TITLES[step.step].title)
+  if (step.kind === 'module') return step.module.name
+  if (step.kind === 'activities') return t('Calls, visits and notes')
+  if (step.kind === 'history') return t(step.side === 'sales' ? 'Past sales invoices' : 'Past purchase bills')
+  return t(TITLES[step.step].title)
 }
 
 const norm = (s: string) => importKey(s).replace(/[^a-z0-9؀-ۿ]/g, '')
@@ -112,7 +120,7 @@ export function migrationWorkbook(schema: AppSchema, o: WorkbookOptions): SheetS
     const col = String.fromCharCode(65 + (i % 26))
     return `Lists!$${col}$2:$${col}$${values.length + 1}`
   }
-  const steps = migrationSteps(schema).filter((s) => s.kind !== 'books' || (o.books && !(s.step === 'wht' && o.quarterStart)))
+  const steps = migrationSteps(schema).filter((s) => (s.kind !== 'books' && s.kind !== 'history') || (o.books && !(s.kind === 'books' && s.step === 'wht' && o.quarterStart)))
   const instructions: string[][] = [
     [t('How to use this workbook')],
     [t('Each sheet is one step. Fill one row per record under the column names, and leave sheets you don’t need empty.')],
@@ -153,6 +161,16 @@ export function migrationWorkbook(schema: AppSchema, o: WorkbookOptions): SheetS
         lists: cols.flatMap((c, i) => (lists[c.key] ? [{ col: i, source: lists[c.key]! }] : [])),
       })
       instructions.push([name, t('One row per call, meeting, visit, e-mail or note, on the record it was about. They join that record’s timeline with their own dates.'), cols.filter((c) => c.required).map((c) => t(c.label)).join('، ')])
+    } else if (step.kind === 'history') {
+      const cols = HISTORY_COLUMNS
+      const label = (c: Column) => (c.key === 'party' ? t(step.side === 'sales' ? 'Customer' : 'Supplier') : t(c.label))
+      sheets.push({
+        name, header: true, rtl: o.rtl,
+        rows: [cols.map((c) => `${label(c)}${c.required ? ' *' : ''}`)],
+        widths: cols.map((c) => Math.max(14, label(c).length + 4)),
+        lists: cols.flatMap((c, i) => (c.key === 'type' ? [{ col: i, source: listRef(t('Invoice, credit note or quotation'), [t('Invoice'), t('Credit note'), t('Quotation')]) }] : c.key === 'rep' ? [{ col: i, source: listRef(t('Team member'), o.users.filter((u) => !u.demo).map((u) => u.name)) }] : [])),
+      })
+      instructions.push([name, t('One row per past document, or one row per line with its number repeated. History only: the books, stock and VAT are not touched.'), cols.filter((c) => c.required).map(label).join('، ')])
     } else {
       const cols = SHEETS[step.step]
       const source = step.step === 'cheques' ? listRef(t('Received or issued'), [t('received'), t('issued')]) : step.step === 'wht' ? listRef(t('Withheld by us (out) or by the customer (in)'), ['out', 'in']) : undefined

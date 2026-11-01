@@ -507,10 +507,31 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 - the link between open items and their history document.
 
 **Done when**
-- [ ] 3 years of invoices with lines (100,000 lines) import.
-- [ ] The app still opens as fast as without them.
-- [ ] Sales by product and month for last year match the old system.
-- [ ] No figure in the financial statements changes.
+- [x] 3 years of invoices with lines (100,000 lines) import.
+- [x] The app still opens as fast as without them.
+- [ ] Sales by product and month for last year match the old system. (The totals are tested against the sheet; the first real company confirms them against its old system.)
+- [x] No figure in the financial statements changes.
+
+> **Progress (H5 built).**
+> - **The history store:**
+>   - a server table of past documents (invoices, credit notes, quotations; sales and purchases) with their lines;
+>   - never loaded when the app opens: read a page at a time, or as totals worked out on the server;
+>   - nobody reads or writes the table directly;
+>   - admins and finance add files and can undo a whole file; every add and undo is in the audit trail;
+>   - people read only the side their role can see (sales with the invoices list, purchases with the bills list);
+>   - tested at size: 100,000 lines checked in the browser in under 2 seconds, saved in about 2 seconds, a year by product in 0.1 seconds.
+> - **"Past invoices and bills" in the wizard (step 3), and two sheets in the workbook:**
+>   - one row per document, or one row per line with the number repeated;
+>   - customers and suppliers found by old id, number or name; products by code or name; reps matched to the team;
+>   - a document with a problem on any row is left out whole, every problem listed by row and column;
+>   - a numbered document gets the same id each time, so a file sent again adds nothing twice;
+>   - an invoice still owed is linked to its opening balance (H2).
+> - **On each customer and supplier:** what they bought, per year (the history and the invoices posted here together), the last purchase, the past documents with their lines, and a link to the opening balance still owed.
+> - **Sales analysis page:** a year by month, product, customer or rep, sales or purchases, with an "include history" switch; credit notes are taken off, and opening balances left out.
+> - **Fixed on the way:**
+>   - report cards no longer count opening balances as sales of their old dates (reports of what is owed still do);
+>   - working out "today" is much faster (imports asked for it once per row).
+> - **History documents never touch the books, stock, VAT or numbering.**
 
 ### H6. Earlier periods in the books (M)
 
