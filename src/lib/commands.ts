@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -30,7 +30,12 @@ export interface CommandArgs {
   'quote.toInvoice': { id: string }
   'doc.post': { id: string }
   'doc.void': { id: string }
-  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number }
+  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+  'payment.voucher': { party: string; date: string; method: Method; account?: string; wht?: number; cheque?: { no: string; bank?: string; due: string }; allocations: { doc: string; amount: number }[] }
+  'cheque.deposit': { id: string; account: string; date: string }
+  'cheque.clear': { id: string; date: string; account?: string }
+  'cheque.bounce': { id: string; date: string; reason: string }
+  'bank.reconcile': { account: string; date: string; balance: number; entries: string[] }
   'approval.request': { id: string; rule: string }
   'approval.decide': { approval: string; approve: boolean; note?: string }
   'approval.override': { id: string; rule: string; reason: string }
@@ -46,7 +51,7 @@ export interface CommandArgs {
   'team.addUser': { id: string; name: string; email: string; roleId: string }
   'team.setRole': { userId: string; roleId: string }
   'team.removeUser': { userId: string }
-  'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType }
+  'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
   'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
   'journal.reverse': { id: string; date?: string }
@@ -117,7 +122,12 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'quote.toInvoice': { run: (ws, u, a) => ({ id: quoteToInvoice(ctx(ws, u), rec(ws, a.id)).id }) },
   'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id)) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
-  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, Number(a.wht ?? 0)) },
+  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque }) },
+  'payment.voucher': { run: (ws, u, a) => moneyVoucher(ctx(ws, u), a) },
+  'cheque.deposit': { run: (ws, u, a) => depositCheque(ctx(ws, u), String(a.id), String(a.account), String(a.date)) },
+  'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
+  'cheque.bounce': { run: (ws, u, a) => bounceCheque(ctx(ws, u), String(a.id), String(a.date), String(a.reason ?? '')) },
+  'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },
   'approval.override': { admin: true, run: (ws, u, a) => void overrideApproval(ctx(ws, u), rec(ws, a.id), a.rule, String(a.reason ?? '')) },

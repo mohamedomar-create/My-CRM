@@ -127,6 +127,7 @@ insert into public.workspaces (id, name, doc, created_by) values ('ws_books00000
     {"id": "role_sales", "access": {"m_prod": ["view"], "m_inv": ["view", "create"], "m_secret": ["create"]}},
     {"id": "role_fin", "finance": true, "access": {"m_inv": ["view"]}}]},
   "draft": null,
+  "books": {"lockDate": "2026-01-31", "vatReturns": [{"month": "2026-01", "due": 14}], "reconciliations": [{"account": "1110", "balance": 500}]},
   "data": {
     "sequences": {"INV": 1},
     "records": {
@@ -160,6 +161,7 @@ select pg_temp.check('sales sees the modules their role may view', (select (doc 
 select pg_temp.check('sales does not see a module they can only create in', (select not ((doc #> '{data,records}') ? 'm_secret') from sales));
 select pg_temp.check('sales does not receive product cost or stock value', (select not (doc #> '{data,records,m_prod,0,values}' ?| array['cost','stock_value']) and doc #>> '{data,records,m_prod,0,values,price}' = '50' from sales));
 select pg_temp.check('sales does not receive the books', (select doc #> '{data,journal}' = '[]' from sales));
+select pg_temp.check('sales gets only the lock date of the books, not VAT returns or bank reconciliations', (select doc -> 'books' = '{"lockDate": "2026-01-31"}' from sales));
 select pg_temp.check('sales sees stock quantities without their cost', (select doc #> '{data,stock,0}' = '{"id":"s_1","product":"r_prod","qty":-1,"doc":"r_inv","ref":"INV-0001"}' from sales));
 select pg_temp.check('sales sees payments of invoices only', (select doc #> '{data,payments}' = '[{"id":"p_in","doc":"r_inv","module":"m_inv","amount":10}]' from sales));
 select pg_temp.check('sales gets the notes meant for everyone and for sales', (select array(select x ->> 'id' from jsonb_array_elements(doc #> '{data,notes}') x) = array['n_all','n_sales'] from sales));
@@ -174,6 +176,7 @@ select pg_temp.blocked('a member saves rows like the server', $q$select public.s
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated"}', false);
 create temp table fin as select public.open_workspace('ws_books000001') -> 'doc' as doc;
 select pg_temp.check('finance gets the books', (select jsonb_array_length(doc #> '{data,journal}') = 2 from fin));
+select pg_temp.check('finance gets the VAT returns and bank reconciliations', (select jsonb_array_length(doc #> '{books,vatReturns}') = 1 and jsonb_array_length(doc #> '{books,reconciliations}') = 1 from fin));
 select pg_temp.check('finance gets every payment, and only their own personal notes', (select jsonb_array_length(doc #> '{data,payments}') = 2 and array(select x ->> 'id' from jsonb_array_elements(doc #> '{data,notes}') x) = array['n_all','n_fin'] from fin));
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);

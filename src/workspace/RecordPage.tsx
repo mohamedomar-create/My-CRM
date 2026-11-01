@@ -12,6 +12,7 @@ import { moduleById, moduleByRole, uid } from '../lib/schema'
 import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
+import { moneyAccounts } from '../lib/accounts'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -227,7 +228,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       </div>
       {paying && rec && (isCredit
         ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, 'Refund registered')) setPaying(false) }} />
-        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, wht) => { if (act('doc.pay', { id: rec.id, amount, date, method, wht }, 'Payment registered')) setPaying(false) }} />)}
+        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, 'Payment registered')) setPaying(false) }} />)}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
   )
@@ -371,7 +372,9 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   )
 }
 
-function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', wht: number) => void }) {
+type PayExtra = { wht: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+
+function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', extra: PayExtra) => void }) {
   const { ws } = useApp()
   const [amount, setAmount] = useState(Math.abs(Number(rec.values.balance)))
   const [date, setDate] = useState(todayISO())
@@ -384,6 +387,14 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
   const total = Number(rec.values.total ?? 0)
   const base = round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount)
   const withheld = round2((base * wht) / 100)
+  const kind = method === 'cash' ? 'cash' : 'bank'
+  const accounts = moneyAccounts(ws, kind)
+  const [account, setAccount] = useState('')
+  const chosen = accounts.some((a) => a.code === account) ? account : accounts[0]?.code
+  const [chequeNo, setChequeNo] = useState('')
+  const [chequeBank, setChequeBank] = useState('')
+  const [chequeDue, setChequeDue] = useState(todayISO())
+  const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }) })
   return (
     <>
       <div className="overlay" onClick={onClose} />
@@ -392,8 +403,17 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
           <h2><Banknote size={18} /> {refund ? 'Refund' : 'Register payment for'} {rec.number}</h2>
           <p className="muted small" style={{ margin: 0 }}>{refund ? 'Credit left' : 'Balance due'}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
           <label className="field">Amount<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
-          <label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+          <label className="field">Date<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <div className="seg">{(refund ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+          {method === 'cheque' ? (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <label className="field" style={{ width: 130 }}>Cheque no.<input required value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
+              <label className="field" style={{ width: 150 }}>Bank<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="e.g. NBE" /></label>
+              <label className="field" style={{ width: 160 }}>Cheque date<input type="date" value={chequeDue} onChange={(e) => setChequeDue(e.target.value)} /></label>
+            </div>
+          ) : !refund && accounts.length > 1 && (
+            <label className="field">{kind === 'cash' ? 'Cash box' : 'Bank account'}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
+          )}
           {!refund && (
             <label className="field">{sales ? 'Withholding tax the customer deducted' : 'Withholding tax to keep back'}
               <select value={wht} onChange={(e) => setWht(Number(e.target.value))}>
@@ -407,7 +427,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
               {wht}% of {money(base, currency)} (the amount before VAT) = <b>{money(withheld, currency)}</b> {sales ? 'deducted by the customer, claimed back from the Tax Authority' : 'kept back and paid to the Tax Authority with Form 41'}. {sales ? 'Received' : 'Paid'}: <b>{money(amount - withheld, currency)}</b>.
             </p>
           )}
-          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method, refund ? 0 : wht)}><CheckCircle2 size={16} /> Register</button></div>
+          <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method, extra())}><CheckCircle2 size={16} /> Register</button></div>
         </div>
       </div>
     </>

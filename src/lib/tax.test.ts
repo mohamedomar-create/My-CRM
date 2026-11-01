@@ -135,7 +135,7 @@ describe('withholding tax', () => {
     expect(bill.status).toBe('paid')
     expect(ws.data.payments[0].wht).toEqual({ rate: 1, base: 300, amount: 3 })
     expect(accountBalance(ws, '2400')).toBe(-3)
-    expect(accountBalance(ws, '1100')).toBe(-339)
+    expect(accountBalance(ws, '1110')).toBe(-339)
     const q = withholdingTax(ws, 2025, 4)
     expect(q.withheld).toEqual([expect.objectContaining({ name: 'Mill, Ltd', taxId: '444-555-666', rate: 1, base: 300, amount: 3 })])
     expect(q.totalWithheld).toBe(3)
