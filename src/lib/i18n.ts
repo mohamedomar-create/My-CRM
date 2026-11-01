@@ -91,10 +91,14 @@ export const tr = (en: string, vars?: Vars) => translate(lang, en, vars)
 let patterns: { re: RegExp; keys: string[]; ar: string }[] | undefined
 const escape = (s: string) => s.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
 
+const known = (v: string) => AR[v] ?? AR[v.charAt(0).toUpperCase() + v.slice(1)] ?? v
+
 /** Translates a whole message that may contain values, such as an error from the server. */
-export function translateMessage(l: Lang, msg: string) {
+export function translateMessage(l: Lang, msg: string): string {
   if (l !== 'ar' || !msg) return msg
   if (AR[msg]) return AR[msg]
+  // Several checks that failed together come joined with " · ": each is translated on its own.
+  if (msg.includes(' · ')) return msg.split(' · ').map((part) => translateMessage(l, part)).join(' · ')
   patterns ??= Object.entries(AR).filter(([en]) => /\{\w+\}/.test(en)).map(([en, ar]) => {
     const keys: string[] = []
     const re = new RegExp('^' + en.split(/(\{\w+\})/).map((part) => {
@@ -106,8 +110,8 @@ export function translateMessage(l: Lang, msg: string) {
   })
   for (const p of patterns) {
     const m = p.re.exec(msg)
-    // Values that are themselves known texts ("Invoice", "you keep stock") are translated too.
-    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, AR[m[i + 1]] ?? m[i + 1]])))
+    // Values that are themselves known texts ("Invoice", "you keep stock", "imported 3 customers") are translated too.
+    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, known(m[i + 1])])))
   }
   return msg
 }

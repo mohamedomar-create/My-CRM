@@ -8,7 +8,7 @@ import { CHALLENGES, type TeamInput } from '../lib/packs'
 import type { Answers } from '../lib/recommend'
 import { currentWorkspace, run, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
-import { N_, tr, useLang } from '../lib/i18n'
+import { msg, N_, tr, useLang } from '../lib/i18n'
 
 const STEPS = [N_('Industry'), N_('What you sell'), N_('Customers'), N_('Teams'), N_('Challenges')]
 
@@ -87,7 +87,7 @@ export default function Onboarding() {
                 <button key={t.id} type="button" className={`tile ${a.industry === t.id ? 'on' : ''}`} onClick={() => set({ industry: t.id })}>
                   <span className="ic" style={{ background: `linear-gradient(135deg, ${t.gradient[0]}, ${t.gradient[1]})` }}><Icon name={t.icon} size={22} /></span>
                   <b>{lang === 'ar' ? t.nameAr : t.name}</b>
-                  <small>{t.tagline}</small>
+                  <small>{msg(t.tagline)}</small>
                 </button>
               ))}
               <button type="button" className={`tile ${a.industry === 'other' ? 'on' : ''}`} onClick={() => set({ industry: 'other' })}>

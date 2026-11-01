@@ -25,10 +25,12 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
   // Demo team members, one or two per team role, so owner and assignee fields have real people.
   const demoUsers: User[] = []
   for (const role of schema.roles.filter((x) => !x.admin)) {
-    const n = role.name.toLowerCase().includes('sales') ? 2 : 1
+    const n = /sales|مبيعات/i.test(role.name) ? 2 : 1
+    // A role named in Arabic has no Latin letters for the e-mail, so its id is used instead.
+    const slug = role.name.toLowerCase().replace(/\W+/g, '') || role.id.toLowerCase().replace(/[^a-z0-9]+/g, '')
     for (let i = 0; i < n; i++) {
       const name = PEOPLE[(demoUsers.length + 3) % PEOPLE.length]
-      demoUsers.push({ id: uid('u'), name, email: `${name.split(' ')[0].toLowerCase()}.${role.name.toLowerCase().replace(/\W+/g, '')}@demo.local`, roleId: role.id, demo: true })
+      demoUsers.push({ id: uid('u'), name, email: `${name.split(' ')[0].toLowerCase()}.${slug}@demo.local`, roleId: role.id, demo: true })
     }
   }
   ws.users.push(...demoUsers)

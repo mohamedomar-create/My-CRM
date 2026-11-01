@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Rocket, Sparkles, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { generateSchema, suggest } from '../lib/recommend'
+import { localizeSchema } from '../lib/localize'
 import { CHALLENGES } from '../lib/packs'
 import { currentWorkspace, run, useStore } from '../lib/store'
 import { msg, tr, useLang } from '../lib/i18n'
@@ -16,7 +17,12 @@ export default function Suggest() {
   const [chosen, setChosen] = useState(ranked[0]?.template.id)
   const [sample, setSample] = useState(false)
   const pick = ranked.find((r) => r.template.id === chosen) ?? ranked[0]
-  const preview = useMemo(() => (ws && pick ? generateSchema(pick.template, ws.answers) : null), [ws, pick])
+  // Built in the language chosen now: a company setting up in Arabic gets its modules, fields and reports named in Arabic.
+  const preview = useMemo(() => {
+    if (!ws || !pick) return null
+    const s = localizeSchema(generateSchema(pick.template, ws.answers), lang)
+    return { ...s, company: { ...s.company, language: lang } }
+  }, [ws, pick, lang])
   if (!ws || !pick || !preview) return null
   const t = pick.template
   const fixes = CHALLENGES.filter((c) => ws.answers.challenges.includes(c.id))
@@ -44,7 +50,7 @@ export default function Suggest() {
               </div>
               <Icon name={t.icon} size={34} />
               <h2 style={{ marginTop: 10, maxWidth: '75%' }}>{lang === 'ar' ? t.nameAr : t.name}</h2>
-              <p style={{ opacity: 0.9, maxWidth: '75%' }}>{t.tagline}</p>
+              <p style={{ opacity: 0.9, maxWidth: '75%' }}>{msg(t.tagline)}</p>
               <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0', lineHeight: 1.9 }}>
                 {pick.reasons.map((r) => <li key={r}><Check size={16} /> {msg(r)}</li>)}
               </ul>
@@ -56,10 +62,10 @@ export default function Suggest() {
             <div className="card">
               <h2><Wand2 size={18} /> {tr('Tailored for {company}', { company: ws.answers.companyName })}</h2>
               <div className="form-grid">
-                <Stat n={preview.reports.length} label="dashboard reports" />
-                <Stat n={preview.workflows.length} label="automations" />
-                <Stat n={preview.roles.length} label="team roles" />
-                <Stat n={preview.modules.reduce((s, m) => s + m.fields.length, 0)} label="fields" />
+                <Stat n={preview.reports.length} label={tr('dashboard reports')} />
+                <Stat n={preview.workflows.length} label={tr('automations')} />
+                <Stat n={preview.roles.length} label={tr('team roles')} />
+                <Stat n={preview.modules.reduce((s, m) => s + m.fields.length, 0)} label={tr('fields')} />
               </div>
               {fixes.length > 0 && (
                 <>
@@ -68,7 +74,7 @@ export default function Suggest() {
                     {fixes.map((c) => (
                       <li key={c.id} className="row" style={{ alignItems: 'flex-start' }}>
                         <Check size={16} color="#10b981" style={{ marginTop: 3 }} />
-                        <span className="grow"><b>{c.label}</b><br /><span className="muted small">{c.fix}</span></span>
+                        <span className="grow"><b>{lang === 'ar' ? c.labelAr : c.label}</b><br /><span className="muted small">{lang === 'ar' ? c.fixAr : c.fix}</span></span>
                       </li>
                     ))}
                   </ul>

@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, BarChart3, Boxes, Calculator, CheckCircle2, Globe, Languages, Lock, MousePointerClick, ShieldCheck, Sparkles, Workflow, Zap } from 'lucide-react'
 import { TEMPLATES } from '../lib/templates'
 import { Icon } from '../components/Icon'
-import { useLang } from '../lib/i18n'
+import { msg, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
 
 const BEST = [
@@ -94,7 +94,7 @@ export default function Landing() {
             <div key={tp.id} className="tpl" style={{ background: `linear-gradient(135deg, ${tp.gradient[0]}, ${tp.gradient[1]})` }}>
               <Icon name={tp.icon} size={28} />
               <h3>{lang === 'ar' ? tp.nameAr : tp.name}</h3>
-              <p>{tp.tagline}</p>
+              <p>{msg(tp.tagline)}</p>
             </div>
           ))}
         </div>

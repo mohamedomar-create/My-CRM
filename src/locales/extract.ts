@@ -95,7 +95,7 @@ function readLiteral(src: string, i: number): { text: string; end: number } | un
  */
 export function extractMessages(src: string): string[] {
   const out: string[] = []
-  const re = /new EngineError\(\s*|new HttpError\(\s*\d+\s*,\s*|throw new Error\(\s*|\blog\(ctx,\s*|logLedger\(ctx,\s*|\bmessage:\s*|\btitle:\s*|\bdetail:\s*|reasons\.push\(\s*/g
+  const re = /new EngineError\(\s*|new HttpError\(\s*\d+\s*,\s*|throw new Error\(\s*|\blog\(ctx,\s*|logLedger\(ctx,\s*|\bmessage:\s*|\btitle:\s*|\bdetail:\s*|reasons\.push\(\s*|\berrors\.push\(\s*/g
   let m: RegExpExecArray | null
   while ((m = re.exec(src))) {
     const lit = readLiteral(src, m.index + m[0].length)
