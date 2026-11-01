@@ -35,7 +35,7 @@ export interface Rec {
   /** created by "Try with sample data"; removed in one click before going live */
   sample?: boolean
   /** what the company's old system knew this record as (Phase H) */
-  legacy?: { id?: string; number?: string; notes?: string }
+  legacy?: { id?: string; number?: string; notes?: string; lostReason?: string }
   /** the imports that created or changed this record, oldest first; the last one can be undone */
   imports?: RecordImport[]
 }
@@ -156,7 +156,14 @@ export interface Comment {
   user: string
   at: string
   text: string
+  /** what it was (Phase H4): a call, meeting, visit, e-mail or WhatsApp; a plain note when missing */
+  kind?: ActivityKind
+  outcome?: string
+  /** the import it came from, so the whole import can be undone */
+  batch?: string
 }
+
+export type ActivityKind = 'note' | 'call' | 'meeting' | 'visit' | 'email' | 'whatsapp'
 
 export interface SavedView {
   id: string
@@ -175,6 +182,10 @@ export interface User {
   email: string
   roleId: string
   demo?: boolean
+  /** someone who has left (Phase H4): no login and no access, kept so history keeps its owner */
+  former?: boolean
+  /** the e-mail they had, kept for the record only (a former member never signs in) */
+  formerEmail?: string
 }
 
 export interface WorkspaceData {

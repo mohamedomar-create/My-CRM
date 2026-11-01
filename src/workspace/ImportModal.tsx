@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
-import { importKey, importStatus, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
+import { FORMER, STAGE_AT, importKey, importStatus, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
 import type { AppSchema, FieldDef, ModuleDef } from '../lib/schema'
 import { uid } from '../lib/schema'
 import { flush } from '../lib/store'
@@ -78,14 +78,22 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
 
   const fields = raw.fields.filter((f) => !f.readOnly && !['formula', 'lookup', 'rollup'].includes(f.type))
   const shown = (f: FieldDef) => mod.fields.find((x) => x.id === f.id)?.label ?? f.label
-  const targets = TARGETS.filter((t) => !t.stages || raw.stages)
+  const targets = [
+    ...TARGETS.filter((t) => !t.stages || raw.stages).map((t) => ({ key: t.key, label: tr(t.label), names: [t.label, translate('ar', t.label)] })),
+    // The date each stage was reached, for the whole stage history: named by the stage's saved or shown name, in either language.
+    ...(raw.stages ?? []).map((st) => {
+      const shownName = mod.stages?.find((x) => x.id === st.id)?.name ?? st.name
+      const name = (l: 'en' | 'ar', stage: string) => translate(l, 'Date it reached “{stage}”', { stage })
+      return { key: `${STAGE_AT}${st.id}`, label: tr('Date it reached “{stage}”', { stage: shownName }), names: [name('en', st.name), name('ar', st.name), name('ar', translate('ar', st.name)), name('ar', shownName)] }
+    }),
+  ]
 
   /** Columns matched to fields by their names (in either language, * for required ignored). */
   function mapFor(h: string[]) {
     const m: Record<string, string> = {}
     const names = [
       ...fields.map((f) => ({ key: f.key, names: [f.label, shown(f), translate('ar', f.label), f.key] })),
-      ...targets.map((t) => ({ key: t.key, names: [t.label, translate('ar', t.label)] })),
+      ...targets.map((t) => ({ key: t.key, names: [t.label, ...t.names] })),
     ]
     for (const col of h) {
       const c = norm(col)
@@ -162,7 +170,11 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
       if (key === '__stage' && raw.stages) choices = raw.stages.map((s) => ({ value: s.id, label: mod.stages?.find((x) => x.id === s.id)?.name ?? s.name, also: [s.name, translate('ar', s.name)] }))
       else if (f && listField(f)) {
         choices = f.type === 'user'
-          ? ws.users.map((u) => ({ value: u.id, label: u.name, also: [u.name, u.email, u.name.split(' ')[0]] }))
+          ? [
+              ...ws.users.map((u) => ({ value: u.id, label: u.former ? tr('{name} (former)', { name: u.name }) : u.name, also: [u.name, u.email, u.name.split(' ')[0]] })),
+              // Someone in the old data who has left: kept as a former member (no login), so the history keeps its owner.
+              ...(isAdmin ? [{ value: FORMER, label: tr('Someone who has left: keep the name as a former member'), also: [] }] : []),
+            ]
           : (f.options ?? []).map((o) => ({ value: o.value, label: mod.fields.find((x) => x.id === f.id)?.options?.find((y) => y.value === o.value)?.label ?? o.label, also: [o.value, o.label, translate('ar', o.label)] }))
       }
       if (!choices) continue
@@ -183,7 +195,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
       out.push({ col, key, label: key === '__stage' ? tr('Stage') : mod.fields.find((x) => x.id === f!.id)?.label ?? f!.label, choices, values })
     }
     return out
-  }, [mapping, objects, fields, raw, mod, ws.users])
+  }, [mapping, objects, fields, raw, mod, ws.users, isAdmin])
 
   /** Every list value the file holds, as the import should read it (matched by itself or by hand). */
   const values = useMemo(() => {

@@ -197,17 +197,24 @@ function Board({ mod, rows, ws, schema, onMove }: { mod: ModuleDef; rows: Rec[];
   function onDragEnd(e: DragEndEvent) {
     if (e.over && e.active.data.current?.stage !== e.over.id) onMove(String(e.active.id), String(e.over.id))
   }
+  // Won and lost columns show what closed in the last 90 days; older history (imported years, say) only when asked.
+  const [older, setOlder] = useState(false)
+  const [cutoff] = useState(() => new Date(Date.now() - 90 * 86_400_000).toISOString())
+  const closedAt = (r: Rec) => r.stageHistory?.at(-1)?.at ?? r.updatedAt
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
       <div className="kanban">
         {mod.stages!.map((s) => {
-          const items = rows.filter((r) => r.stage === s.id)
+          const all = rows.filter((r) => r.stage === s.id)
+          const items = s.type === 'open' || older ? all : all.filter((r) => closedAt(r) >= cutoff)
+          const hidden = all.length - items.length
           const sum = amountField ? items.reduce((t, r) => t + Number(r.values[amountField.key] ?? 0), 0) : 0
           return (
             <Column key={s.id} id={s.id}>
               <div className="kcol-head"><span className="dot" style={{ background: s.color }} />{s.name} <span className="pill gray tiny">{items.length}</span><span className="sum">{amountField ? money(sum, schema.company.currency).replace('.00', '') : `${s.probability}%`}</span></div>
               {items.slice(0, BOARD_CARDS).map((r) => <Card key={r.id} rec={r} color={s.color} mod={mod} ws={ws} schema={schema} amountField={amountField} />)}
               {items.length > BOARD_CARDS && <div className="tiny muted" style={{ padding: 8, textAlign: 'center' }}>{tr('+{n} more. Search or use the table to find them.', { n: (items.length - BOARD_CARDS).toLocaleString('en-US') })}</div>}
+              {hidden > 0 && <button className="ghost small" style={{ width: '100%' }} onClick={() => setOlder(true)}>{tr('Show {n} closed more than 90 days ago', { n: hidden.toLocaleString('en-US') })}</button>}
             </Column>
           )
         })}

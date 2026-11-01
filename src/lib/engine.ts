@@ -3,7 +3,7 @@
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, Approval, JournalEntry, Line, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
+import type { AccountCode, ActivityKind, Approval, JournalEntry, Line, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
 import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
@@ -2074,7 +2074,7 @@ export function addComment(ctx: Ctx, rec: Rec, text: string) {
   ;(ctx.ws.data.comments ??= []).unshift({ id: uid('c'), record: rec.id, user: ctx.user.id, at: nowISO(), text: body })
   const mentioned = new Set((body.match(/@([\p{L}\w.-]+)/gu) ?? []).map((m) => m.slice(1).toLowerCase()))
   for (const u of ctx.ws.users) {
-    if (u.id !== ctx.user.id && mentioned.has(u.name.split(' ')[0].toLowerCase())) {
+    if (u.id !== ctx.user.id && !u.former && mentioned.has(u.name.split(' ')[0].toLowerCase())) {
       ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} mentioned you on ${recordTitle(ctx.ws, ctx.schema, rec)}: “${body.slice(0, 80)}”`, read: false, user: u.id, record: rec.id })
     }
   }
@@ -2096,7 +2096,11 @@ export function csvSafe(c: unknown) {
  * Columns that go somewhere other than a field: the stage, the original dates, and what the old system called the
  * record. They are given in an import's mapping like a field key.
  */
-export const IMPORT_TARGETS = ['__stage', '__stage_date', '__created', '__legacy_id', '__legacy_number', '__legacy_notes'] as const
+export const IMPORT_TARGETS = ['__stage', '__stage_date', '__created', '__legacy_id', '__legacy_number', '__legacy_notes', '__lost_reason'] as const
+/** A column holding the date a record reached one stage: '__stage_at:' followed by the stage's id (Phase H4). */
+export const STAGE_AT = '__stage_at:'
+/** In a value map for a team-member column: the name is someone who has left; add them as a former member. */
+export const FORMER = '\u0001former'
 export type ImportTarget = (typeof IMPORT_TARGETS)[number]
 
 export interface ImportOptions {
@@ -2193,7 +2197,10 @@ function parseDate(label: string, raw: string) {
 function convert(ctx: Ctx, f: FieldDef, raw: string, map: Record<string, string> | undefined, link: ReturnType<typeof linker>): unknown {
   const low = importKey(raw)
   // A value the person mapped by hand wins; '' means "leave it empty".
-  if (map && Object.hasOwn(map, low) && f.type !== 'multiselect') return map[low] === '' ? undefined : map[low]
+  if (map && Object.hasOwn(map, low) && f.type !== 'multiselect') {
+    if (f.type === 'user' && map[low] === FORMER) return formerMember(ctx, raw).id
+    return map[low] === '' ? undefined : map[low]
+  }
   switch (f.type) {
     case 'number':
     case 'currency':
@@ -2303,6 +2310,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       let stage: string | undefined
       let stageDate: string | undefined
       let created: string | undefined
+      const stageAt = new Map<string, string>()
       for (const [col, key] of Object.entries(mapping)) {
         column = col
         const raw = String(row[col] ?? '').trim()
@@ -2310,6 +2318,16 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
         if (key === '__legacy_id') legacy.id = raw.slice(0, 120)
         else if (key === '__legacy_number') legacy.number = raw.slice(0, 120)
         else if (key === '__legacy_notes') legacy.notes = raw.slice(0, 4000)
+        else if (key === '__lost_reason') {
+          legacy.lostReason = raw.slice(0, 500)
+          if (fieldByKey(mod, 'lost_reason')) values.lost_reason = raw.slice(0, 500)
+        } else if (key.startsWith(STAGE_AT)) {
+          const st = mod.stages?.find((x) => x.id === key.slice(STAGE_AT.length))
+          if (!st) continue
+          const d = parseDate(st.name, raw)
+          if (d > todayISO()) throw new EngineError(`${st.name}: “${raw}” is in the future`)
+          stageAt.set(st.id, d)
+        }
         else if (key === '__created' || key === '__stage_date') {
           const d = parseDate(key === '__created' ? 'Created on' : 'Stage date', raw)
           if (d > todayISO()) throw new EngineError(`${key === '__created' ? 'Created on' : 'Stage date'}: “${raw}” is in the future`)
@@ -2330,6 +2348,11 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
         }
       }
       column = undefined
+      // The dates each stage was reached give the stage history; without a stage column, the last of them is the stage.
+      if (stage && stageDate) stageAt.set(stage, stageDate)
+      if (!stage && stageAt.size) stage = [...stageAt].sort((a, b) => a[1].localeCompare(b[1])).at(-1)![0]
+      const history = stageAt.size ? [...stageAt].sort((a, b) => a[1].localeCompare(b[1])).map(([sid, d]) => ({ stage: sid, at: `${d}T00:00:00.000Z` })) : undefined
+      if (history && stage && history.at(-1)!.stage !== stage) history.push({ stage, at: history.at(-1)!.at })
 
       // A record already here?
       let existing: Rec | undefined
@@ -2350,6 +2373,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
           rec.stage = stage
           rec.stageHistory = [...(rec.stageHistory ?? []), { stage, at: stageDate ? `${stageDate}T00:00:00.000Z` : at }]
         }
+        if (history) rec.stageHistory = history
         if (Object.keys(legacy).length) rec.legacy = { ...rec.legacy, ...legacy }
         rec.updatedAt = at
         rec.imports = [...(rec.imports ?? []), { batch: batchId, at, sum: importSum(rec), before }]
@@ -2367,9 +2391,9 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       if (Object.keys(legacy).length) rec.legacy = legacy
       if (created) rec.createdAt = `${created}T00:00:00.000Z`
       if (rec.stage) {
-        rec.stageHistory = [{ stage: rec.stage, at: stageDate ? `${stageDate}T00:00:00.000Z` : rec.createdAt }]
+        rec.stageHistory = history ?? [{ stage: rec.stage, at: stageDate ? `${stageDate}T00:00:00.000Z` : rec.createdAt }]
         const st = mod.stages?.find((s) => s.id === rec.stage)
-        if (st?.type === 'won' && mod.role === 'deals' && !rec.values.close_date) rec.values.close_date = stageDate ?? created ?? todayISO()
+        if (st?.type === 'won' && mod.role === 'deals' && !rec.values.close_date) rec.values.close_date = stageAt.get(rec.stage) ?? created ?? todayISO()
       }
       rec.updatedAt = at
       rec.imports = [{ batch: batchId, at, sum: importSum(rec), created: true }]
@@ -2405,6 +2429,10 @@ export function previewImport(ctx: Ctx, moduleId: string, rows: Record<string, s
 export function importStatus(ctx: Pick<Ctx, 'ws' | 'schema'>, batchId: string) {
   const b = ctx.ws.data.imports?.find((x) => x.id === batchId)
   if (!b) return { records: [] as Rec[], blockers: ['That import no longer exists'] }
+  if (b.module === ACTIVITIES) {
+    const done = ctx.ws.books?.opening?.done
+    return { records: [] as Rec[], blockers: done && b.at <= done.at ? ['Imports from before going live are final'] : [] }
+  }
   const records = list(ctx.ws, b.module).filter((r) => r.imports?.some((m) => m.batch === b.id))
   const createdIds = new Set(records.filter((r) => r.imports!.find((m) => m.batch === b.id)?.created).map((r) => r.id))
   const blockers: string[] = []
@@ -2444,6 +2472,16 @@ export function undoImport(ctx: Ctx, batchId: string) {
   if (!b) throw new EngineError('That import no longer exists')
   if (b.undoneAt) throw new EngineError('This import was already undone')
   if (b.by !== ctx.user.id && !isAdmin(ctx)) throw new EngineError('Only the person who imported the file, or an admin, can undo it')
+  if (b.module === ACTIVITIES) {
+    const { blockers } = importStatus(ctx, batchId)
+    if (blockers.length) throw new EngineError(`Can’t undo this import: ${blockers.length} records were changed or used since (${blockers.slice(0, 3).join('; ')})`)
+    const before = (ctx.ws.data.comments ?? []).length
+    ctx.ws.data.comments = (ctx.ws.data.comments ?? []).filter((c) => c.batch !== b.id)
+    b.undoneAt = nowISO()
+    b.undoneBy = ctx.user.id
+    log(ctx, `undid the import of ${before - ctx.ws.data.comments.length} activities and notes (${b.file || 'file'})`)
+    return { removed: before - ctx.ws.data.comments.length, restored: 0 }
+  }
   const mod = moduleById(ctx.schema, b.module)
   if (!mod) throw new EngineError('This module no longer exists')
   const { records, blockers } = importStatus(ctx, batchId)
@@ -2468,6 +2506,187 @@ export function undoImport(ctx: Ctx, batchId: string) {
   b.undoneBy = ctx.user.id
   log(ctx, `undid the import of ${b.created + b.updated} ${mod.name.toLowerCase()} (${b.file || 'file'})`)
   return { removed: gone.size, restored: records.length - gone.size }
+}
+
+/* ---------------- CRM history (Phase H4): former members, activities, hand-over, sales history ---------------- */
+
+/**
+ * Someone named in the old data who has left the company: a name with no login and no access, so history keeps its
+ * owner and reports by person stay true. Only an admin adds them; the same name is never added twice.
+ */
+export function formerMember(ctx: Ctx, name: string): User {
+  const n = String(name ?? '').trim().slice(0, 80)
+  if (!n) throw new EngineError('Enter the name')
+  const known = ctx.ws.users.find((u) => u.former && importKey(u.name) === importKey(n))
+  if (known) return known
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can add former team members')
+  const u: User = { id: uid('u'), name: n, email: '', roleId: '', former: true }
+  ctx.ws.users.push(u)
+  return u
+}
+
+/** Whether anything in the books or the records names this person (so removing them keeps a former member). */
+export function userIsReferenced(ws: Workspace, schema: AppSchema, userId: string) {
+  for (const m of schema.modules) {
+    const people = m.fields.filter((f) => f.type === 'user')
+    for (const r of list(ws, m.id)) if (r.createdBy === userId || people.some((f) => r.values[f.key] === userId)) return true
+  }
+  return (ws.data.comments ?? []).some((c) => c.user === userId) || (ws.data.approvals ?? []).some((a) => a.requestedBy === userId || a.decidedBy === userId)
+}
+
+const ACTIVITY_KINDS: Record<ActivityKind, string[]> = {
+  call: ['call', 'phone call', 'مكالمة', 'اتصال', 'تليفون'],
+  meeting: ['meeting', 'اجتماع', 'مقابلة'],
+  visit: ['visit', 'site visit', 'زيارة'],
+  email: ['email', 'e-mail', 'mail', 'بريد', 'ايميل', 'إيميل', 'بريد الكتروني', 'البريد الإلكتروني'],
+  whatsapp: ['whatsapp', 'واتساب', 'واتس'],
+  note: ['note', 'comment', 'ملاحظة', 'تعليق'],
+}
+
+export function activityKindOf(raw: string): ActivityKind {
+  const k = importKey(raw)
+  if (!k) return 'note'
+  const hit = (Object.keys(ACTIVITY_KINDS) as ActivityKind[]).find((kind) => ACTIVITY_KINDS[kind].map(importKey).includes(k))
+  if (!hit) throw new EngineError(`Type: “${raw}” is not one of the options`)
+  return hit
+}
+
+/**
+ * Calls, meetings, visits, e-mails and notes from the old system, each on the record it was about (found by the old
+ * system's id, number or name, in the list named or in any list). They join the record's notes in date order, run no
+ * automations and notify nobody, and the whole import can be undone like any other.
+ */
+export function importActivities(ctx: Ctx, rows: Record<string, string>[], opts: { batch?: { id: string; file: string }; firstRow?: number; people?: Record<string, string> } = {}): ImportResult {
+  const at = nowISO()
+  const batchId = opts.batch?.id ?? uid('imp')
+  ctx.ws.data.imports ??= []
+  let batch = ctx.ws.data.imports.find((b) => b.id === batchId)
+  if (batch && (batch.undoneAt || batch.module !== ACTIVITIES || batch.by !== ctx.user.id)) throw new EngineError('That import is closed. Start a new one.')
+  if (!batch) {
+    batch = { id: batchId, module: ACTIVITIES, file: String(opts.batch?.file ?? '').slice(0, 120), at, by: ctx.user.id, created: 0, updated: 0, skipped: 0, parts: 0 }
+    ctx.ws.data.imports.unshift(batch)
+  }
+  const mods = ctx.schema.modules.filter((m) => !m.lines && can(ctx, m.id, 'edit'))
+  const link = linker(ctx)
+  const fieldFor = (m: ModuleDef) => ({ id: '', key: 'record', label: 'Record', type: 'relation', target: m.id }) as FieldDef
+  const result: ImportResult = { batch: batchId, created: 0, updated: 0, skipped: 0, errors: [], rows: [] }
+  rows.forEach((r, i) => {
+    const rowNo = (opts.firstRow ?? 2) + i
+    let column: string | undefined
+    try {
+      column = 'list'
+      const listName = importKey(String(r.list ?? ''))
+      const inList = listName ? mods.filter((m) => [m.name, m.singular].some((n) => importKey(n) === listName)) : mods
+      if (listName && !inList.length) throw new EngineError(`List: “${r.list}” is not one of the options`)
+      column = 'record'
+      const raw = String(r.record ?? '').trim()
+      if (!raw) throw new EngineError('Record: enter the old system id or the name')
+      const found = inList.flatMap((m) => { try { return [link(fieldFor(m), raw)] } catch (e) { return String((e as Error).message).includes('records are called') ? [`ambiguous:${(e as Error).message}`] : [] } })
+      if (found.some((f) => f.startsWith('ambiguous:'))) throw new EngineError(found.find((f) => f.startsWith('ambiguous:'))!.slice(10))
+      if (found.length > 1) throw new EngineError(`Record: “${raw}” is in ${found.length} lists; say which list in the List column`)
+      if (!found.length) throw new EngineError(`Record: no record called “${raw}”`)
+      column = 'type'
+      const kind = activityKindOf(String(r.type ?? ''))
+      column = 'date'
+      const date = parseDate('Date', String(r.date ?? ''))
+      if (date > todayISO()) throw new EngineError(`Date: “${r.date}” is in the future`)
+      column = 'by'
+      const who = String(r.by ?? '').trim()
+      let user = ctx.user.id
+      if (who) {
+        const mapped = opts.people && Object.hasOwn(opts.people, importKey(who)) ? opts.people[importKey(who)] : undefined
+        const u = mapped === FORMER ? formerMember(ctx, who) : ctx.ws.users.find((x) => x.id === mapped || importKey(x.name) === importKey(who) || x.email.toLowerCase() === who.toLowerCase())
+        if (!u) throw new EngineError(`By: no team member “${who}”`)
+        user = u.id
+      }
+      column = 'text'
+      const text = String(r.text ?? '').trim().slice(0, 4000)
+      const outcome = String(r.outcome ?? '').trim().slice(0, 300)
+      if (!text && !outcome) throw new EngineError('Text: write what happened')
+      ;(ctx.ws.data.comments ??= []).unshift({ id: uid('c'), record: found[0], user, at: `${date}T12:00:00.000Z`, text: text || outcome, kind, ...(text && outcome ? { outcome } : {}), batch: batchId })
+      result.created++
+      result.rows.push({ row: rowNo, action: 'create', id: found[0] })
+    } catch (e) {
+      result.errors.push({ row: rowNo, message: (e as Error).message, column })
+    }
+  })
+  result.skipped = result.errors.length
+  batch.parts++
+  batch.created += result.created
+  batch.skipped += result.skipped
+  if (result.created) log(ctx, `imported ${result.created} activities and notes`)
+  return result
+}
+
+/** The import's "module" for activities and notes, which belong to records of any list. */
+export const ACTIVITIES = '__activities'
+
+/**
+ * Hands a person's records over to someone else: the open ones by default (deals and tickets not won or lost, tasks not
+ * done), or all of them. What was closed stays with the person who closed it, so history and reports stay true.
+ */
+export function handOver(ctx: Ctx, from: string, to: string, scope: 'open' | 'all' = 'open') {
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can do this')
+  const a = ctx.ws.users.find((u) => u.id === from)
+  const b = ctx.ws.users.find((u) => u.id === to && !u.former)
+  if (!a) throw new EngineError('This person is no longer in the team')
+  if (!b || a.id === b.id) throw new EngineError('Choose who takes the records over')
+  let moved = 0
+  for (const m of ctx.schema.modules) {
+    const people = m.fields.filter((f) => f.type === 'user')
+    if (!people.length) continue
+    for (const r of list(ctx.ws, m.id)) {
+      const stage = m.stages?.find((s) => s.id === r.stage)
+      const open = (!stage || stage.type === 'open') && !(m.role === 'tasks' && r.values.done) && (!m.lines || r.status === 'draft' || r.status === 'sent')
+      if (scope === 'open' && !open) continue
+      let changed = false
+      for (const f of people) if (r.values[f.key] === from) { r.values[f.key] = to; changed = true }
+      if (changed) { r.updatedAt = nowISO(); moved++ }
+    }
+  }
+  log(ctx, `handed ${moved} records of ${a.name} over to ${b.name}`)
+  return { moved }
+}
+
+export interface SalesPeriod {
+  from: string
+  to: string
+  won: number
+  lost: number
+  wonAmount: number
+  /** won ÷ (won + lost), in % */
+  winRate: number
+  /** average days from a won deal's creation to its win */
+  cycleDays: number
+}
+
+/** When a deal was won or lost: the day it reached that stage, else its close date. */
+function closedOn(rec: Rec, stageType: (id?: string) => string | undefined) {
+  const h = [...(rec.stageHistory ?? [])].reverse().find((e) => stageType(e.stage) !== 'open')
+  return (h?.at ?? String(rec.values.close_date ?? '')).slice(0, 10)
+}
+
+/** Deals won and lost in a period (imported history included), the win rate and the average sales cycle. */
+export function salesHistory(ws: Workspace, schema: AppSchema, from: string, to: string): SalesPeriod | undefined {
+  const deals = moduleByRole(schema, 'deals')
+  if (!deals?.stages) return undefined
+  const type = (id?: string) => deals.stages!.find((s) => s.id === id)?.type
+  let won = 0
+  let lost = 0
+  let wonAmount = 0
+  let days = 0
+  for (const r of list(ws, deals.id)) {
+    const t = type(r.stage)
+    if (t !== 'won' && t !== 'lost') continue
+    const d = closedOn(r, type)
+    if (!d || d < from || d > to) continue
+    if (t === 'won') {
+      won++
+      wonAmount = round2(wonAmount + Number(r.values.amount ?? 0))
+      days += Math.max(0, Math.round((Date.parse(d) - Date.parse(r.createdAt.slice(0, 10))) / 86_400_000))
+    } else lost++
+  }
+  return { from, to, won, lost, wonAmount, winRate: won + lost ? Math.round((won / (won + lost)) * 1000) / 10 : 0, cycleDays: won ? Math.round(days / won) : 0 }
 }
 
 /* ---------------- opening books (Phase H2) ---------------- */

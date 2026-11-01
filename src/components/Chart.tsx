@@ -26,7 +26,7 @@ export function Chart({ type, result, color, prefix = '', height = 220 }: Props)
     return (
       <div className="kpi">
         <div className="kpi-value" style={{ color }}>{fmt(result.total)}</div>
-        <div className="kpi-sub">{result.count} record{result.count === 1 ? '' : 's'}</div>
+        <div className="kpi-sub">{tr(result.count === 1 ? '{n} record' : '{n} records', { n: result.count })}</div>
         <svg className="kpi-wave" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden>
           <path d="M0 30 C 30 10, 50 35, 80 22 S 130 5, 160 18 S 190 30, 200 12 L200 40 L0 40Z" fill={color} opacity="0.12" />
         </svg>

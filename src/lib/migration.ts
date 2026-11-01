@@ -5,14 +5,28 @@ import type { AppSchema, FieldDef, ModuleDef, ModuleRole } from './schema'
 import { moduleByRole } from './schema'
 import type { User } from './types'
 import { importKey } from './engine'
-import { SHEETS, TITLES } from './openingSheets'
+import { SHEETS, TITLES, type Column } from './openingSheets'
 import { N_ } from './i18n'
 import { sheetName, type SheetSpec } from './xlsxWrite'
 import type { Sheet } from './xlsx'
 
 export type MigrationStep =
   | { kind: 'module'; id: string; module: ModuleDef }
+  | { kind: 'activities'; id: 'activities' }
   | { kind: 'books'; id: string; step: string }
+
+/** The sheet of calls, meetings, visits, e-mails and notes (Phase H4), each on the record it was about. */
+export const ACTIVITY_COLUMNS: Column[] = [
+  { key: 'list', label: N_('List'), aliases: ['module', 'القائمة'] },
+  { key: 'record', label: N_('Record (old system id or name)'), required: true, aliases: ['record', 'customer', 'العميل', 'السجل'], names: ['Record'] },
+  { key: 'type', label: N_('Type'), required: true, aliases: ['type', 'النوع'] },
+  { key: 'date', label: N_('Date'), required: true, aliases: ['التاريخ'] },
+  { key: 'by', label: N_('By'), aliases: ['person', 'rep', 'المندوب', 'بواسطة'] },
+  { key: 'outcome', label: N_('Outcome'), aliases: ['result', 'النتيجة'] },
+  { key: 'text', label: N_('What happened'), required: true, aliases: ['text', 'notes', 'details', 'التفاصيل', 'الملاحظات'], names: ['Text'] },
+]
+
+export const ACTIVITY_TYPES = [N_('Call'), N_('Meeting'), N_('Visit'), N_('E-mail'), N_('WhatsApp'), N_('Note')]
 
 /** Columns of a module's import that go somewhere other than a field (see IMPORT_TARGETS in the engine). */
 export const IMPORT_COLUMNS: { key: string; label: string; stages?: boolean }[] = [
@@ -22,6 +36,7 @@ export const IMPORT_COLUMNS: { key: string; label: string; stages?: boolean }[] 
   { key: '__created', label: N_('Created on (in the old system)') },
   { key: '__stage', label: N_('Stage'), stages: true },
   { key: '__stage_date', label: N_('Date it reached that stage'), stages: true },
+  { key: '__lost_reason', label: N_('Lost reason'), stages: true },
 ]
 
 /** The fields an import can fill (not the ones the system works out). */
@@ -51,6 +66,8 @@ export function migrationSteps(schema: AppSchema): MigrationStep[] {
   }
   for (const m of sorted) visit(m, new Set())
   const steps: MigrationStep[] = out.map((m) => ({ kind: 'module', id: m.id, module: m }))
+  // Calls, visits and notes come after the lists, so each finds its record.
+  steps.push({ kind: 'activities', id: 'activities' })
   const has = (role: ModuleRole) => Boolean(moduleByRole(schema, role))
   const books = ['tb', ...(has('invoices') ? ['customers'] : []), ...(has('purchases') ? ['suppliers'] : []), ...(has('invoices') || has('purchases') ? ['cheques'] : []), ...(has('products') ? ['stock'] : []), 'wht']
   for (const b of books) steps.push({ kind: 'books', id: b, step: b })
@@ -59,7 +76,7 @@ export function migrationSteps(schema: AppSchema): MigrationStep[] {
 
 /** What a sheet is called in the workbook, in the language given. */
 export function stepSheetName(step: MigrationStep, t: (en: string) => string) {
-  return step.kind === 'module' ? step.module.name : t(TITLES[step.step].title)
+  return step.kind === 'module' ? step.module.name : step.kind === 'activities' ? t('Calls, visits and notes') : t(TITLES[step.step].title)
 }
 
 const norm = (s: string) => importKey(s).replace(/[^a-z0-9؀-ۿ]/g, '')
@@ -95,7 +112,7 @@ export function migrationWorkbook(schema: AppSchema, o: WorkbookOptions): SheetS
     const col = String.fromCharCode(65 + (i % 26))
     return `Lists!$${col}$2:$${col}$${values.length + 1}`
   }
-  const steps = migrationSteps(schema).filter((s) => s.kind === 'module' || (o.books && !(s.step === 'wht' && o.quarterStart)))
+  const steps = migrationSteps(schema).filter((s) => s.kind !== 'books' || (o.books && !(s.step === 'wht' && o.quarterStart)))
   const instructions: string[][] = [
     [t('How to use this workbook')],
     [t('Each sheet is one step. Fill one row per record under the column names, and leave sheets you don’t need empty.')],
@@ -118,8 +135,24 @@ export function migrationWorkbook(schema: AppSchema, o: WorkbookOptions): SheetS
       for (const c of IMPORT_COLUMNS.filter((c) => !c.stages || m.stages)) {
         cols.push({ header: t(c.label), width: 22, list: c.key === '__stage' ? listRef(`${m.name}: ${t('Stage')}`, m.stages!.map((s) => s.name)) : undefined })
       }
+      // The date each stage was reached, for the whole stage history.
+      for (const st of m.stages ?? []) cols.push({ header: t('Date it reached “{stage}”').replace('{stage}', st.name), width: 24 })
       sheets.push({ name, rows: [cols.map((c) => c.header)], header: true, rtl: o.rtl, widths: cols.map((c) => c.width), lists: cols.flatMap((c, i) => (c.list ? [{ col: i, source: c.list }] : [])) })
       instructions.push([name, t('One row per record of {what}').replace('{what}', m.name), importableFields(m).filter((f) => f.required).map((f) => f.label).join('، ')])
+    } else if (step.kind === 'activities') {
+      const cols = ACTIVITY_COLUMNS
+      const lists: Record<string, string | undefined> = {
+        list: listRef(t('List'), schema.modules.filter((m) => !m.lines).map((m) => m.name)),
+        type: listRef(t('Type'), ACTIVITY_TYPES.map(t)),
+        by: listRef(t('Team member'), o.users.filter((u) => !u.demo && !u.former).map((u) => u.name)),
+      }
+      sheets.push({
+        name, header: true, rtl: o.rtl,
+        rows: [cols.map((c) => `${t(c.label)}${c.required ? ' *' : ''}`)],
+        widths: cols.map((c) => (c.key === 'text' ? 60 : Math.max(14, t(c.label).length + 4))),
+        lists: cols.flatMap((c, i) => (lists[c.key] ? [{ col: i, source: lists[c.key]! }] : [])),
+      })
+      instructions.push([name, t('One row per call, meeting, visit, e-mail or note, on the record it was about. They join that record’s timeline with their own dates.'), cols.filter((c) => c.required).map((c) => t(c.label)).join('، ')])
     } else {
       const cols = SHEETS[step.step]
       const source = step.step === 'cheques' ? listRef(t('Received or issued'), [t('received'), t('issued')]) : step.step === 'wht' ? listRef(t('Withheld by us (out) or by the customer (in)'), ['out', 'in']) : undefined
