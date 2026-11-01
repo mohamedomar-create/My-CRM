@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { AR } from '../locales/ar'
 
 export type Lang = 'en' | 'ar'
 
@@ -60,6 +61,52 @@ const DICT = {
 
 export type TKey = keyof typeof DICT
 
+/* ---------------- English-keyed translations for the app screens ----------------
+ * Screen text is written in English and wrapped: tr('Save'), tr('Closed up to {date}', { date }).
+ * The Arabic is looked up in src/locales/ar.ts by the English text. Anything missing shows in English, so a screen is
+ * never broken by a missing translation; a test makes sure every wrapped text has its Arabic.
+ */
+
+export type Vars = Record<string, string | number>
+
+const fill = (s: string, vars?: Vars) => (vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s)
+
+/** Translates one English text (with {placeholders} filled in) into the language given. */
+export function translate(l: Lang, en: string, vars?: Vars) {
+  return fill(l === 'ar' ? AR[en] ?? en : en, vars)
+}
+
+/** Marks an English text for translation where it is defined (a constant), to be shown later with msg() / tr(). */
+export const N_ = <T extends string>(en: T) => en
+
+/** The same, in the language chosen now (for code outside components, e.g. toasts). */
+export const tr = (en: string, vars?: Vars) => translate(lang, en, vars)
+
+// Messages built with values (from the engine and the server) are matched against the dictionary entries that have
+// {placeholders}: "Only 3 of “Rice” can still be credited" finds "Only {n} of “{item}” can still be credited".
+let patterns: { re: RegExp; keys: string[]; ar: string }[] | undefined
+const escape = (s: string) => s.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+
+/** Translates a whole message that may contain values, such as an error from the server. */
+export function translateMessage(l: Lang, msg: string) {
+  if (l !== 'ar' || !msg) return msg
+  if (AR[msg]) return AR[msg]
+  patterns ??= Object.entries(AR).filter(([en]) => /\{\w+\}/.test(en)).map(([en, ar]) => {
+    const keys: string[] = []
+    const re = new RegExp('^' + en.split(/(\{\w+\})/).map((part) => {
+      const m = /^\{(\w+)\}$/.exec(part)
+      if (m) { keys.push(m[1]); return '(.+?)' }
+      return escape(part)
+    }).join('') + '$')
+    return { re, keys, ar }
+  })
+  for (const p of patterns) {
+    const m = p.re.exec(msg)
+    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, m[i + 1]])))
+  }
+  return msg
+}
+
 export function useLang() {
   const l = useSyncExternalStore(
     (cb) => {
@@ -69,5 +116,6 @@ export function useLang() {
     () => lang,
   )
   const t = (k: TKey) => DICT[k][l === 'ar' ? 1 : 0]
-  return { lang: l, t, setLang }
+  const trl = (en: string, vars?: Vars) => translate(l, en, vars)
+  return { lang: l, t, tr: trl, setLang, msg: (m: string) => translateMessage(l, m) }
 }
