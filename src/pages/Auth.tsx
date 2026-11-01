@@ -117,6 +117,7 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
             {creating ? <>Already registered? <Link to="/signin">Sign in</Link></> : <>New here? <Link to="/register">Create a workspace</Link></>}
           </p>
           {mode === 'signin' && <p className="small muted center"><Link to="/forgot">Forgot password?</Link> · Added by your team? <Link to="/join">Create your login</Link></p>}
+          {creating && <p className="tiny muted center">By continuing you agree to the <Link to="/terms">Terms of Service</Link>, the <Link to="/privacy">Privacy Policy</Link> and the <Link to="/dpa">Data Processing Agreement</Link>.</p>}
           <p className="tiny muted center">Your workspace is saved securely in the cloud, and only people your admin adds can open it.</p>
         </form>
         )}
