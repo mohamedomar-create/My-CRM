@@ -157,6 +157,8 @@ export interface Workspace {
   published: AppSchema | null
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
+  /** closing the books: nothing can be posted on or before lockDate; the years closed to retained earnings */
+  books?: { lockDate?: string; closedYears?: { year: number; at: string; by: string; entry: string }[] }
   /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
   chart?: import('./accounts').Account[]
   /** company-wide security settings (admins only) */

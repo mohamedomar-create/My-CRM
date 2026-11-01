@@ -15,6 +15,8 @@ export interface Ctx {
   today?: string
   /** set while generating sample data: everything created is tagged so it can be removed in one click */
   sample?: boolean
+  /** set while posting the year-end closing entry, which is dated on the day the year is locked */
+  closing?: boolean
 }
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -497,6 +499,7 @@ export function hasSampleData(ws: Workspace) {
 }
 
 function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: boolean }) {
+  checkOpenPeriod(ctx, entry.date)
   if (entry.lines.some((l) => round2(l.debit) < 0 || round2(l.credit) < 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has a negative amount`)
   const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => ({ ...l, debit: round2(l.debit), credit: round2(l.credit) }))
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
@@ -546,6 +549,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   const party = mod.role === 'invoices' ? rec.values.customer : rec.values.supplier
   if (!party) throw new EngineError(mod.role === 'invoices' ? 'Choose the customer first' : 'Choose the supplier first')
   const date = String(rec.values.date ?? todayISO())
+  checkOpenPeriod(ctx, date)
   if (rec.values.due_date && String(rec.values.due_date) < date) throw new EngineError('The due date can’t be before the document date')
   checkLines(lines)
   applyTotals(rec)
@@ -934,6 +938,181 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
   refreshBalance(rec)
   log(ctx, `reversed payment ${p.ref} (${why})`, rec)
+}
+
+/* ---------------- closing the books: lock date, month-end checks, year-end close ---------------- */
+
+/** Nothing is posted on or before the lock date (the year-end close itself excepted). */
+export function checkOpenPeriod(ctx: Ctx, date: string) {
+  const lock = ctx.ws.books?.lockDate
+  if (lock && date <= lock && !ctx.closing) {
+    throw new EngineError(`The books are closed up to ${lock}. Use a later date, or ask an admin to reopen the period.`)
+  }
+}
+
+export interface HealthCheck {
+  id: string
+  ok: boolean
+  title: string
+  detail: string
+  /** a warning can be closed over; a failed check can't */
+  blocking: boolean
+}
+
+const monthEnd = (month: string) => {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+}
+
+/** A year-end closing entry, or the reversal of one when a year is reopened: not trading, so left out of profit and loss. */
+export const isClosingEntry = (j: { ref: string }) => j.ref.startsWith('CLOSE ') || j.ref.startsWith('REOPEN ')
+
+/** Income and expense per account for entries dated from…to (inclusive), without the year-end closing entries. */
+export function profitAndLoss(ws: Workspace, from: string, to: string) {
+  const rows = new Map<string, number>()
+  for (const j of ws.data.journal) {
+    if (j.date < from || j.date > to || isClosingEntry(j)) continue
+    for (const l of j.lines) {
+      const a = findAccount(ws, l.account)
+      if (!a || (a.type !== 'income' && a.type !== 'expense')) continue
+      rows.set(l.account, round2((rows.get(l.account) ?? 0) + l.debit - l.credit))
+    }
+  }
+  const income = [...rows].filter(([c]) => findAccount(ws, c)!.type === 'income').map(([code, b]) => ({ code, amount: round2(-b) }))
+  const expenses = [...rows].filter(([c]) => findAccount(ws, c)!.type === 'expense').map(([code, b]) => ({ code, amount: b }))
+  const totalIncome = round2(income.reduce((s, r) => s + r.amount, 0))
+  const totalExpenses = round2(expenses.reduce((s, r) => s + r.amount, 0))
+  return { income, expenses, totalIncome, totalExpenses, profit: round2(totalIncome - totalExpenses) }
+}
+
+/** VAT of a period: output on sales, input on purchases, and what is due (negative = a credit to carry forward). */
+export function vatForPeriod(ws: Workspace, from: string, to: string) {
+  let output = 0
+  let input = 0
+  for (const j of ws.data.journal) {
+    if (j.date < from || j.date > to) continue
+    for (const l of j.lines) {
+      if (l.account === '2200') output += l.credit - l.debit
+      if (l.account === '1400') input += l.debit - l.credit
+    }
+  }
+  return { output: round2(output), input: round2(input), due: round2(output - input) }
+}
+
+/**
+ * The checks an accountant makes before closing a month: everything is posted, the books balance, and the stock,
+ * customer and supplier lists agree with their accounts. Failed checks block the close; warnings only inform.
+ */
+export function booksHealth(ws: Workspace, schema: AppSchema, month: string): HealthCheck[] {
+  const end = monthEnd(month)
+  const start = `${month}-01`
+  const checks: HealthCheck[] = []
+  const cur = schema.company.currency
+  const docs = (['invoices', 'purchases'] as const).flatMap((role) => {
+    const m = moduleByRole(schema, role)
+    return m ? list(ws, m.id) : []
+  })
+  const drafts = docs.filter((r) => r.status === 'draft' && String(r.values.date ?? '') <= end)
+  checks.push({ id: 'drafts', ok: drafts.length === 0, blocking: false, title: 'Documents still in draft',
+    detail: drafts.length ? `${drafts.length} invoice${drafts.length > 1 ? 's or bills are' : ' or bill is'} dated on or before ${end} but not posted. Post or delete them, or they will have to be dated after the close.` : 'Every invoice and bill up to the month end is posted.' })
+  const tb = trialBalance(ws)
+  const dr = round2(tb.reduce((s, [, r]) => s + r.debit, 0))
+  const cr = round2(tb.reduce((s, [, r]) => s + r.credit, 0))
+  checks.push({ id: 'balance', ok: dr === cr, blocking: true, title: 'The books balance', detail: dr === cr ? `Debits = credits = ${money(dr, cur)}` : `Debits ${money(dr, cur)} ≠ credits ${money(cr, cur)}. Contact support before closing.` })
+  const products = moduleByRole(schema, 'products')
+  const stock = products ? round2(list(ws, products.id).reduce((s, p) => s + stockValue(ws, p), 0)) : 0
+  const inv = accountBalance(ws, '1300')
+  checks.push({ id: 'stock', ok: stock === inv, blocking: true, title: 'Stock matches the inventory account', detail: stock === inv ? `Both ${money(inv, cur)}` : `Stock list ${money(stock, cur)}, account 1300 ${money(inv, cur)}` })
+  const owed = (role: 'invoices' | 'purchases') => {
+    const m = moduleByRole(schema, role)
+    return m ? round2(list(ws, m.id).filter((r) => r.status === 'posted' || r.status === 'partial').reduce((s, r) => s + Number(r.values.balance ?? 0), 0)) : 0
+  }
+  const ar = accountBalance(ws, '1200')
+  const ap = round2(-accountBalance(ws, '2100'))
+  checks.push({ id: 'ar', ok: owed('invoices') === ar, blocking: true, title: 'Customer balances match receivables', detail: owed('invoices') === ar ? `Both ${money(ar, cur)}` : `Customers ${money(owed('invoices'), cur)}, account 1200 ${money(ar, cur)}` })
+  checks.push({ id: 'ap', ok: owed('purchases') === ap, blocking: true, title: 'Supplier balances match payables', detail: owed('purchases') === ap ? `Both ${money(ap, cur)}` : `Suppliers ${money(owed('purchases'), cur)}, account 2100 ${money(ap, cur)}` })
+  const sample = ws.data.journal.some((j) => j.sample)
+  checks.push({ id: 'sample', ok: !sample, blocking: true, title: 'No sample data in the books', detail: sample ? 'Remove the sample data first.' : 'Only real figures.' })
+  const vat = vatForPeriod(ws, start, end)
+  checks.push({ id: 'vat', ok: true, blocking: false, title: `VAT for ${month}`, detail: `Output ${money(vat.output, cur)} − input ${money(vat.input, cur)} = ${vat.due >= 0 ? `${money(vat.due, cur)} to pay` : `${money(-vat.due, cur)} credit`}` })
+  return checks
+}
+
+/** Closes a month: after the checks pass, nothing can be posted on or before its last day. */
+export function closeMonth(ctx: Ctx, month: string) {
+  needFinance(ctx, 'close the books')
+  if (!/^\d{4}-\d{2}$/.test(String(month))) throw new EngineError('Choose the month to close')
+  const end = monthEnd(month)
+  if (end >= (ctx.today ?? todayISO())) throw new EngineError('A month can be closed only after it has ended')
+  const lock = ctx.ws.books?.lockDate
+  if (lock && end <= lock) throw new EngineError(`The books are already closed up to ${lock}`)
+  const failed = booksHealth(ctx.ws, ctx.schema, month).filter((c) => c.blocking && !c.ok)
+  if (failed.length) throw new EngineError(`Can’t close yet: ${failed.map((c) => c.title.toLowerCase()).join('; ')}`)
+  ctx.ws.books = { ...ctx.ws.books, lockDate: end }
+  logLedger(ctx, `closed the books up to ${end}`)
+  return end
+}
+
+/**
+ * Closes a year: its income and expenses are moved to retained earnings by one closing entry dated 31 December, and
+ * the books are locked up to that day. The profit or loss of the year then sits in equity, as the balance sheet needs.
+ */
+export function closeYear(ctx: Ctx, year: number) {
+  needFinance(ctx, 'close the year')
+  year = Number(year)
+  if (!Number.isInteger(year) || year < 2000) throw new EngineError('Choose the year')
+  const end = `${year}-12-31`
+  if (end >= (ctx.today ?? todayISO())) throw new EngineError('A year can be closed only after it has ended')
+  if (ctx.ws.books?.closedYears?.some((c) => c.year === year)) throw new EngineError(`${year} is already closed`)
+  if (ctx.ws.books?.closedYears?.some((c) => c.year > year)) throw new EngineError('A later year is already closed')
+  const lock = ctx.ws.books?.lockDate
+  if (lock && lock > end) throw new EngineError(`The books are closed up to ${lock}, after this year`)
+  const failed = booksHealth(ctx.ws, ctx.schema, `${year}-12`).filter((c) => c.blocking && !c.ok)
+  if (failed.length) throw new EngineError(`Can’t close yet: ${failed.map((c) => c.title.toLowerCase()).join('; ')}`)
+  const pl = profitAndLoss(ctx.ws, `${year}-01-01`, end)
+  const lines = [
+    ...pl.income.map((r) => side(r.code, r.amount)),
+    ...pl.expenses.map((r) => side(r.code, -r.amount)),
+    side('3100', -pl.profit),
+  ]
+  const ref = `CLOSE ${year}`
+  const id = (() => {
+    const before = ctx.ws.data.journal.length
+    if (lines.some((l) => l.debit || l.credit)) {
+      ctx.closing = true
+      try {
+        journal(ctx, { date: end, ref, memo: `Year-end close ${year}: ${pl.profit >= 0 ? 'profit' : 'loss'} to retained earnings`, lines })
+      } finally {
+        ctx.closing = false
+      }
+    }
+    return ctx.ws.data.journal.length > before ? ctx.ws.data.journal[0].id : ''
+  })()
+  ctx.ws.books = { ...ctx.ws.books, lockDate: end, closedYears: [...(ctx.ws.books?.closedYears ?? []), { year, at: nowISO(), by: ctx.user.id, entry: id }] }
+  logLedger(ctx, `closed ${year}: ${money(pl.profit, ctx.schema.company.currency)} ${pl.profit >= 0 ? 'profit' : 'loss'} to retained earnings`)
+  return pl
+}
+
+/** Opens the books again from a date (admins only, with the reason). A closed year that reopens has its closing entry reversed. */
+export function reopenBooks(ctx: Ctx, date: string, reason: string) {
+  if (!ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin) throw new EngineError('Only an admin can reopen closed books')
+  const why = String(reason ?? '').trim()
+  if (why.length < 10) throw new EngineError('Write why the books are reopened (at least 10 characters)')
+  const lock = ctx.ws.books?.lockDate
+  if (!lock) throw new EngineError('The books aren’t closed')
+  if (!ISO_DATE.test(String(date)) || date >= lock) throw new EngineError(`Choose a date before the current lock (${lock})`)
+  const reopened = (ctx.ws.books?.closedYears ?? []).filter((c) => `${c.year}-12-31` > date)
+  ctx.closing = true
+  try {
+    for (const c of reopened) {
+      const je = ctx.ws.data.journal.find((j) => j.id === c.entry)
+      if (je) journal(ctx, { date: je.date, ref: `REOPEN ${c.year}`, memo: `Reversal of the ${c.year} year-end close: ${why}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+    }
+  } finally {
+    ctx.closing = false
+  }
+  ctx.ws.books = { lockDate: date, closedYears: (ctx.ws.books?.closedYears ?? []).filter((c) => !reopened.includes(c)) }
+  logLedger(ctx, `reopened the books after ${date} (was closed up to ${lock}): ${why}`)
 }
 
 /* ---------------- ledger: chart of accounts, journal vouchers, opening balances, stock adjustments ---------------- */

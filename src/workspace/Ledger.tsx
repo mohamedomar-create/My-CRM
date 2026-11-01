@@ -1,9 +1,9 @@
 // The accounting tools of Phase 2A.1: journal vouchers, the chart of accounts, opening balances, stock adjustments and
 // counts. Every action is a server command; the engine checks the rules (balance, control accounts, permissions).
 import { useState } from 'react'
-import { Plus, Trash2, Undo2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, list, money, onHand, round2, todayISO } from '../lib/engine'
+import { accountBalance, booksHealth, list, money, onHand, profitAndLoss, round2, todayISO } from '../lib/engine'
 import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 
@@ -301,6 +301,120 @@ export function StockTools() {
             </table>
           </div>
           <button disabled={!Object.values(counts).some((v) => v !== '')}>Save the count</button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+/* ---------------- closing the books (2A.3) ---------------- */
+
+/** The months that have ended and are still open, newest first (up to two years back). */
+function openMonths(today: string, lock?: string) {
+  const out: string[] = []
+  let [y, m] = today.slice(0, 7).split('-').map(Number)
+  for (let i = 0; i < 24; i++) {
+    m -= 1
+    if (m === 0) { m = 12; y -= 1 }
+    const month = `${y}-${String(m).padStart(2, '0')}`
+    const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+    if (lock && end <= lock) break
+    out.push(month)
+  }
+  return out
+}
+
+export function CloseBooks() {
+  const { ws, schema, user, act } = useApp()
+  const cur = schema.company.currency
+  const today = todayISO()
+  const lock = ws.books?.lockDate
+  const closedYears = ws.books?.closedYears ?? []
+  const isAdmin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
+  const months = openMonths(today, lock)
+  const [picked, setMonth] = useState('')
+  const month = months.includes(picked) ? picked : (months[0] ?? '')
+  const lastYear = Number(today.slice(0, 4)) - 1
+  const years = [lastYear, lastYear - 1, lastYear - 2].filter((y) => !closedYears.some((c) => c.year >= y) && !(lock && lock > `${y}-12-31`))
+  const [pickedYear, setYear] = useState(0)
+  const year = years.includes(pickedYear) ? pickedYear : (years[0] ?? lastYear)
+  const [reopenDate, setReopenDate] = useState('')
+  const [reason, setReason] = useState('')
+  const checks = month ? booksHealth(ws, schema, month) : []
+  const blocked = checks.some((c) => c.blocking && !c.ok)
+  const pl = profitAndLoss(ws, `${year}-01-01`, `${year}-12-31`)
+  const yearChecks = years.length ? booksHealth(ws, schema, `${year}-12`).filter((c) => c.blocking && !c.ok) : []
+  const label = (mo: string) => new Date(`${mo}-15T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  return (
+    <div className="stack">
+      <div className={lock ? 'ok-box row' : 'info row'} style={{ gap: 8 }}>
+        <Lock size={16} />
+        {lock
+          ? <span>The books are closed up to <b>{lock}</b>. Nothing can be posted on or before that date.{closedYears.length > 0 && <> Closed years: {closedYears.map((c) => c.year).join(', ')}.</>}</span>
+          : <span>No period is closed yet. Close each month once its documents are in, so last month’s figures can’t change by accident.</span>}
+      </div>
+
+      <div className="card stack">
+        <h2>Month-end close</h2>
+        {months.length === 0 ? <p className="muted small">Every month that has ended is already closed.</p> : (
+          <>
+            <label className="field" style={{ width: 220 }}>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
+            <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0, gap: 6 }}>
+              {checks.map((c) => (
+                <li key={c.id} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                  {c.ok ? <CheckCircle2 size={16} color="var(--success)" /> : c.blocking ? <XCircle size={16} color="var(--danger)" /> : <AlertTriangle size={16} color="var(--warning)" />}
+                  <span><b>{c.title}</b> <span className="muted small">· {c.detail}</span></span>
+                </li>
+              ))}
+            </ul>
+            <div className="row" style={{ gap: 10 }}>
+              <button className="primary" disabled={blocked} onClick={() => confirm(`Close ${label(month)}? Nothing dated on or before its last day can be posted afterwards; only an admin can reopen it.`) && act('books.closeMonth', { month }, `${label(month)} closed`, `Closed ${month}`)}>
+                <Lock size={14} /> Close {label(month)}
+              </button>
+              {blocked && <span className="small muted">Fix the red items first.</span>}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card stack">
+        <h2>Year-end close</h2>
+        <p className="small muted">Moves the year’s income and expenses to 3100 Retained earnings in one closing entry dated 31 December, then locks the year. Income and expense accounts start the new year at zero; the balance sheet keeps the profit in equity.</p>
+        {years.length === 0 ? <p className="muted small">No ended year is waiting to be closed.</p> : (
+          <>
+            <label className="field" style={{ width: 160 }}>Year<select value={year} onChange={(e) => setYear(Number(e.target.value))}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label>
+            <div className="table-wrap">
+              <table className="data">
+                <tbody>
+                  <tr><td>Income</td><td className="num">{money(pl.totalIncome, cur)}</td></tr>
+                  <tr><td>Expenses (cost of goods included)</td><td className="num">{money(pl.totalExpenses, cur)}</td></tr>
+                </tbody>
+                <tfoot><tr><td>{pl.profit >= 0 ? 'Profit' : 'Loss'} to retained earnings</td><td className="num" style={{ color: pl.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(Math.abs(pl.profit), cur)}</td></tr></tfoot>
+              </table>
+            </div>
+            {yearChecks.length > 0 && <div className="error-box">Can’t close yet: {yearChecks.map((c) => c.title.toLowerCase()).join('; ')}.</div>}
+            <div>
+              <button className="primary" disabled={yearChecks.length > 0} onClick={() => confirm(`Close ${year}? A closing entry moves ${money(pl.profit, cur)} to retained earnings and the books lock up to ${year}-12-31.`) && act('books.closeYear', { year }, `${year} closed`, `Closed the year ${year}`)}>
+                <Lock size={14} /> Close {year}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {lock && isAdmin && (
+        <form className="card stack" onSubmit={(e) => {
+          e.preventDefault()
+          if (!confirm(`Reopen the books after ${reopenDate}? ${closedYears.some((c) => `${c.year}-12-31` > reopenDate) ? 'Closed years in that range have their closing entry reversed. ' : ''}This is recorded in the audit trail with your reason.`)) return
+          if (act('books.reopen', { date: reopenDate, reason }, 'Books reopened', `Reopened the books after ${reopenDate}`) !== undefined) setReason('')
+        }}>
+          <h2>Reopen (admin)</h2>
+          <p className="small muted">Only for a real correction, e.g. a supplier bill found after the close. Choose the last day that stays closed; everything after it opens again.</p>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <label className="field" style={{ width: 190 }}>Keep closed up to<input type="date" required max={lock} value={reopenDate} onChange={(e) => setReopenDate(e.target.value)} /></label>
+            <label className="field grow">Reason<input required minLength={10} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. October electricity bill arrived late" /></label>
+          </div>
+          <div><button className="danger" type="submit"><Unlock size={14} /> Reopen</button></div>
         </form>
       )}
     </div>
