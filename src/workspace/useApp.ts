@@ -4,7 +4,8 @@ import { currentUser, currentWorkspace, run, useStore } from '../lib/store'
 import type { CommandArgs, CommandName } from '../lib/commands'
 import type { User, Workspace } from '../lib/types'
 import type { Ctx } from '../lib/engine'
-import { N_, tr } from '../lib/i18n'
+import { N_, tr, useLang } from '../lib/i18n'
+import { localizeSchema } from '../lib/localize'
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null
 let toast: Toast = null
@@ -31,7 +32,9 @@ export function useToast() {
 export function useApp() {
   const ws = useStore((s) => currentWorkspace(s)) as Workspace
   const user = useStore((s) => currentUser(s)) as User
-  const schema = ws.published as AppSchema
+  const { lang } = useLang()
+  // The template's names in the chosen language; the commands still run on the saved schema (store and server).
+  const schema = localizeSchema(ws.published as AppSchema, lang)
   /**
    * Run a server command. The screen updates straight away; the server runs the same command and saves it.
    * If it isn't allowed, nothing changes and the message is shown.

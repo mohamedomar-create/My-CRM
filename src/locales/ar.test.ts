@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { AR } from './ar'
 import { extractKeys, extractLabels, extractMessages, extractTable, rawText } from './extract'
 import { translate, translateMessage } from '../lib/i18n'
+import { TEMPLATES } from '../lib/templates'
+import { emptyAnswers, generateSchema } from '../lib/recommend'
+import { CHALLENGES } from '../lib/packs'
+import { localizeSchema, mapSchemaNames } from '../lib/localize'
 
 // Every source file's text (Vite reads them; test files and the translation code itself aren't screen text).
 const ALL = import.meta.glob('/src/**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
@@ -62,6 +66,32 @@ describe('Arabic translation', () => {
     expect([...keys].filter((k) => !AR[k])).toEqual([])
   })
 
+  it('every name an industry template gives a system has its Arabic', () => {
+    const names = new Set<string>()
+    for (const t of TEMPLATES) {
+      names.add(t.tagline)
+      t.highlights.forEach((h) => names.add(h))
+      // With every option on and every option off, so each module, report and automation a template can make is seen.
+      for (const on of [true, false]) {
+        const a = { ...emptyAnswers('X'), industry: t.id, inventory: on, purchasing: on, service: on, recurring: on, projects: on, aftersales: on, sells: on ? ('both' as const) : ('services' as const), challenges: on ? CHALLENGES.map((c) => c.id) : [] }
+        mapSchemaNames(generateSchema(t, a), (en) => (names.add(en), en))
+      }
+    }
+    expect([...names].filter((k) => !AR[k])).toEqual([])
+  })
+
+  it('shows a template’s names in Arabic, but leaves names the company typed, and every key and value, as they are', () => {
+    const s = generateSchema(TEMPLATES[0], emptyAnswers('X'))
+    s.modules[0].fields[0].label = 'Our own name'
+    const ar = localizeSchema(s, 'ar')
+    expect(localizeSchema(s, 'en')).toBe(s)
+    expect(localizeSchema(s, 'ar')).toBe(ar)
+    expect(ar.modules[0].name).toBe(AR[s.modules[0].name])
+    expect(ar.modules[0].fields[0].label).toBe('Our own name')
+    expect(ar.modules.map((m) => m.fields.map((f) => [f.key, f.type, f.options?.map((o) => o.value)]))).toEqual(s.modules.map((m) => m.fields.map((f) => [f.key, f.type, f.options?.map((o) => o.value)])))
+    expect(s.modules[0].name).not.toBe(ar.modules[0].name)
+  })
+
   it('the finished screens have no English left unwrapped', () => {
     const left = DONE.flatMap((f) => rawText(read(f)).map((t) => `${f}: ${t}`))
     expect(left).toEqual([])
@@ -86,5 +116,7 @@ describe('Arabic translation', () => {
     expect(translate('en', 'Viewing as {name}', { name: 'Mona' })).toBe('Viewing as Mona')
     expect(translateMessage('ar', 'Use at least 10 characters for the password')).toBe(AR['Use at least 10 characters for the password'])
     expect(translateMessage('ar', 'Something nobody wrote')).toBe('Something nobody wrote')
+    expect(translateMessage('ar', 'Phone is required · Price can’t be negative (Rice)')).toBe(`${AR['Phone']} مطلوب · ${translateMessage('ar', 'Price can’t be negative (Rice)')}`)
+    expect(translateMessage('ar', 'imported 3 customers')).toContain(AR['Customers'])
   })
 })

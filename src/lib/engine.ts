@@ -2097,7 +2097,8 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       result.errors.push({ row: i + 2, message: (e as Error).message })
     }
   })
-  log(ctx, `imported ${result.created} ${mod.name.toLowerCase()}${result.errors.length ? ` (${result.errors.length} rows skipped)` : ''}`)
+  if (result.errors.length) log(ctx, `imported ${result.created} ${mod.name.toLowerCase()} (${result.errors.length} rows skipped)`)
+  else log(ctx, `imported ${result.created} ${mod.name.toLowerCase()}`)
   return result
 }
 
