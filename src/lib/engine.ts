@@ -309,7 +309,7 @@ export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'>, mod: ModuleDef,
   return defaults
 }
 
-export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, unknown>, opts: { stage?: string; lines?: Line[]; silent?: boolean } = {}): Rec {
+export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, unknown>, opts: { stage?: string; lines?: Line[]; silent?: boolean; quiet?: boolean } = {}): Rec {
   const mod = moduleById(ctx.schema, moduleId)
   if (!mod) throw new EngineError('This module no longer exists')
   if (!opts.silent) need(ctx, moduleId, 'create')
@@ -341,12 +341,13 @@ export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, 
     rec.values.stock_value = 0
   }
   list(ctx.ws, moduleId).unshift(rec)
-  log(ctx, `created ${mod.singular} “${recordTitle(ctx.ws, ctx.schema, rec)}”`, rec)
+  // An import writes one line for the whole file instead of one per row (the activity log keeps the latest 500).
+  if (!opts.quiet) log(ctx, `created ${mod.singular} “${recordTitle(ctx.ws, ctx.schema, rec)}”`, rec)
   if (!opts.silent) runWorkflows(ctx, rec, 'created')
   return rec
 }
 
-export function updateRecord(ctx: Ctx, rec: Rec, values: Record<string, unknown>, opts: { silent?: boolean } = {}) {
+export function updateRecord(ctx: Ctx, rec: Rec, values: Record<string, unknown>, opts: { silent?: boolean; quiet?: boolean } = {}) {
   const mod = moduleById(ctx.schema, rec.module)!
   if (!opts.silent) need(ctx, rec.module, 'edit')
   if (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') throw new EngineError('Posted documents can’t be changed. Void it and create a new one.')
@@ -364,7 +365,7 @@ export function updateRecord(ctx: Ctx, rec: Rec, values: Record<string, unknown>
   const changes = mod.fields
     .filter((f) => !f.readOnly && f.type !== 'formula' && JSON.stringify(before[f.key] ?? null) !== JSON.stringify(after[f.key] ?? null))
     .map((f) => `${f.label}: ${displayValue(ctx.ws, ctx.schema, f, before[f.key]) || '—'} → ${displayValue(ctx.ws, ctx.schema, f, after[f.key]) || '—'}`)
-  if (changes.length) log(ctx, `changed ${changes.slice(0, 4).join('; ')}${changes.length > 4 ? ` and ${changes.length - 4} more` : ''}`, rec)
+  if (changes.length && !opts.quiet) log(ctx, `changed ${changes.slice(0, 4).join('; ')}${changes.length > 4 ? ` and ${changes.length - 4} more` : ''}`, rec)
   if (!opts.silent) runWorkflows(ctx, rec, 'updated')
 }
 
@@ -2071,39 +2072,103 @@ export function csvSafe(c: unknown) {
 
 /* ---------------- import ---------------- */
 
+/* ---------------- import from files (Phase H1) ---------------- */
+
+/**
+ * Columns that go somewhere other than a field: the stage, the original dates, and what the old system called the
+ * record. They are given in an import's mapping like a field key.
+ */
+export const IMPORT_TARGETS = ['__stage', '__stage_date', '__created', '__legacy_id', '__legacy_number', '__legacy_notes'] as const
+export type ImportTarget = (typeof IMPORT_TARGETS)[number]
+
+export interface ImportOptions {
+  /** the import this part belongs to: the parts of one file share it. Without it the rows are an import of their own. */
+  batch?: { id: string; file: string }
+  /** the field (or '__legacy_id') that finds a record already in Bonyan: a row whose key is known updates that record */
+  match?: string
+  /** with match: rows whose key isn't found are skipped instead of created */
+  onlyUpdate?: boolean
+  /**
+   * What the file's own values mean here, per field key (and '__stage'), keyed by the value as importKey() writes it:
+   * an option value, a team member's id, a record's id or a stage id. '' leaves the field empty.
+   */
+  values?: Record<string, Record<string, string>>
+}
+
+export interface ImportRowResult {
+  row: number
+  action: 'create' | 'update' | 'skip'
+  id?: string
+  /** a record already in Bonyan that looks like the one this row creates (same name, phone or e-mail) */
+  similar?: string
+}
+
 export interface ImportResult {
+  batch: string
   created: number
-  errors: { row: number; message: string }[]
+  updated: number
+  skipped: number
+  errors: { row: number; message: string; column?: string }[]
+  rows: ImportRowResult[]
 }
 
-/** Imports spreadsheet rows. Each row is validated like a form save; bad rows are reported, good rows are kept. */
-export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, string>[], mapping: Record<string, string>): ImportResult {
-  const mod = moduleById(ctx.schema, moduleId)
-  if (!mod) throw new EngineError('This module no longer exists')
-  need(ctx, moduleId, 'create')
-  const result: ImportResult = { created: 0, errors: [] }
-  rows.forEach((row, i) => {
-    try {
-      const values: Record<string, unknown> = {}
-      for (const [col, key] of Object.entries(mapping)) {
-        const f = fieldByKey(mod, key)
-        const raw = (row[col] ?? '').trim()
-        if (!f || raw === '') continue
-        values[key] = convert(ctx, f, raw)
+/** A value as imports compare it: Western digits, no diacritics or tatweel, lower case, single spaces. */
+export function importKey(raw: string) {
+  return asciiDigits(String(raw)).normalize('NFKC').replace(/[ً-ٰٟـ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+/** A phone number in one international form (digits only): 0100 123 4567, +20 100 123 4567 and 00201001234567 match. */
+export function normalPhone(raw: string, country = 'Egypt') {
+  let d = asciiDigits(String(raw)).replace(/\D/g, '')
+  if (d.startsWith('00')) d = d.slice(2)
+  else if (d.startsWith('0') && /egypt|مصر/i.test(country)) d = '20' + d.slice(1)
+  return d
+}
+
+const matchValue = (ctx: Ctx, f: FieldDef | undefined, raw: string) =>
+  f?.type === 'phone' ? normalPhone(raw, ctx.schema.company.country) : importKey(raw)
+
+/** Finds the record a link column names: by the old system's id, then by number, then by title. */
+function linker(ctx: Ctx) {
+  const cache = new Map<string, { legacy: Map<string, string[]>; number: Map<string, string[]>; title: Map<string, string[]> }>()
+  const add = (m: Map<string, string[]>, k: string | undefined, id: string) => { if (k) m.set(k, [...(m.get(k) ?? []), id]) }
+  return (f: FieldDef, raw: string): string => {
+    const target = f.target ?? ''
+    let ix = cache.get(target)
+    if (!ix) {
+      ix = { legacy: new Map(), number: new Map(), title: new Map() }
+      for (const r of list(ctx.ws, target)) {
+        add(ix.legacy, r.legacy?.id ? importKey(r.legacy.id) : undefined, r.id)
+        add(ix.number, r.number ? importKey(r.number) : undefined, r.id)
+        add(ix.number, r.legacy?.number ? importKey(r.legacy.number) : undefined, r.id)
+        add(ix.title, importKey(recordTitle(ctx.ws, ctx.schema, r)), r.id)
       }
-      createRecord(ctx, moduleId, values, { silent: true })
-      result.created++
-    } catch (e) {
-      result.errors.push({ row: i + 2, message: (e as Error).message })
+      cache.set(target, ix)
     }
-  })
-  if (result.errors.length) log(ctx, `imported ${result.created} ${mod.name.toLowerCase()} (${result.errors.length} rows skipped)`)
-  else log(ctx, `imported ${result.created} ${mod.name.toLowerCase()}`)
-  return result
+    const k = importKey(raw)
+    for (const m of [ix.legacy, ix.number, ix.title]) {
+      const ids = [...new Set(m.get(k) ?? [])]
+      if (ids.length === 1) return ids[0]
+      if (ids.length > 1) throw new EngineError(`${f.label}: ${ids.length} records are called “${raw}”; use the old system id to tell them apart`)
+    }
+    throw new EngineError(`${f.label}: no record called “${raw}”`)
+  }
 }
 
-function convert(ctx: Ctx, f: FieldDef, raw: string): unknown {
-  const low = raw.toLowerCase()
+function parseDate(label: string, raw: string) {
+  const s = asciiDigits(raw).trim()
+  const dmy = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
+  const ymd = s.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/)
+  const iso = dmy ? `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}` : ymd ? `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}` : s.slice(0, 10)
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso) throw new EngineError(`${label}: “${raw}” is not a date (use YYYY-MM-DD or DD/MM/YYYY)`)
+  return iso
+}
+
+function convert(ctx: Ctx, f: FieldDef, raw: string, map: Record<string, string> | undefined, link: ReturnType<typeof linker>): unknown {
+  const low = importKey(raw)
+  // A value the person mapped by hand wins; '' means "leave it empty".
+  if (map && Object.hasOwn(map, low) && f.type !== 'multiselect') return map[low] === '' ? undefined : map[low]
   switch (f.type) {
     case 'number':
     case 'currency':
@@ -2117,38 +2182,265 @@ function convert(ctx: Ctx, f: FieldDef, raw: string): unknown {
     case 'checkbox':
       return ['yes', 'y', 'true', '1', 'نعم', 'x', '✓'].includes(low)
     case 'select': {
-      const o = f.options?.find((x) => x.value === low || x.label.toLowerCase() === low)
+      const o = f.options?.find((x) => x.value === low || importKey(x.label) === low)
       if (!o) throw new EngineError(`${f.label}: “${raw}” is not one of the options`)
       return o.value
     }
     case 'multiselect':
-      return raw.split(/[,;|]/).map((p) => p.trim().toLowerCase()).filter(Boolean).map((p) => {
-        const o = f.options?.find((x) => x.value === p || x.label.toLowerCase() === p)
+      return raw.split(/[,;|،]/).map((p) => importKey(p)).filter(Boolean).flatMap((p) => {
+        if (map && Object.hasOwn(map, p)) return map[p] === '' ? [] : [map[p]]
+        const o = f.options?.find((x) => x.value === p || importKey(x.label) === p)
         if (!o) throw new EngineError(`${f.label}: “${p}” is not one of the options`)
-        return o.value
+        return [o.value]
       })
     case 'phone':
       return asciiDigits(raw)
-    case 'date': {
-      raw = asciiDigits(raw)
-      const m = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
-      const iso = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : raw.slice(0, 10)
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number.isNaN(Date.parse(iso))) throw new EngineError(`${f.label}: “${raw}” is not a date (use YYYY-MM-DD or DD/MM/YYYY)`)
-      return iso
-    }
-    case 'relation': {
-      const target = list(ctx.ws, f.target ?? '').find((r) => recordTitle(ctx.ws, ctx.schema, r).toLowerCase() === low)
-      if (!target) throw new EngineError(`${f.label}: no record called “${raw}”`)
-      return target.id
-    }
+    case 'date':
+      return parseDate(f.label, raw)
+    case 'relation':
+      return link(f, raw)
     case 'user': {
-      const u = ctx.ws.users.find((x) => x.name.toLowerCase() === low || x.email === low)
+      const u = ctx.ws.users.find((x) => importKey(x.name) === low || x.email.toLowerCase() === low)
       if (!u) throw new EngineError(`${f.label}: no team member “${raw}”`)
       return u.id
     }
     default:
       return raw
   }
+}
+
+/** What an import left in a record (values, lines, stage, old-system details), to see whether it changed since. */
+const importSum = (r: Rec) => fingerprint({ values: { ...r.values, '\u0000stage': r.stage ?? null, '\u0000legacy': r.legacy ?? null }, lines: r.lines })
+
+const isAdmin = (ctx: Ctx) => Boolean(ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin)
+
+/**
+ * Imports spreadsheet rows. Each row is checked like a form save: good rows are kept, bad rows are reported with the
+ * column at fault. With a match key, a row that names a record already in Bonyan updates it instead of adding a
+ * duplicate. Imported rows run no automations and ask for no approvals. Every row is marked with its import, so the
+ * whole import can be undone (undoImport) until something else depends on it.
+ */
+export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, string>[], mapping: Record<string, string>, opts: ImportOptions = {}): ImportResult {
+  const mod = moduleById(ctx.schema, moduleId)
+  if (!mod) throw new EngineError('This module no longer exists')
+  need(ctx, moduleId, 'create')
+  const matchField = opts.match && opts.match !== '__legacy_id' ? fieldByKey(mod, opts.match) : undefined
+  if (opts.match) {
+    need(ctx, moduleId, 'edit')
+    if (opts.match !== '__legacy_id' && !matchField) throw new EngineError('Choose the column that finds records already in Bonyan')
+  }
+  if (mod.stages && Object.values(mapping).includes('__stage_date') && !Object.values(mapping).includes('__stage')) throw new EngineError('Match the stage column too, to use the date each record reached it')
+
+  // The import this part belongs to.
+  const at = nowISO()
+  const batchId = opts.batch?.id ?? uid('imp')
+  ctx.ws.data.imports ??= []
+  let batch = ctx.ws.data.imports.find((b) => b.id === batchId)
+  if (batch && (batch.undoneAt || batch.module !== moduleId || batch.by !== ctx.user.id)) throw new EngineError('That import is closed. Start a new one.')
+  if (!batch) {
+    batch = { id: batchId, module: moduleId, file: String(opts.batch?.file ?? '').slice(0, 120), at, by: ctx.user.id, created: 0, updated: 0, skipped: 0, parts: 0 }
+    ctx.ws.data.imports.unshift(batch)
+    if (ctx.ws.data.imports.length > 200) ctx.ws.data.imports.length = 200
+  }
+
+  // Records already here, by their match key, and by name, phone and e-mail to warn about likely duplicates.
+  const keyOf = (r: Rec) => {
+    if (opts.match === '__legacy_id') return r.legacy?.id ? importKey(r.legacy.id) : undefined
+    const v = opts.match ? r.values[opts.match] : undefined
+    return v === undefined || v === null || v === '' ? undefined : matchValue(ctx, matchField, String(v))
+  }
+  const byKey = new Map<string, Rec[]>()
+  const similar = new Map<string, string>()
+  const phoneFields = mod.fields.filter((f) => f.type === 'phone')
+  const emailFields = mod.fields.filter((f) => f.type === 'email')
+  const remember = (r: Rec) => {
+    const k = opts.match ? keyOf(r) : undefined
+    if (k) byKey.set(k, [...(byKey.get(k) ?? []), r])
+    const t = importKey(recordTitle(ctx.ws, ctx.schema, r))
+    if (t && t !== '(untitled)' && !similar.has(`t:${t}`)) similar.set(`t:${t}`, r.id)
+    for (const f of phoneFields) if (r.values[f.key]) similar.set(`p:${normalPhone(String(r.values[f.key]), ctx.schema.company.country)}`, r.id)
+    for (const f of emailFields) if (r.values[f.key]) similar.set(`e:${String(r.values[f.key]).toLowerCase()}`, r.id)
+  }
+  for (const r of list(ctx.ws, moduleId)) remember(r)
+  const looksLike = (values: Record<string, unknown>, title: string): string | undefined => {
+    const keys = [`t:${importKey(title)}`, ...phoneFields.filter((f) => values[f.key]).map((f) => `p:${normalPhone(String(values[f.key]), ctx.schema.company.country)}`), ...emailFields.filter((f) => values[f.key]).map((f) => `e:${String(values[f.key]).toLowerCase()}`)]
+    return keys.map((k) => similar.get(k)).find(Boolean)
+  }
+
+  const link = linker(ctx)
+  const result: ImportResult = { batch: batchId, created: 0, updated: 0, skipped: 0, errors: [], rows: [] }
+  rows.forEach((row, i) => {
+    const rowNo = i + 2
+    let column: string | undefined
+    try {
+      const values: Record<string, unknown> = {}
+      const legacy: NonNullable<Rec['legacy']> = {}
+      let stage: string | undefined
+      let stageDate: string | undefined
+      let created: string | undefined
+      for (const [col, key] of Object.entries(mapping)) {
+        column = col
+        const raw = String(row[col] ?? '').trim()
+        if (raw === '' || !key) continue
+        if (key === '__legacy_id') legacy.id = raw.slice(0, 120)
+        else if (key === '__legacy_number') legacy.number = raw.slice(0, 120)
+        else if (key === '__legacy_notes') legacy.notes = raw.slice(0, 4000)
+        else if (key === '__created' || key === '__stage_date') {
+          const d = parseDate(key === '__created' ? 'Created on' : 'Stage date', raw)
+          if (d > todayISO()) throw new EngineError(`${key === '__created' ? 'Created on' : 'Stage date'}: “${raw}” is in the future`)
+          if (key === '__created') created = d
+          else stageDate = d
+        } else if (key === '__stage') {
+          if (!mod.stages) continue
+          const stages = opts.values?.__stage
+          const mapped = stages && Object.hasOwn(stages, importKey(raw)) ? stages[importKey(raw)] : undefined
+          const st = mapped ? mod.stages.find((s) => s.id === mapped) : mod.stages.find((s) => importKey(s.name) === importKey(raw))
+          if (!st) throw new EngineError(`Stage: “${raw}” is not one of the options`)
+          stage = st.id
+        } else {
+          const f = fieldByKey(mod, key)
+          if (!f || f.readOnly || ['formula', 'lookup', 'rollup'].includes(f.type)) continue
+          const v = convert(ctx, f, raw, opts.values && Object.hasOwn(opts.values, key) ? opts.values[key] : undefined, link)
+          if (v !== undefined) values[key] = v
+        }
+      }
+      column = undefined
+
+      // A record already here?
+      let existing: Rec | undefined
+      if (opts.match) {
+        const k = opts.match === '__legacy_id' ? (legacy.id ? importKey(legacy.id) : undefined) : values[opts.match] !== undefined ? matchValue(ctx, matchField, String(values[opts.match])) : undefined
+        const found = k ? byKey.get(k) ?? [] : []
+        if (found.length > 1) throw new EngineError(`${matchField?.label ?? 'Old system id'}: ${found.length} records already have “${k}”`)
+        existing = found[0]
+      }
+
+      if (existing) {
+        const rec = existing
+        if (rec.sample) throw new EngineError('This row matches a sample record. Remove the sample data first.')
+        const before = { values: structuredClone(rec.values), stage: rec.stage, stageHistory: rec.stageHistory ? structuredClone(rec.stageHistory) : undefined, legacy: rec.legacy ? { ...rec.legacy } : undefined, updatedAt: rec.updatedAt }
+        updateRecord(ctx, rec, { ...rec.values, ...values }, { silent: true, quiet: true })
+        if (stage && stage !== rec.stage) {
+          checkGate(mod, stage, rec.values)
+          rec.stage = stage
+          rec.stageHistory = [...(rec.stageHistory ?? []), { stage, at: stageDate ? `${stageDate}T00:00:00.000Z` : at }]
+        }
+        if (Object.keys(legacy).length) rec.legacy = { ...rec.legacy, ...legacy }
+        rec.updatedAt = at
+        rec.imports = [...(rec.imports ?? []), { batch: batchId, at, sum: importSum(rec), before }]
+        result.updated++
+        result.rows.push({ row: rowNo, action: 'update', id: rec.id })
+        return
+      }
+      if (opts.match && opts.onlyUpdate) {
+        result.skipped++
+        result.rows.push({ row: rowNo, action: 'skip' })
+        return
+      }
+
+      const rec = createRecord(ctx, moduleId, values, { silent: true, quiet: true, stage })
+      if (Object.keys(legacy).length) rec.legacy = legacy
+      if (created) rec.createdAt = `${created}T00:00:00.000Z`
+      if (rec.stage) {
+        rec.stageHistory = [{ stage: rec.stage, at: stageDate ? `${stageDate}T00:00:00.000Z` : rec.createdAt }]
+        const st = mod.stages?.find((s) => s.id === rec.stage)
+        if (st?.type === 'won' && mod.role === 'deals' && !rec.values.close_date) rec.values.close_date = stageDate ?? created ?? todayISO()
+      }
+      rec.updatedAt = at
+      rec.imports = [{ batch: batchId, at, sum: importSum(rec), created: true }]
+      const like = looksLike(rec.values, recordTitle(ctx.ws, ctx.schema, rec))
+      remember(rec)
+      result.created++
+      result.rows.push({ row: rowNo, action: 'create', id: rec.id, similar: like })
+    } catch (e) {
+      result.errors.push({ row: rowNo, message: (e as Error).message, column })
+    }
+  })
+  result.skipped += result.errors.length
+  batch.parts++
+  batch.created += result.created
+  batch.updated += result.updated
+  batch.skipped += result.skipped
+  const name = mod.name.toLowerCase()
+  const what = result.updated ? `imported ${result.created} and updated ${result.updated} ${name}` : `imported ${result.created} ${name}`
+  if (result.created || result.updated) log(ctx, result.errors.length ? `${what} (${result.errors.length} rows skipped)` : what)
+  return result
+}
+
+/**
+ * What an import would do, without doing it: the same checks on a copy of the company's data. The screen shows this
+ * before anything is saved.
+ */
+export function previewImport(ctx: Ctx, moduleId: string, rows: Record<string, string>[], mapping: Record<string, string>, opts: ImportOptions = {}): ImportResult {
+  const copy: Ctx = { ...ctx, ws: structuredClone(ctx.ws) }
+  return importRows(copy, moduleId, rows, mapping, { ...opts, batch: opts.batch && ctx.ws.data.imports?.some((b) => b.id === opts.batch!.id) ? opts.batch : undefined })
+}
+
+/** The records an import created or changed, and why it can't be undone yet (empty when it can). */
+export function importStatus(ctx: Pick<Ctx, 'ws' | 'schema'>, batchId: string) {
+  const b = ctx.ws.data.imports?.find((x) => x.id === batchId)
+  if (!b) return { records: [] as Rec[], blockers: ['That import no longer exists'] }
+  const records = list(ctx.ws, b.module).filter((r) => r.imports?.some((m) => m.batch === b.id))
+  const createdIds = new Set(records.filter((r) => r.imports!.find((m) => m.batch === b.id)?.created).map((r) => r.id))
+  const blockers: string[] = []
+  const title = (r: Rec) => `“${recordTitle(ctx.ws, ctx.schema, r)}”`
+  for (const r of records) {
+    const last = r.imports![r.imports!.length - 1]
+    if (last.batch !== b.id) blockers.push(`${title(r)} was changed by a later import`)
+    else if (importSum(r) !== last.sum) blockers.push(`${title(r)} was changed after the import`)
+    else if (r.status && r.status !== 'draft') blockers.push(`${title(r)} was posted`)
+  }
+  if (createdIds.size) {
+    const used = (id: string) =>
+      ctx.ws.data.stock.some((m) => m.product === id || m.doc === id) || ctx.ws.data.payments.some((p) => p.doc === id) ||
+      ctx.ws.data.journal.some((j) => j.doc === id) || (ctx.ws.data.comments ?? []).some((c) => c.record === id) ||
+      ctx.ws.data.notes.some((n) => n.record === id) || (ctx.ws.data.approvals ?? []).some((a) => a.record === id)
+    for (const id of createdIds) if (used(id)) blockers.push(`${title(findRecord(ctx.ws, id)!)} has payments, stock, notes or comments`)
+    for (const m of ctx.schema.modules) {
+      const rels = m.fields.filter((f) => f.type === 'relation' && f.target === b.module)
+      for (const r of list(ctx.ws, m.id)) {
+        if (createdIds.has(r.id)) continue
+        const hit = rels.find((f) => createdIds.has(String(r.values[f.key] ?? ''))) ?? (r.lines?.some((l) => createdIds.has(String(l.product ?? ''))) ? true : undefined)
+        if (hit) blockers.push(`${m.singular} ${title(r)} links to a record of this import`)
+      }
+    }
+  }
+  return { records, blockers }
+}
+
+/**
+ * Undoes a whole import: removes the records it added and puts back what it changed. Allowed for the person who
+ * imported the file and for admins, as long as nothing has changed or come to depend on those records since.
+ */
+export function undoImport(ctx: Ctx, batchId: string) {
+  const b = ctx.ws.data.imports?.find((x) => x.id === batchId)
+  if (!b) throw new EngineError('That import no longer exists')
+  if (b.undoneAt) throw new EngineError('This import was already undone')
+  if (b.by !== ctx.user.id && !isAdmin(ctx)) throw new EngineError('Only the person who imported the file, or an admin, can undo it')
+  const mod = moduleById(ctx.schema, b.module)
+  if (!mod) throw new EngineError('This module no longer exists')
+  const { records, blockers } = importStatus(ctx, batchId)
+  if (blockers.length) throw new EngineError(`Can’t undo this import: ${blockers.length} records were changed or used since (${blockers.slice(0, 3).join('; ')})`)
+  const gone = new Set<string>()
+  for (const r of records) {
+    const mark = r.imports!.pop()!
+    if (mark.created) { gone.add(r.id); continue }
+    const was = mark.before!
+    r.values = was.values
+    r.stage = was.stage
+    r.stageHistory = was.stageHistory
+    r.legacy = was.legacy
+    r.updatedAt = was.updatedAt ?? nowISO()
+    if (!r.imports!.length) delete r.imports
+    if (r.stageHistory === undefined) delete r.stageHistory
+    if (r.stage === undefined) delete r.stage
+    if (r.legacy === undefined) delete r.legacy
+  }
+  ctx.ws.data.records[b.module] = list(ctx.ws, b.module).filter((r) => !gone.has(r.id))
+  b.undoneAt = nowISO()
+  b.undoneBy = ctx.user.id
+  log(ctx, `undid the import of ${b.created + b.updated} ${mod.name.toLowerCase()} (${b.file || 'file'})`)
+  return { removed: gone.size, restored: records.length - gone.size }
 }
 
 /* ---------------- sample data ---------------- */

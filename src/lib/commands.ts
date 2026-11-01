@@ -7,12 +7,13 @@ import type { AppSchema } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
 import type { Line, User, Workspace } from './types'
 import {
-  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
+  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
+import type { ImportOptions } from './engine'
 import { validate } from './validate'
 import { seedSampleData } from './seed'
 
@@ -40,7 +41,8 @@ export interface CommandArgs {
   'approval.decide': { approval: string; approve: boolean; note?: string }
   'approval.override': { id: string; rule: string; reason: string }
   'comment.add': { id: string; text: string }
-  'import.rows': { module: string; rows: Record<string, string>[]; mapping: Record<string, string> }
+  'import.rows': { module: string; rows: Record<string, string>[]; mapping: Record<string, string> } & ImportOptions
+  'import.undo': { batch: string }
   'sample.remove': Record<string, never>
   'automation.runScheduled': Record<string, never>
   'setup.setAnswers': { patch: Partial<Answers> }
@@ -136,9 +138,15 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'import.rows': {
     run: (ws, u, a) => {
       if (!Array.isArray(a.rows) || a.rows.length > 5000) throw new EngineError('Import up to 5,000 rows at a time')
-      return importRows(ctx(ws, u), a.module, a.rows, a.mapping)
+      const strings = (o: unknown) => typeof o === 'object' && o !== null && !Array.isArray(o) && Object.values(o).every((v) => typeof v === 'string')
+      if (!strings(a.mapping) || !a.rows.every(strings)) throw new EngineError('That setup is not valid')
+      if (a.values !== undefined && !(typeof a.values === 'object' && a.values !== null && Object.values(a.values).every(strings))) throw new EngineError('That setup is not valid')
+      if (a.batch !== undefined && !(typeof a.batch?.id === 'string' && /^imp_[A-Za-z0-9_-]{1,60}$/.test(a.batch.id) && typeof a.batch.file === 'string')) throw new EngineError('That setup is not valid')
+      if (a.match !== undefined && typeof a.match !== 'string') throw new EngineError('That setup is not valid')
+      return importRows(ctx(ws, u), a.module, a.rows, a.mapping, { batch: a.batch, match: a.match || undefined, onlyUpdate: Boolean(a.onlyUpdate), values: a.values })
     },
   },
+  'import.undo': { run: (ws, u, a) => undoImport(ctx(ws, u), String(a.batch)) },
   'sample.remove': { admin: true, run: (ws, u) => removeSampleData(ctx(ws, u)) },
   'automation.runScheduled': { run: (ws, u) => runScheduled(ctx(ws, u)) },
 
