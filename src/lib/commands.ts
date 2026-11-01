@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -58,6 +58,16 @@ export interface CommandArgs {
   'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
   'journal.reverse': { id: string; date?: string }
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
+  'opening.setGoLive': { date: string }
+  'opening.trialBalance': { rows: SheetRow[] }
+  'opening.documents': { kind: 'customers' | 'suppliers'; rows: SheetRow[] }
+  'opening.cheques': { rows: SheetRow[] }
+  'opening.money': { account: string; balance: string | number; items?: SheetRow[] }
+  'opening.stock': { rows: SheetRow[] }
+  'opening.wht': { rows: SheetRow[] }
+  'opening.clear': { step: string }
+  'opening.goLive': { reason?: string }
+  'opening.reopen': { reason: string }
   'stock.adjust': Adjustment
   'stock.count': { date: string; counts: { product: string; counted: number }[]; note?: string }
   'doc.creditNote': { id: string; lines: CreditLine[]; date: string; reason: string; restock?: boolean }
@@ -108,6 +118,25 @@ function isSchema(x: unknown): x is AppSchema {
 }
 
 const roleExists = (ws: Workspace, roleId: string) => [...(ws.draft?.roles ?? []), ...(ws.published?.roles ?? [])].some((r) => r.id === roleId)
+
+/** A row of a sheet of opening balances: named cells holding text or numbers. */
+export type SheetRow = Record<string, string | number>
+
+/** A cell from the browser: text or a number, nothing else. */
+function cell(v: unknown): string | number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.length <= 4000) return v
+  throw new EngineError('That setup is not valid')
+}
+
+/** A sheet from the browser: up to 5,000 rows of named cells. */
+function sheet(rows: unknown): SheetRow[] {
+  if (!Array.isArray(rows) || rows.length > 5000) throw new EngineError('Import up to 5,000 rows at a time')
+  return rows.map((r) => {
+    if (typeof r !== 'object' || r === null || Array.isArray(r)) throw new EngineError('That setup is not valid')
+    return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cell(v)]))
+  })
+}
 
 export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'record.create': { run: (ws, u, a) => ({ id: createRecord(ctx(ws, u), a.module, a.values, { lines: a.lines }).id }) },
@@ -229,6 +258,21 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), a) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
+  'opening.setGoLive': { run: (ws, u, a) => void setGoLive(ctx(ws, u), String(a.date)) },
+  'opening.trialBalance': { run: (ws, u, a) => openingTrialBalance(ctx(ws, u), sheet(a.rows)) },
+  'opening.documents': {
+    run: (ws, u, a) => {
+      if (a.kind !== 'customers' && a.kind !== 'suppliers') throw new EngineError('That setup is not valid')
+      return openingDocuments(ctx(ws, u), a.kind, sheet(a.rows))
+    },
+  },
+  'opening.cheques': { run: (ws, u, a) => openingCheques(ctx(ws, u), sheet(a.rows)) },
+  'opening.money': { run: (ws, u, a) => openingMoney(ctx(ws, u), { account: String(a.account), balance: cell(a.balance), items: a.items === undefined ? [] : sheet(a.items) }) },
+  'opening.stock': { run: (ws, u, a) => openingStock(ctx(ws, u), sheet(a.rows)) },
+  'opening.wht': { run: (ws, u, a) => openingWht(ctx(ws, u), sheet(a.rows)) },
+  'opening.clear': { run: (ws, u, a) => void clearOpeningStep(ctx(ws, u), String(a.step)) },
+  'opening.goLive': { admin: true, run: (ws, u, a) => void goLive(ctx(ws, u), a.reason === undefined ? undefined : String(a.reason)) },
+  'opening.reopen': { admin: true, run: (ws, u, a) => void reopenOpening(ctx(ws, u), String(a.reason)) },
   'stock.adjust': { run: (ws, u, a) => adjustStock(ctx(ws, u), a) },
   'stock.count': { run: (ws, u, a) => countStock(ctx(ws, u), a) },
   'doc.creditNote': { run: (ws, u, a) => creditNote(ctx(ws, u), a.id, a).id },

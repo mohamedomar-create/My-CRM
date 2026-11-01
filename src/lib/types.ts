@@ -210,6 +210,8 @@ export interface Workspace {
     vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
+    /** the balances brought in from the company's old system (Phase H2) */
+    opening?: OpeningBooks
   }
   /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
   chart?: import('./accounts').Account[]
@@ -219,3 +221,43 @@ export interface Workspace {
 }
 
 export const emptyData = (): WorkspaceData => ({ records: {}, stock: [], journal: [], payments: [], notes: [], sequences: {}, workflowRuns: {}, activity: [] })
+
+/** One step of bringing in the opening balances, and what it created (so it can be replaced before going live). */
+export interface OpeningStep {
+  at: string
+  by: string
+  count: number
+  total: number
+  /** journal entries of the step itself (trial balance, bank, stock) */
+  entries: string[]
+  /** opening documents (invoices, bills, credits, the documents behind opening cheques) */
+  docs: string[]
+  cheques: string[]
+  stock: string[]
+  /** the bank account whose first reconciliation starts at the opening */
+  recon?: string
+}
+
+/** Withholding tax of the go-live quarter from before going live: counted in Form 41, not posted again. */
+export interface OpeningWht {
+  date: string
+  direction: 'in' | 'out'
+  party?: string
+  name: string
+  taxId: string
+  rate: number
+  base: number
+  amount: number
+  ref: string
+}
+
+export interface OpeningBooks {
+  /** the first day worked in Bonyan; the opening balances are those at the end of the day before */
+  goLive: string
+  steps: Record<string, OpeningStep>
+  /** the old system's trial balance on the opening date, account by account (debit − credit) */
+  tb?: { account: string; amount: number }[]
+  wht?: OpeningWht[]
+  /** went live: the opening balances are final and the books are closed up to the opening date */
+  done?: { at: string; by: string; reason?: string; lockBefore?: string }
+}

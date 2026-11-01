@@ -1,10 +1,10 @@
 // The runtime. Records, pipelines, documents, stock, double-entry accounting, payments and automations.
 // All functions mutate the workspace passed in and throw EngineError with a message a person can act on.
-import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, Permission, WorkflowDef, Filter } from './schema'
+import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, Approval, JournalEntry, Line, Payment, Rec, User, Workspace } from './types'
-import { account as findAccount, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
+import type { AccountCode, Approval, JournalEntry, Line, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
+import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
 export class EngineError extends Error {}
@@ -110,7 +110,20 @@ const index = new WeakMap<Workspace['data']['records'], { lists: Map<string, { a
 function recordIndex(records: Workspace['data']['records']) {
   const cached = index.get(records)
   const mods = Object.keys(records)
-  if (cached && cached.lists.size === mods.length && mods.every((m) => { const l = cached.lists.get(m); return l && l.arr === records[m] && l.len === records[m].length })) return cached.byId
+  if (cached && cached.lists.size === mods.length && mods.every((m) => cached.lists.get(m)?.arr === records[m])) {
+    // The same lists: records added at the front (as createRecord adds them) are indexed without rebuilding the rest.
+    let ok = true
+    for (const m of mods) {
+      const l = cached.lists.get(m)!
+      const arr = records[m]
+      if (arr.length === l.len) continue
+      const added = arr.length - l.len
+      if (added < 0 || arr.slice(0, added).some((r) => cached.byId.has(r.id))) { ok = false; break }
+      for (const r of arr.slice(0, added)) cached.byId.set(r.id, r)
+      l.len = arr.length
+    }
+    if (ok) return cached.byId
+  }
   const lists = new Map<string, { arr: Rec[]; len: number }>()
   const byId = new Map<string, Rec>()
   for (const m of mods) {
@@ -1470,7 +1483,8 @@ export function vatReturn(ws: Workspace, schema: AppSchema, month: string) {
   for (const j of ws.data.journal) {
     if (j.date < from || j.date > to || !j.doc) continue
     const d = docs.get(j.doc)
-    if (!d || !d.rec.number || !(d.rec.lines ?? []).length) continue
+    // Opening documents were declared in the old system; their VAT is never counted again.
+    if (!d || !d.rec.number || !(d.rec.lines ?? []).length || d.rec.values.opening) continue
     const sign = j.ref === d.rec.number ? 1 : j.ref === `VOID ${d.rec.number}` ? -1 : 0
     if (!sign) continue
     const credit = d.rec.values.credit_for ? -1 : 1
@@ -1556,8 +1570,12 @@ export function withholdingTax(ws: Workspace, year: number, quarter: 1 | 2 | 3 |
       return { date: p.date, ref: p.ref, doc: p.doc, party: partyId, name: String(party?.values.name ?? ''), taxId: String(party?.values.tax_id ?? ''), rate: p.wht!.rate, base: p.wht!.base, amount: p.wht!.amount }
     })
     .sort((a, b) => a.date.localeCompare(b.date))
-  const withheld = rows('out')
-  const deducted = rows('in')
+  // Withholding from the months of the go-live quarter before Bonyan (Phase H2), so the form is whole.
+  const before = (direction: 'in' | 'out'): WhtRow[] => (ws.books?.opening?.wht ?? [])
+    .filter((w) => w.direction === direction && w.date >= from && w.date <= to)
+    .map((w) => ({ date: w.date, ref: w.ref, doc: '', party: w.party ?? '', name: w.name, taxId: w.taxId, rate: w.rate, base: w.base, amount: w.amount }))
+  const withheld = [...before('out'), ...rows('out')].sort((a, b) => a.date.localeCompare(b.date))
+  const deducted = [...before('in'), ...rows('in')].sort((a, b) => a.date.localeCompare(b.date))
   const sum = (r: WhtRow[]) => round2(r.reduce((s, x) => s + x.amount, 0))
   return { from, to, withheld, deducted, totalWithheld: sum(withheld), totalDeducted: sum(deducted), missingTaxIds: [...new Set(withheld.filter((r) => !r.taxId).map((r) => r.name))] }
 }
@@ -2391,6 +2409,8 @@ export function importStatus(ctx: Pick<Ctx, 'ws' | 'schema'>, batchId: string) {
   const createdIds = new Set(records.filter((r) => r.imports!.find((m) => m.batch === b.id)?.created).map((r) => r.id))
   const blockers: string[] = []
   const title = (r: Rec) => `“${recordTitle(ctx.ws, ctx.schema, r)}”`
+  const live = ctx.ws.books?.opening?.done
+  if (live && b.at <= live.at) blockers.push('Imports from before going live are final')
   for (const r of records) {
     const last = r.imports![r.imports!.length - 1]
     if (last.batch !== b.id) blockers.push(`${title(r)} was changed by a later import`)
@@ -2448,6 +2468,554 @@ export function undoImport(ctx: Ctx, batchId: string) {
   b.undoneBy = ctx.user.id
   log(ctx, `undid the import of ${b.created + b.updated} ${mod.name.toLowerCase()} (${b.file || 'file'})`)
   return { removed: gone.size, restored: records.length - gone.size }
+}
+
+/* ---------------- opening books (Phase H2) ---------------- */
+
+/** Problems found in a sheet of opening balances, row by row. Nothing of the sheet is saved while any remain. */
+export class RowsError extends EngineError {
+  rows: { row: number; message: string }[]
+  constructor(rows: { row: number; message: string }[]) {
+    super(`${rows.length} rows have problems`)
+    this.rows = rows
+  }
+}
+
+/** The day the opening balances are dated: the day before going live. */
+export const openingDateOf = (goLive: string) => addDays(goLive, -1)
+
+/** Names of the steps, for the activity log. */
+const STEP_NAME: Record<string, string> = { tb: 'trial balance', customers: 'customer balances', suppliers: 'supplier balances', cheques: 'cheques', stock: 'stock', wht: 'withholding tax' }
+const stepName = (key: string) => STEP_NAME[key] ?? (key.startsWith('money:') ? `balance of ${key.slice(6)}` : key)
+
+/** An amount from a sheet: Arabic digits, thousands separators and (1,200) for a negative all read. */
+function amountOf(label: string, raw: unknown, required = true): number {
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    if (required) throw new EngineError(`${label}: enter an amount`)
+    return 0
+  }
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) throw new EngineError(`${label}: “${raw}” is not a number`)
+    return round2(raw)
+  }
+  let s = asciiDigits(String(raw)).trim().replace(/[,\s]/g, '').replace(/[^\d.()-]/g, '')
+  const negative = s.startsWith('(') && s.endsWith(')')
+  s = s.replace(/[()]/g, '')
+  const n = Number(s)
+  if (!/\d/.test(s) || !Number.isFinite(n)) throw new EngineError(`${label}: “${raw}” is not a number`)
+  return round2(negative ? -n : n)
+}
+
+/** Which step fills an account, when a step does (the rest come from the trial balance). */
+export function detailStep(ws: Workspace, schema: AppSchema, code: string): string | undefined {
+  const a = findAccount(ws, code)
+  if (a && a.type === 'asset' && a.active && moneyKind(a)) return `money:${code}`
+  const has = (role: ModuleRole) => Boolean(moduleByRole(schema, role))
+  if (code === '1200' && has('invoices')) return 'customers'
+  if (code === '2100' && has('purchases')) return 'suppliers'
+  if (code === '1300' && has('products')) return 'stock'
+  if ((code === '1150' || code === '1160') && has('invoices')) return 'cheques'
+  if (code === '2150' && has('purchases')) return 'cheques'
+  return undefined
+}
+
+function openingBooks(ctx: Ctx) {
+  const o = ctx.ws.books?.opening
+  if (!o?.goLive) throw new EngineError('Choose the go-live date first')
+  if (o.done) throw new EngineError('The opening balances are final since going live. An admin can reopen them.')
+  return o
+}
+
+function newStep(ctx: Ctx): OpeningStep {
+  return { at: nowISO(), by: ctx.user.id, count: 0, total: 0, entries: [], docs: [], cheques: [], stock: [] }
+}
+
+/** The day the company starts in Bonyan. The opening balances are those at the end of the day before. */
+export function setGoLive(ctx: Ctx, date: string) {
+  needFinance(ctx, 'set up the opening balances')
+  if (!ISO_DATE.test(String(date))) throw new EngineError('Choose the go-live date')
+  if (openingDateOf(date) > (ctx.today ?? todayISO())) throw new EngineError('The go-live date can be tomorrow at the latest: the opening balances are the ones at the end of the day before')
+  const o = ctx.ws.books?.opening
+  if (o?.done) throw new EngineError('The opening balances are final since going live. An admin can reopen them.')
+  if (o && o.goLive !== date && Object.keys(o.steps).length) throw new EngineError('Clear the steps already entered before changing the go-live date')
+  checkOpenPeriod(ctx, openingDateOf(date))
+  ctx.ws.books = { ...ctx.ws.books, opening: { ...(o ?? { steps: {} }), goLive: date } }
+  logLedger(ctx, `set the go-live date to ${date}`)
+}
+
+/**
+ * Takes a step's entries out again (before going live): its documents are voided, its cheques cancelled and its own
+ * entries reversed, all on the opening date, so the step can be entered again from a corrected sheet.
+ */
+export function clearOpeningStep(ctx: Ctx, key: string) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  const s = o.steps[key]
+  if (!s) return
+  const date = openingDateOf(o.goLive)
+  const at: Ctx = { ...ctx, today: date }
+  for (const id of s.cheques) {
+    const c = cheques(ctx.ws).find((x) => x.id === id)
+    if (!c || c.state === 'bounced') continue
+    if (c.state === 'cleared') throw new EngineError(`Cheque ${c.no} was already cashed, so it can’t be taken out of the opening balances`)
+    bounceCheque(at, id, date, 'Opening balances entered again')
+  }
+  // What each document has (entries, payments in Bonyan, credit notes), gathered once for the whole step.
+  const docs = new Set(s.docs)
+  const look: OpeningLookup = { entries: new Map(), paid: new Map(), credited: new Set() }
+  for (const j of ctx.ws.data.journal) if (j.doc && docs.has(j.doc)) look.entries.set(j.doc, [...(look.entries.get(j.doc) ?? []), j])
+  for (const p of ctx.ws.data.payments) if (docs.has(p.doc)) look.paid.set(p.doc, round2((look.paid.get(p.doc) ?? 0) + p.amount))
+  for (const rs of Object.values(ctx.ws.data.records)) for (const r of rs) if (r.status !== 'void' && typeof r.values.credit_for === 'string' && docs.has(r.values.credit_for)) look.credited.add(r.values.credit_for)
+  for (const id of s.docs) {
+    const rec = findRecord(ctx.ws, id)
+    if (rec && rec.status !== 'void') voidOpeningDoc(at, rec, date, look)
+  }
+  for (const id of s.stock) {
+    const i = ctx.ws.data.stock.findIndex((m) => m.id === id)
+    const mv = ctx.ws.data.stock[i]
+    if (!mv) continue
+    const p = productRec(ctx, mv.product)
+    if (ctx.ws.data.stock.slice(0, i).some((m) => m.product === mv.product)) throw new EngineError(`${p?.values.name ?? 'A product'} has stock movements since its opening stock, so the opening stock can’t be taken out. Adjust the stock instead.`)
+    ctx.ws.data.stock.unshift({ ...mv, id: uid('s'), qty: -mv.qty, value: -(mv.value ?? 0), ref: `REV ${mv.ref}` })
+    if (p) setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) - (mv.value ?? 0)))
+  }
+  for (const id of s.entries) {
+    const je = ctx.ws.data.journal.find((j) => j.id === id)
+    if (je) journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+  }
+  if (s.recon && ctx.ws.books?.reconciliations) ctx.ws.books.reconciliations = ctx.ws.books.reconciliations.filter((r) => !(r.account === s.recon && r.date === date && r.at === s.at))
+  if (key === 'tb') delete o.tb
+  if (key === 'wht') delete o.wht
+  delete o.steps[key]
+  logLedger(ctx, `cleared the opening ${stepName(key)}`)
+}
+
+/**
+ * Takes an opening document out again. What it says was paid before going live is the old system's history; only
+ * payments made in Bonyan (and not reversed) or credit notes stop it.
+ */
+interface OpeningLookup {
+  entries: Map<string, JournalEntry[]>
+  paid: Map<string, number>
+  credited: Set<string>
+}
+
+function voidOpeningDoc(ctx: Ctx, rec: Rec, date: string, look: OpeningLookup) {
+  if ((look.paid.get(rec.id) ?? 0) !== 0) throw new EngineError(`${rec.number} has payments in Bonyan. Reverse them first.`)
+  if (look.credited.has(rec.id)) throw new EngineError('This document has credit notes. Void them first.')
+  for (const je of (look.entries.get(rec.id) ?? []).filter((j) => j.ref === rec.number)) {
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+  }
+  rec.status = 'void'
+  rec.values.balance = 0
+}
+
+const rowsOf = (rows: unknown): Record<string, unknown>[] => (Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [])
+
+/** Runs fn on each row, collecting the problems; throws them all together, so a sheet is saved whole or not at all. */
+function eachRow<T>(rows: T[], fn: (row: T, i: number) => void) {
+  const errors: { row: number; message: string }[] = []
+  rows.forEach((r, i) => {
+    try {
+      fn(r, i)
+    } catch (e) {
+      errors.push({ row: i + 2, message: (e as Error).message })
+    }
+  })
+  if (errors.length) throw new RowsError(errors)
+}
+
+const text = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim())
+
+/**
+ * The old system's trial balance on the opening date, already put on this chart of accounts. Accounts that a step
+ * fills from its detail (customers, suppliers, stock, cheques, cash and bank) are only kept to compare with; every
+ * other account is posted in one opening entry, the difference going to 3900 until the steps fill the rest.
+ */
+export function openingTrialBalance(ctx: Ctx, input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const rows = rowsOf(input)
+  if (!rows.length) throw new EngineError('The trial balance has no lines')
+  clearOpeningStep(ctx, 'tb')
+  const sums = new Map<string, number>()
+  let dr = 0
+  let cr = 0
+  eachRow(rows, (r) => {
+    const code = text(r.account)
+    const a = findAccount(ctx.ws, code)
+    if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
+    if (!a.active) throw new EngineError(`Account ${a.code} ${a.name} is turned off`)
+    if (code === '3900') throw new EngineError('Account 3900 is filled by Bonyan itself: put the old system’s opening-balance line under capital or retained earnings')
+    const d = amountOf('Debit', r.debit, false)
+    const c = amountOf('Credit', r.credit, false)
+    if (d < 0 || c < 0) throw new EngineError('Amounts can’t be negative: use the other column')
+    dr = round2(dr + d)
+    cr = round2(cr + c)
+    sums.set(code, round2((sums.get(code) ?? 0) + d - c))
+  })
+  if (dr !== cr) throw new EngineError(`The trial balance doesn’t balance: debits ${money(dr, ctx.schema.company.currency)}, credits ${money(cr, ctx.schema.company.currency)}`)
+  const step = newStep(ctx)
+  step.count = rows.length
+  step.total = dr
+  o.tb = [...sums].map(([code, amount]) => ({ account: code, amount }))
+  const posted = [...sums].filter(([code, v]) => v !== 0 && !detailStep(ctx.ws, ctx.schema, code))
+  if (posted.length) {
+    const net = round2(posted.reduce((s, [, v]) => s + v, 0))
+    journal(ctx, { date: openingDateOf(o.goLive), ref: 'OB-TB', memo: 'Opening balances: trial balance', lines: [...posted.map(([code, v]) => side(code, v)), side('3900', -net)] })
+    step.entries.push(ctx.ws.data.journal[0].id)
+  }
+  o.steps.tb = step
+  logLedger(ctx, `entered the opening ${stepName('tb')} (${rows.length} lines)`)
+  return { posted: posted.length, fromSteps: [...sums.keys()].filter((c) => detailStep(ctx.ws, ctx.schema, c)) }
+}
+
+/** A party (customer or supplier) named on a sheet: by the old system's id, number or name. */
+function partyFinder(ctx: Ctx, role: 'accounts' | 'suppliers') {
+  const mod = moduleByRole(ctx.schema, role)
+  if (!mod) throw new EngineError(role === 'accounts' ? 'Every CRM needs a Customers module' : 'Add a Suppliers module first')
+  const link = linker(ctx)
+  const field = { id: '', key: 'party', label: role === 'accounts' ? 'Customer' : 'Supplier', type: 'relation', target: mod.id } as FieldDef
+  return (raw: unknown) => {
+    const t = text(raw)
+    if (!t) throw new EngineError(`${field.label}: enter the name or old system id`)
+    return link(field, t)
+  }
+}
+
+/** One opening document: an invoice or bill still (partly) owed, or a credit or advance (amount below zero). */
+function openingDoc(ctx: Ctx, sales: boolean, d: { party: string; number?: string; date: string; due: string; total: number; open: number; subtotal?: number; einvoice?: string }) {
+  const o = ctx.ws.books!.opening!
+  const date = openingDateOf(o.goLive)
+  const mod = moduleByRole(ctx.schema, sales ? 'invoices' : 'purchases')!
+  const partyKey = sales ? 'customer' : 'supplier'
+  const credit = d.open < 0
+  const amount = Math.abs(d.open)
+  const base = credit ? amount : (d.subtotal ?? d.total)
+  const vat = !credit && d.subtotal ? round2(((d.total - d.subtotal) / d.subtotal) * 100) : 0
+  const what = credit ? (sales ? 'Opening credit' : 'Opening advance') : 'Opening balance'
+  const rec = createRecord(ctx, mod.id, { [partyKey]: d.party, date: d.date, due_date: d.due }, {
+    silent: true, quiet: true,
+    lines: [{ id: uid('l'), description: d.number ? `${what} (old no. ${d.number})` : what, qty: 1, price: base, discount: 0, vat }],
+  })
+  const number = nextNumber(ctx, 'OB', date)
+  const party = recordTitle(ctx.ws, ctx.schema, findRecord(ctx.ws, d.party))
+  const lines = sales
+    ? credit ? [side('3900', amount), side('1200', -amount)] : [side('1200', amount), side('3900', -amount)]
+    : credit ? [side('2100', amount), side('3900', -amount)] : [side('3900', amount), side('2100', -amount)]
+  journal(ctx, { date, ref: number, memo: `${what}: ${party}${d.number ? ` (old no. ${d.number})` : ''}`, doc: rec.id, lines }, rec)
+  rec.number = number
+  rec.status = 'posted'
+  rec.postedAt = nowISO()
+  rec.values.opening = true
+  if (d.number) rec.legacy = { number: d.number }
+  if (d.einvoice) rec.values.eta_uuid = d.einvoice.slice(0, 64)
+  if (credit) {
+    Object.assign(rec.values, { subtotal: -amount, tax: 0, total: -amount, credit_for: 'opening', reason: `${what} from the old system`, applied: 0, paid: 0 })
+  } else {
+    Object.assign(rec.values, { subtotal: base, tax: round2(d.total - base), total: d.total, paid: round2(d.total - amount), credited: 0 })
+  }
+  refreshBalance(rec)
+  return rec
+}
+
+/**
+ * What customers owed (or suppliers were owed) on the opening date, one row per invoice or bill not fully paid, with
+ * its old number, its own date and due date, so ageing and collection work invoice by invoice. A row with a negative
+ * amount is a credit or advance. Nothing is counted in VAT again: that VAT was declared in the old system.
+ */
+export function openingDocuments(ctx: Ctx, kind: 'customers' | 'suppliers', input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const sales = kind === 'customers'
+  if (!moduleByRole(ctx.schema, sales ? 'invoices' : 'purchases')) throw new EngineError(sales ? 'This system has no sales invoices' : 'This system has no purchase bills')
+  const rows = rowsOf(input)
+  clearOpeningStep(ctx, kind)
+  const date = openingDateOf(o.goLive)
+  const find = partyFinder(ctx, sales ? 'accounts' : 'suppliers')
+  const step = newStep(ctx)
+  eachRow(rows, (r) => {
+    const party = find(r.party)
+    const open = amountOf('Amount still owed', r.open)
+    if (!open) throw new EngineError('Amount still owed: enter an amount')
+    const total = text(r.total) ? amountOf('Invoice total', r.total) : Math.abs(open)
+    if (open > 0 && total < open) throw new EngineError('The amount still owed can’t be more than the invoice total')
+    const docDate = text(r.date) ? parseDate('Date', text(r.date)) : date
+    if (docDate > date) throw new EngineError(`Opening documents are dated on or before ${date}`)
+    const due = text(r.due) ? parseDate('Due date', text(r.due)) : docDate
+    if (due < docDate) throw new EngineError('The due date can’t be before the document date')
+    const subtotal = text(r.subtotal) ? amountOf('Amount before VAT', r.subtotal) : undefined
+    if (subtotal !== undefined && (subtotal <= 0 || subtotal > total)) throw new EngineError('The amount before VAT must be more than 0 and not more than the total')
+    const rec = openingDoc(ctx, sales, { party, number: text(r.number) || undefined, date: docDate, due, total, open, subtotal, einvoice: text(r.einvoice) || undefined })
+    step.docs.push(rec.id)
+    step.count++
+    step.total = round2(step.total + open)
+  })
+  o.steps[kind] = step
+  logLedger(ctx, `entered the opening ${stepName(kind)} (${step.count} documents)`)
+  return { count: step.count, total: step.total }
+}
+
+const DIRECTION_IN = ['in', 'received', 'receivable', 'وارد', 'قبض', 'مقبوض', 'اوراق قبض']
+const DIRECTION_OUT = ['out', 'issued', 'payable', 'صادر', 'دفع', 'مدفوع', 'اوراق دفع']
+function directionOf(raw: unknown): 'in' | 'out' {
+  const k = importKey(text(raw))
+  if (DIRECTION_IN.map(importKey).includes(k)) return 'in'
+  if (DIRECTION_OUT.map(importKey).includes(k)) return 'out'
+  throw new EngineError(`Direction: “${text(raw)}” is not one of the options`)
+}
+
+/**
+ * Cheques not yet cashed on the opening date: received ones still in the safe (1150) or already deposited (1160), and
+ * issued ones the bank hasn't paid yet (2150). Each stands on an opening document it settles, so a cheque that bounces
+ * after going live puts the debt back on the customer or supplier.
+ */
+export function openingCheques(ctx: Ctx, input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const rows = rowsOf(input)
+  clearOpeningStep(ctx, 'cheques')
+  const date = openingDateOf(o.goLive)
+  const finders: Partial<Record<'in' | 'out', ReturnType<typeof partyFinder>>> = {}
+  const step = newStep(ctx)
+  eachRow(rows, (r) => {
+    const dir = directionOf(r.direction)
+    if (!moduleByRole(ctx.schema, dir === 'in' ? 'invoices' : 'purchases')) throw new EngineError(dir === 'in' ? 'This system has no sales invoices' : 'This system has no purchase bills')
+    const party = (finders[dir] ??= partyFinder(ctx, dir === 'in' ? 'accounts' : 'suppliers'))(r.party)
+    const no = text(r.no)
+    if (!no) throw new EngineError('Enter the cheque number')
+    if (!text(r.due)) throw new EngineError('Enter the cheque’s due date')
+    const due = parseDate('Due date', text(r.due))
+    const amount = amountOf('Amount', r.amount)
+    if (!(amount > 0)) throw new EngineError('Amount: enter an amount')
+    const deposited = ['deposited', 'under collection', 'تحت التحصيل', 'مودع'].map(importKey).includes(importKey(text(r.state)))
+    if (deposited && dir === 'out') throw new EngineError('Only a received cheque can be under collection')
+    const bank = deposited ? bankAccount(ctx, text(r.account) || moneyAccounts(ctx.ws, 'bank')[0]?.code) : undefined
+    const rec = openingDoc(ctx, dir === 'in', { party, number: `cheque ${no}`, date, due: date, total: amount, open: amount })
+    rec.values.opening_cheque = true
+    const cheque = { id: uid('chq'), no, bank: text(r.bank) || undefined, due }
+    payDoc(ctx, rec, amount, date, 'cheque', { whtRate: 0, account: dir === 'in' ? '1150' : '2150', cheque, ref: `PAY-${rec.number}-1` })
+    if (bank) journal(ctx, { date, ref: `CHQ ${no} DEP`, memo: `Cheque ${no} deposited`, lines: [side('1160', amount), side('1150', -amount)], cheque: { id: cheque.id, step: 'deposited', account: bank } })
+    step.docs.push(rec.id)
+    step.cheques.push(cheque.id)
+    step.count++
+    step.total = round2(step.total + amount)
+  })
+  o.steps.cheques = step
+  logLedger(ctx, `entered the opening ${stepName('cheques')} (${step.count} cheques)`)
+  return { count: step.count, total: step.total }
+}
+
+/**
+ * A cash box's count or a bank account's statement balance on the opening date. For a bank, the deposits and payments
+ * not yet on that statement are listed too: the first reconciliation starts from the statement, so the past never has
+ * to be reconciled again.
+ */
+export function openingMoney(ctx: Ctx, m: { account: string; balance: unknown; items?: unknown }) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const a = moneyAccounts(ctx.ws).find((x) => x.code === m.account)
+  if (!a) throw new EngineError(`Account ${m.account} isn’t an active cash box or bank account`)
+  const bank = moneyKind(a) === 'bank'
+  const key = `money:${a.code}`
+  const date = openingDateOf(o.goLive)
+  const items = rowsOf(m.items)
+  if (!bank && items.length) throw new EngineError('Items not yet on a statement are for bank accounts')
+  if (bank && (ctx.ws.books?.reconciliations ?? []).some((r) => r.account === a.code && r.date > date)) throw new EngineError('This account was already reconciled after the opening date')
+  clearOpeningStep(ctx, key)
+  const balance = amountOf(bank ? 'Statement balance' : 'Cash counted', m.balance)
+  const step = newStep(ctx)
+  if (balance) {
+    journal(ctx, { date, ref: `OB-${a.code}`, memo: bank ? 'Opening balance per bank statement' : 'Opening cash count', lines: [side(a.code, balance), side('3900', -balance)] })
+    step.entries.push(ctx.ws.data.journal[0].id)
+  }
+  const statementEntry = step.entries[0]
+  eachRow(items, (r, i) => {
+    const amount = amountOf('Amount', r.amount)
+    if (!amount) throw new EngineError('Amount: enter an amount')
+    const when = text(r.date) ? parseDate('Date', text(r.date)) : date
+    if (when > date) throw new EngineError(`Opening documents are dated on or before ${date}`)
+    journal(ctx, { date, ref: text(r.ref) || `OB-${a.code}-${i + 1}`, memo: `Not on the bank statement at the opening (${when})${text(r.memo) ? `: ${text(r.memo)}` : ''}`, lines: [side(a.code, amount), side('3900', -amount)] })
+    step.entries.push(ctx.ws.data.journal[0].id)
+  })
+  step.count = items.length + 1
+  step.total = round2(balance + items.reduce((s, r) => s + amountOf('Amount', r.amount), 0))
+  if (bank) {
+    ctx.ws.books = { ...ctx.ws.books, reconciliations: [...(ctx.ws.books?.reconciliations ?? []), { account: a.code, date, balance, entries: statementEntry ? [statementEntry] : [], at: step.at, by: ctx.user.id }] }
+    step.recon = a.code
+  }
+  ctx.ws.books!.opening!.steps[key] = step
+  logLedger(ctx, `entered the opening ${stepName(key)} (${money(step.total, ctx.schema.company.currency)})`)
+  return { total: step.total }
+}
+
+/** Stock on hand on the opening date and what it cost, one row per product, posted as one opening entry. */
+export function openingStock(ctx: Ctx, input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const mod = moduleByRole(ctx.schema, 'products')
+  if (!mod) throw new EngineError('Add a Products module first')
+  const rows = rowsOf(input)
+  clearOpeningStep(ctx, 'stock')
+  const date = openingDateOf(o.goLive)
+  const link = linker(ctx)
+  const field = { id: '', key: 'product', label: 'Product', type: 'relation', target: mod.id } as FieldDef
+  const bySku = new Map(list(ctx.ws, mod.id).filter((p) => p.values.sku).map((p) => [importKey(String(p.values.sku)), p.id]))
+  const seen = new Set<string>()
+  const step = newStep(ctx)
+  eachRow(rows, (r) => {
+    const raw = text(r.product)
+    if (!raw) throw new EngineError('Product: enter the code or name')
+    const id = bySku.get(importKey(raw)) ?? link(field, raw)
+    const p = productRec(ctx, id)!
+    if (!p.values.track_stock) throw new EngineError(`${p.values.name} doesn’t track stock`)
+    if (seen.has(p.id)) throw new EngineError(`${p.values.name} is in the sheet twice`)
+    seen.add(p.id)
+    const qty = round4(amountOf('Quantity', r.qty))
+    if (!(qty > 0)) throw new EngineError('Enter how many units to add or take away')
+    const unit = amountOf('Cost per unit', r.cost)
+    if (unit < 0) throw new EngineError('The cost per unit can’t be negative')
+    const oldQty = onHand(ctx.ws, p.id)
+    const oldValue = stockValue(ctx.ws, p)
+    const target = oldQty < 0 ? round2((oldQty + qty) * unit) : round2(oldValue + qty * unit)
+    const value = round2(target - oldValue)
+    ctx.ws.data.stock.unshift({ id: uid('s'), product: p.id, qty, cost: round4(unit), value, doc: '', ref: 'OB-STOCK', date })
+    setValuation(ctx.ws, p, target)
+    step.stock.push(ctx.ws.data.stock[0].id)
+    step.count++
+    step.total = round2(step.total + value)
+  })
+  if (step.total) {
+    journal(ctx, { date, ref: 'OB-STOCK', memo: `Opening stock (${step.count} products)`, lines: [side('1300', step.total), side('3900', -step.total)] })
+    step.entries.push(ctx.ws.data.journal[0].id)
+  }
+  o.steps.stock = step
+  logLedger(ctx, `entered the opening ${stepName('stock')} (${step.count} products)`)
+  return { count: step.count, total: step.total }
+}
+
+/**
+ * Withholding tax deducted in the months of the go-live quarter before going live, so Form 41 for that quarter is
+ * whole. Kept for the form only: the tax itself is already in the trial balance (2400 and 1450).
+ */
+export function openingWht(ctx: Ctx, input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  const [y, m] = o.goLive.split('-').map(Number)
+  const from = `${y}-${String(Math.floor((m - 1) / 3) * 3 + 1).padStart(2, '0')}-01`
+  const to = openingDateOf(o.goLive)
+  if (from > to) throw new EngineError('Going live on the first day of a quarter leaves no withholding tax from before it to bring in')
+  const rows = rowsOf(input)
+  clearOpeningStep(ctx, 'wht')
+  const finders: Partial<Record<'in' | 'out', ReturnType<typeof partyFinder>>> = {}
+  const out: OpeningWht[] = []
+  eachRow(rows, (r) => {
+    const direction = directionOf(r.direction)
+    const name = text(r.party)
+    if (!name) throw new EngineError(`${direction === 'out' ? 'Supplier' : 'Customer'}: enter the name or old system id`)
+    let party: string | undefined
+    try {
+      party = (finders[direction] ??= partyFinder(ctx, direction === 'out' ? 'suppliers' : 'accounts'))(name)
+    } catch {
+      party = undefined
+    }
+    const rec = party ? findRecord(ctx.ws, party) : undefined
+    const date = parseDate('Date', text(r.date))
+    if (date < from || date > to) throw new EngineError(`Only withholding from ${from} to ${to} (this quarter, before going live) is brought in`)
+    const base = amountOf('Amount before VAT', r.base)
+    if (!(base > 0)) throw new EngineError('Amount before VAT: enter an amount')
+    const rate = whtRateOf(amountOf('Rate %', r.rate))
+    if (!rate) throw new EngineError('Choose a withholding tax rate of 1%, 3% or 5%')
+    const amount = text(r.amount) ? amountOf('Tax withheld', r.amount) : round2((base * rate) / 100)
+    out.push({ date, direction, party, name: rec ? recordTitle(ctx.ws, ctx.schema, rec) : name, taxId: text(r.taxId) || String(rec?.values.tax_id ?? ''), rate, base, amount, ref: text(r.ref) || 'Before Bonyan' })
+  })
+  const step = newStep(ctx)
+  step.count = out.length
+  step.total = round2(out.reduce((s, w) => s + w.amount, 0))
+  o.wht = out
+  o.steps.wht = step
+  logLedger(ctx, `entered the opening ${stepName('wht')} (${out.length} lines)`)
+  return { count: out.length, total: step.total }
+}
+
+export interface OpeningLine {
+  code: string
+  name: string
+  /** the old system's trial balance (debit − credit) */
+  tb: number
+  /** what the books hold on the opening date */
+  books: number
+  diff: number
+  /** the step that fills this account, when one does */
+  step?: string
+}
+
+/**
+ * Where the opening balances stand: account by account, the old trial balance against what the books hold on the
+ * opening date, and opening balance equity (3900), which must be exactly zero to go live.
+ */
+export function openingStatus(ws: Workspace, schema: AppSchema, lang: 'en' | 'ar' = 'en') {
+  const o = ws.books?.opening
+  if (!o) return undefined
+  const date = openingDateOf(o.goLive)
+  const books = new Map<string, number>()
+  for (const j of ws.data.journal) {
+    if (j.date > date) continue
+    for (const l of j.lines) books.set(l.account, round2((books.get(l.account) ?? 0) + l.debit - l.credit))
+  }
+  const tb = new Map((o.tb ?? []).map((r) => [r.account, r.amount]))
+  const codes = new Set([...tb.keys(), ...[...books].filter(([, v]) => v !== 0).map(([k]) => k)])
+  codes.delete('3900')
+  const lines: OpeningLine[] = [...codes].sort().map((code) => {
+    const t = tb.get(code) ?? 0
+    const b = books.get(code) ?? 0
+    return { code, name: accountName(ws, code, lang), tb: t, books: b, diff: round2(b - t), step: detailStep(ws, schema, code) }
+  })
+  const equity = round2(ws.data.journal.reduce((s, j) => s + j.lines.filter((l) => l.account === '3900').reduce((t, l) => t + l.credit - l.debit, 0), 0))
+  const differences = lines.filter((l) => l.diff !== 0)
+  return { goLive: o.goLive, date, steps: o.steps, lines, equity, differences, hasTb: Boolean(o.tb), ready: Boolean(o.tb) && equity === 0, done: o.done }
+}
+
+/**
+ * Going live: the opening balances become final and the books are closed up to the opening date. Opening balance
+ * equity must be zero (everything brought in adds up to the trial balance); accounts that still differ one by one,
+ * though the total agrees, need a written reason.
+ */
+export function goLive(ctx: Ctx, reason?: string) {
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can go live')
+  openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  const st = openingStatus(ctx.ws, ctx.schema)!
+  if (!st.hasTb) throw new EngineError('Bring in the trial balance first')
+  if (st.equity !== 0) throw new EngineError(`Opening balance equity (3900) must be zero to go live; it is ${money(st.equity, ctx.schema.company.currency)}. What was brought in doesn’t add up to the trial balance yet.`)
+  const why = String(reason ?? '').trim()
+  if (st.differences.length && why.length < 10) throw new EngineError(`${st.differences.length} accounts differ from the trial balance. Write why they are accepted (at least 10 characters).`)
+  const before = ctx.ws.books?.lockDate
+  const o = ctx.ws.books!.opening!
+  o.done = { at: nowISO(), by: ctx.user.id, ...(why ? { reason: why } : {}), ...(before ? { lockBefore: before } : {}) }
+  ctx.ws.books!.lockDate = before && before > st.date ? before : st.date
+  logLedger(ctx, `went live on ${o.goLive}: the opening balances are final and the books are closed up to ${st.date}`)
+}
+
+/** An admin takes the opening balances back out of "final", with a reason, while no later month has been closed. */
+export function reopenOpening(ctx: Ctx, reason: string) {
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can reopen the opening balances')
+  const o = ctx.ws.books?.opening
+  if (!o?.done) throw new EngineError('The opening balances aren’t final yet')
+  const why = String(reason ?? '').trim()
+  if (why.length < 10) throw new EngineError('Write why the opening balances are reopened (at least 10 characters)')
+  const date = openingDateOf(o.goLive)
+  const lock = ctx.ws.books?.lockDate
+  if (lock && lock > date && lock !== o.done.lockBefore) throw new EngineError('Months were closed after going live. Reopen those books first.')
+  ctx.ws.books!.lockDate = o.done.lockBefore
+  if (!o.done.lockBefore) delete ctx.ws.books!.lockDate
+  delete o.done
+  logLedger(ctx, `reopened the opening balances: ${why}`)
 }
 
 /* ---------------- sample data ---------------- */
