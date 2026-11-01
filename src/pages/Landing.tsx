@@ -134,7 +134,7 @@ export default function Landing() {
           <Link to="/register" className="btn big" style={{ background: '#fff', color: '#4338ca' }}>{t('start')} <ArrowRight size={18} /></Link>
         </div>
       </section>
-      <footer className="footer">© {new Date().getFullYear()} Bonyan · Made in Egypt for the world</footer>
+      <footer className="footer">© {new Date().getFullYear()} Bonyan · Made in Egypt for the world · <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link> · <Link to="/dpa">Data processing</Link></footer>
     </div>
   )
 }

@@ -1,0 +1,50 @@
+# Nightly off-site backup: a full dump of the live database, encrypted, kept 30 days as a GitHub artifact.
+# A second copy outside Supabase, on top of Supabase's own daily backups. Does nothing until two repository secrets exist
+# (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL     the database connection string (Supabase → Connect → Session pooler), password included
+#   BACKUP_PASSPHRASE   a long passphrase; keep a copy somewhere safe, without it the backup can't be opened
+# To restore, see docs/RECOVERY.md.
+name: nightly backup
+
+on:
+  schedule:
+    - cron: '43 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check the secrets are set
+        id: check
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "::notice::Off-site backup is off: add SUPABASE_DB_URL and BACKUP_PASSPHRASE to turn it on."
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dump and encrypt
+        if: steps.check.outputs.ready == 'yes'
+        run: |
+          set -euo pipefail
+          name="bonyan-$(date -u +%Y-%m-%d)"
+          docker run --rm -e DB_URL postgres:17 sh -c 'pg_dump "$DB_URL" --format=custom --no-owner --no-privileges --schema=public --schema=private --schema=auth' > "$name.dump"
+          test -s "$name.dump"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASSPHRASE -in "$name.dump" -out "$name.dump.enc"
+          rm "$name.dump"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          ls -l "$name.dump.enc"
+      - name: Keep it 30 days
+        if: steps.check.outputs.ready == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ env.NAME }}.dump.enc
+          retention-days: 30

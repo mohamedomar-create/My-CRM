@@ -85,6 +85,7 @@ npm run lint
 npm test            # engine, books, store (with a fake Supabase) and templates
 npm run build
 npm run test:db     # applies every migration to a throw-away Postgres and tries each attack the review found
+npm run test:browser  # after npm run build: opens the public pages in a real browser (backend cut off)
 ```
 
 `npm run test:db` needs Postgres installed locally (`initdb`, `pg_ctl`, `psql`), or a `DATABASE_URL` to an empty database.
@@ -101,6 +102,8 @@ Accounts and data live in the Supabase project **my-crm0**. The URL and publisha
 - **Live updates:** after every save the database announces the new version on the workspace's private Realtime channel (`ws:<id>`, members only, version number only); open screens then fetch what their person may see.
 - **Approvals:** an approval covers the record's exact content (a fingerprint of its values and lines); any change cancels it. Nobody approves their own request or record; an admin can override with a written reason, shown everywhere as an override. In a company where nobody else could approve, the maker may go ahead.
 - **Nightly automations:** every night at 01:17 UTC (03:17 Cairo) a database job (`supabase/setup/schedule.sql`, run once on the live project) calls the `scheduler` server function, which runs each published workspace's date-based automations in the owner's name and logs every run (`automation_runs`, shown on the Audit page). The function only works with a key held in the database.
+- **Backups and recovery:** see [docs/RECOVERY.md](docs/RECOVERY.md) (layers, targets, how to restore a record, the setup or the whole database). Data is stored in eu-west-1 (Ireland). An optional encrypted nightly off-site backup runs once two repository secrets are added.
+- **Legal pages:** `/privacy`, `/terms` and `/dpa` in English and Arabic (`src/pages/Legal.tsx`), linked from sign-up and the landing page. Fill in the company details in `src/lib/legal.ts` and have a lawyer review them; until then they show as a draft.
 - **Company switcher:** someone in more than one company switches between them at the top of the sidebar.
 - **Data:** each workspace has one row in `workspaces` (the setup, the team and the document counters, with a `version` number), and its records and books live in their own tables, one row each: `records`, `journal_entries`, `stock_moves`, `payments`, `approvals`, `comments`, `notes`, `activity`. `workspace_members` lists the e-mails that may open each workspace, and which of them are admins. A workspace saved in the older one-file format moves to the tables the first time it is opened, after a check that nothing changes on the way.
 - **Who changes what:** every change is a named command sent to the `command` server function (`supabase/functions/command`), which checks the person's membership, runs the same engine as the app on the latest saved data, saves only the rows that changed and writes the audit trail (`audit_events`). People can't write to the database directly.

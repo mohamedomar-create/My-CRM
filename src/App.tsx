@@ -20,6 +20,7 @@ import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signO
 import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
+import Legal from './pages/Legal'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -152,6 +153,9 @@ export default function App() {
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/privacy" element={<Legal doc="privacy" />} />
+      <Route path="/terms" element={<Legal doc="terms" />} />
+      <Route path="/dpa" element={<Legal doc="dpa" />} />
       <Route path="/onboarding" element={<Guard need="admin"><Onboarding /></Guard>} />
       <Route path="/suggest" element={<Guard need="admin"><Suggest /></Guard>} />
       <Route path="/builder" element={<Guard need="draft"><Builder /></Guard>} />
