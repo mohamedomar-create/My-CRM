@@ -4,7 +4,7 @@ import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, Permissio
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
 import type { AccountCode, Approval, JournalEntry, Line, Payment, Rec, User, Workspace } from './types'
-import { account as findAccount, chartOf, type AccountType } from './accounts'
+import { account as findAccount, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
 export class EngineError extends Error {}
@@ -692,37 +692,124 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   log(ctx, `voided ${mod.singular} ${rec.number}`, rec)
 }
 
-export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', whtRate = 0) {
-  const mod = moduleById(ctx.schema, rec.module)!
-  if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can register payments')
-  if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('Post the document before registering a payment')
-  if (rec.values.credit_for) throw new EngineError('This is a credit note: use Refund to pay its credit back')
-  amount = round2(amount)
-  const balance = round2(Number(rec.values.balance))
-  if (!(amount > 0)) throw new EngineError('Payment amount must be more than 0')
-  if (amount > balance) throw new EngineError(`Payment is more than the balance due (${money(balance, ctx.schema.company.currency)})`)
-  if (date < String(rec.values.date)) throw new EngineError('Payment date can’t be before the document date')
-  const incoming = mod.role === 'invoices'
+export type PayMethod = Payment['method']
+
+export interface PayOptions {
+  /** withholding tax rate (1, 3 or 5) */
+  wht?: number
+  /** the cash box or bank account; by default the first one that fits the method */
+  account?: string
+  /** for a cheque: its number, the drawer's bank, and the date it can be cashed */
+  cheque?: { no: string; bank?: string; due: string }
+}
+
+/** The cash box or bank account a payment goes through. Cheques wait in 1150 (received) or 2150 (issued) until cashed. */
+function moneyAccountFor(ctx: Ctx, method: PayMethod, incoming: boolean, account?: string): AccountCode {
+  if (method === 'cheque') return incoming ? '1150' : '2150'
+  const kind = method === 'cash' ? 'cash' : 'bank'
+  if (account) {
+    const a = moneyAccounts(ctx.ws).find((x) => x.code === account)
+    if (!a) throw new EngineError(`Account ${account} isn’t an active cash box or bank account`)
+    if (moneyKind(a) !== kind) throw new EngineError(kind === 'cash' ? 'Cash goes into a cash box, not a bank account' : `${method === 'bank' ? 'A bank transfer' : method === 'card' ? 'A card payment' : 'InstaPay'} goes through a bank account, not a cash box`)
+    return a.code
+  }
+  return moneyAccounts(ctx.ws, kind)[0]?.code ?? '1100'
+}
+
+function noFutureDate(ctx: Ctx, date: string, what: string) {
+  if (!ISO_DATE.test(String(date))) throw new EngineError(`Choose the date of the ${what}`)
+  if (date > (ctx.today ?? todayISO())) throw new EngineError(`A ${what} can’t be dated in the future. For a post-dated cheque, use today’s date and put the cheque’s own date as its due date.`)
+}
+
+function chequeInfo(c: PayOptions['cheque'], date: string) {
+  const no = String(c?.no ?? '').trim()
+  if (!no) throw new EngineError('Enter the cheque number')
+  const due = String(c?.due ?? date)
+  if (!ISO_DATE.test(due)) throw new EngineError('Enter the cheque’s due date')
+  return { id: uid('chq'), no, bank: c?.bank?.trim() || undefined, due }
+}
+
+/** One payment row and its entry on one document (internal: checks are done by the callers). */
+function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMethod, o: { whtRate: number; account: AccountCode; cheque?: Payment['cheque']; voucher?: string; ref: string }) {
+  const incoming = moduleById(ctx.schema, rec.module)!.role === 'invoices'
   // Withholding tax is worked out on the value before VAT: the part of this payment that isn't VAT.
-  whtRate = Number(whtRate) || 0
-  if (whtRate && !WHT_RATES.some((w) => w.rate === whtRate)) throw new EngineError('Choose a withholding tax rate of 1%, 3% or 5%')
   const total = Number(rec.values.total ?? 0)
-  const base = whtRate ? round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount) : 0
-  const withheld = round2((base * whtRate) / 100)
-  const wht = whtRate ? { rate: whtRate, base, amount: withheld } : undefined
+  const base = o.whtRate ? round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount) : 0
+  const withheld = round2((base * o.whtRate) / 100)
+  const wht = o.whtRate ? { rate: o.whtRate, base, amount: withheld } : undefined
   const handed = round2(amount - withheld)
-  const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref, ...(wht ? { wht } : {}) }, rec))
-  const cash: AccountCode = '1100'
+  ctx.ws.data.payments.unshift(tag(ctx, {
+    id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref: o.ref, account: o.account,
+    ...(wht ? { wht } : {}), ...(o.cheque ? { cheque: o.cheque } : {}), ...(o.voucher ? { voucher: o.voucher } : {}),
+  }, rec))
   journal(ctx, {
-    date, ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}${wht ? `, ${whtName(whtRate)} withheld` : ''}`, doc: rec.id,
+    date, ref: o.ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}${o.cheque ? `, cheque ${o.cheque.no}` : ''}${wht ? `, ${whtName(o.whtRate)} withheld` : ''}`, doc: rec.id,
     lines: incoming
-      ? [{ account: cash, debit: handed, credit: 0 }, { account: '1450', debit: withheld, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
-      : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: handed }, { account: '2400', debit: 0, credit: withheld }],
+      ? [{ account: o.account, debit: handed, credit: 0 }, { account: '1450', debit: withheld, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
+      : [{ account: '2100', debit: amount, credit: 0 }, { account: o.account, debit: 0, credit: handed }, { account: '2400', debit: 0, credit: withheld }],
   }, rec)
   rec.values.paid = round2(Number(rec.values.paid) + amount)
   refreshBalance(rec)
+}
+
+function checkPayable(ctx: Ctx, rec: Rec, amount: number, date: string) {
+  if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError(`Post ${rec.number ?? 'the document'} before registering a payment`)
+  if (rec.values.credit_for) throw new EngineError('This is a credit note: use Refund to pay its credit back')
+  const balance = round2(Number(rec.values.balance))
+  if (!(amount > 0)) throw new EngineError('Payment amount must be more than 0')
+  if (amount > balance) throw new EngineError(`Payment is more than the balance due on ${rec.number} (${money(balance, ctx.schema.company.currency)})`)
+  if (date < String(rec.values.date)) throw new EngineError('Payment date can’t be before the document date')
+}
+
+function whtRateOf(rate: unknown) {
+  const r = Number(rate) || 0
+  if (r && !WHT_RATES.some((w) => w.rate === r)) throw new EngineError('Choose a withholding tax rate of 1%, 3% or 5%')
+  return r
+}
+
+export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMethod, opts: PayOptions | number = {}) {
+  const o: PayOptions = typeof opts === 'number' ? { wht: opts } : opts
+  if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can register payments')
+  amount = round2(amount)
+  noFutureDate(ctx, date, 'payment')
+  checkPayable(ctx, rec, amount, date)
+  const incoming = moduleById(ctx.schema, rec.module)!.role === 'invoices'
+  const whtRate = whtRateOf(o.wht)
+  const cheque = method === 'cheque' ? chequeInfo(o.cheque, date) : undefined
+  const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
+  payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account), cheque, ref })
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
+}
+
+/**
+ * A receipt voucher (RV-…, from a customer) or payment voucher (PV-…, to a supplier) covering several invoices or bills
+ * of the same party at once: one amount of money (or one cheque), split over the documents it settles.
+ */
+export function moneyVoucher(ctx: Ctx, v: { party: string; date: string; method: PayMethod; account?: string; wht?: number; cheque?: PayOptions['cheque']; allocations: { doc: string; amount: number }[] }) {
+  needFinance(ctx, 'register payments')
+  noFutureDate(ctx, v.date, 'payment')
+  const allocs = (Array.isArray(v.allocations) ? v.allocations : []).map((a) => ({ rec: findRecord(ctx.ws, a.doc), amount: round2(Number(a.amount) || 0) })).filter((a) => a.amount !== 0)
+  if (!allocs.length) throw new EngineError('Choose the invoices or bills this payment settles, and how much of each')
+  const roles = new Set<string>()
+  for (const a of allocs) {
+    if (!a.rec) throw new EngineError('One of the documents no longer exists')
+    const role = moduleById(ctx.schema, a.rec.module)?.role
+    if (role !== 'invoices' && role !== 'purchases') throw new EngineError('Only invoices and bills are paid with a voucher')
+    roles.add(role)
+    if (a.rec.values[role === 'invoices' ? 'customer' : 'supplier'] !== v.party) throw new EngineError(`${a.rec.number} belongs to another ${role === 'invoices' ? 'customer' : 'supplier'}`)
+    checkPayable(ctx, a.rec, a.amount, v.date)
+  }
+  if (roles.size > 1) throw new EngineError('A voucher is either a receipt from a customer or a payment to a supplier, not both')
+  if (new Set(allocs.map((a) => a.rec!.id)).size !== allocs.length) throw new EngineError('Each document appears once on a voucher')
+  const incoming = roles.has('invoices')
+  const whtRate = whtRateOf(v.wht)
+  const cheque = v.method === 'cheque' ? chequeInfo(v.cheque, v.date) : undefined
+  const account = moneyAccountFor(ctx, v.method, incoming, v.account)
+  const voucher = nextNumber(ctx, incoming ? 'RV' : 'PV', v.date)
+  allocs.forEach((a, i) => payDoc(ctx, a.rec!, a.amount, v.date, v.method, { whtRate, account, cheque, voucher, ref: `${voucher}/${i + 1}` }))
+  const total = round2(allocs.reduce((s, a) => s + a.amount, 0))
+  logLedger(ctx, `${incoming ? 'received' : 'paid'} ${money(total, ctx.schema.company.currency)} on voucher ${voucher} (${allocs.map((a) => a.rec!.number).join(', ')})`)
+  return { voucher, total }
 }
 
 /**
@@ -919,12 +1006,15 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   if (!(amount > 0)) throw new EngineError('The refund must be more than 0')
   if (amount > left) throw new EngineError(`Only ${money(left, ctx.schema.company.currency)} of credit is left`)
   if (!ISO_DATE.test(String(date)) || date < String(rec.values.date)) throw new EngineError('The refund can’t be dated before the credit note')
+  noFutureDate(ctx, date, 'refund')
+  if (method === 'cheque') throw new EngineError('Refund by cash or bank transfer')
   const sales = mod.role === 'invoices'
+  const cash = moneyAccountFor(ctx, method, !sales)
   const ref = `REF-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref }, rec))
+  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref, account: cash }, rec))
   journal(ctx, {
     date, ref, memo: `Refund on ${rec.number}`, doc: rec.id,
-    lines: sales ? [{ account: '1200', debit: amount, credit: 0 }, { account: '1100', debit: 0, credit: amount }] : [{ account: '1100', debit: amount, credit: 0 }, { account: '2100', debit: 0, credit: amount }],
+    lines: sales ? [{ account: '1200', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }] : [{ account: cash, debit: amount, credit: 0 }, { account: '2100', debit: 0, credit: amount }],
   }, rec)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) + amount)
   refreshBalance(rec)
@@ -938,6 +1028,7 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   if (!p) throw new EngineError('That payment doesn’t exist')
   if (p.reverses || p.amount < 0) throw new EngineError('This is itself a reversal')
   if (ctx.ws.data.payments.some((x) => x.reverses === p.id)) throw new EngineError('This payment was already reversed')
+  if (p.cheque) throw new EngineError('This was paid by cheque: cancel or bounce the cheque in the cheque register instead')
   const why = String(reason ?? '').trim()
   if (why.length < 3) throw new EngineError('Give the reason for reversing the payment')
   if (!ISO_DATE.test(String(date)) || date < p.date) throw new EngineError('The reversal can’t be dated before the payment')
@@ -952,6 +1043,173 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
   refreshBalance(rec)
   log(ctx, `reversed payment ${p.ref} (${why})`, rec)
+}
+
+/* ---------------- cheques: received or issued → deposited → cleared, or bounced ---------------- */
+
+export type ChequeState = 'in_hand' | 'issued' | 'deposited' | 'cleared' | 'bounced'
+
+export interface Cheque {
+  id: string
+  no: string
+  bank?: string
+  due: string
+  date: string
+  direction: 'in' | 'out'
+  /** what the cheque is for (after withholding tax) */
+  amount: number
+  party: string
+  docs: string[]
+  state: ChequeState
+  /** the bank account it was deposited into or cashed from */
+  account?: string
+}
+
+/** The cheque register, newest first, worked out from the payments and the entries of each cheque's steps. */
+export function cheques(ws: Workspace): Cheque[] {
+  const out = new Map<string, Cheque>()
+  for (const p of [...ws.data.payments].reverse()) {
+    if (!p.cheque || p.reverses) continue
+    const c = out.get(p.cheque.id) ?? {
+      id: p.cheque.id, no: p.cheque.no, bank: p.cheque.bank, due: p.cheque.due, date: p.date, direction: p.direction, amount: 0, docs: [],
+      party: String(findRecord(ws, p.doc)?.values[p.direction === 'in' ? 'customer' : 'supplier'] ?? ''), state: p.direction === 'in' ? 'in_hand' as const : 'issued' as const,
+    }
+    c.amount = round2(c.amount + p.amount - (p.wht?.amount ?? 0))
+    c.docs.push(p.doc)
+    out.set(c.id, c)
+  }
+  // The journal is newest first: the first step found for a cheque is its latest.
+  const seen = new Set<string>()
+  for (const j of ws.data.journal) {
+    if (!j.cheque || seen.has(j.cheque.id)) continue
+    seen.add(j.cheque.id)
+    const c = out.get(j.cheque.id)
+    if (!c) continue
+    c.state = j.cheque.step
+    c.account = j.cheque.account
+  }
+  return [...out.values()].reverse()
+}
+
+function chequeById(ctx: Ctx, id: string) {
+  const c = cheques(ctx.ws).find((x) => x.id === id)
+  if (!c) throw new EngineError('That cheque doesn’t exist')
+  return c
+}
+
+function bankAccount(ctx: Ctx, code: string | undefined) {
+  const a = moneyAccounts(ctx.ws, 'bank').find((x) => x.code === code)
+  if (!a) throw new EngineError('Choose the bank account')
+  return a.code
+}
+
+function chequeDate(ctx: Ctx, c: Cheque, date: string, what: string) {
+  noFutureDate(ctx, date, what)
+  if (date < c.date) throw new EngineError(`The ${what} can’t be dated before the cheque was ${c.direction === 'in' ? 'received' : 'issued'} (${c.date})`)
+}
+
+/** A received cheque handed in to the bank: it waits in 1160 under collection until the bank credits it. */
+export function depositCheque(ctx: Ctx, id: string, account: string, date: string) {
+  needFinance(ctx, 'deposit cheques')
+  const c = chequeById(ctx, id)
+  if (c.direction !== 'in' || c.state !== 'in_hand') throw new EngineError('Only a received cheque still in hand can be deposited')
+  const bank = bankAccount(ctx, account)
+  chequeDate(ctx, c, date, 'deposit')
+  journal(ctx, { date, ref: `CHQ ${c.no} DEP`, memo: `Cheque ${c.no} deposited`, lines: [side('1160', c.amount), side('1150', -c.amount)], cheque: { id, step: 'deposited', account: bank } })
+  logLedger(ctx, `deposited cheque ${c.no} (${money(c.amount, ctx.schema.company.currency)})`)
+}
+
+/** The bank paid the cheque: received ones reach the bank account, issued ones leave it. Not before the cheque's date. */
+export function clearCheque(ctx: Ctx, id: string, date: string, account?: string) {
+  needFinance(ctx, 'clear cheques')
+  const c = chequeById(ctx, id)
+  if (c.state === 'cleared' || c.state === 'bounced') throw new EngineError(`This cheque is already ${c.state}`)
+  chequeDate(ctx, c, date, 'clearing')
+  if (date < c.due) throw new EngineError(`This cheque can’t be cashed before its date (${c.due})`)
+  const bank = c.state === 'deposited' ? c.account! : bankAccount(ctx, account)
+  const lines = c.direction === 'in'
+    ? [side(bank, c.amount), side(c.state === 'deposited' ? '1160' : '1150', -c.amount)]
+    : [side('2150', c.amount), side(bank, -c.amount)]
+  journal(ctx, { date, ref: `CHQ ${c.no} CLR`, memo: `Cheque ${c.no} cleared`, lines, cheque: { id, step: 'cleared', account: bank } })
+  logLedger(ctx, `cleared cheque ${c.no} (${money(c.amount, ctx.schema.company.currency)})`)
+}
+
+/**
+ * A cheque that bounced or was cancelled before it was cashed: every payment it made is reversed, so the invoices or bills
+ * it settled are owed again, and the cheque leaves 1150/1160 (received) or 2150 (issued).
+ */
+export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string) {
+  needFinance(ctx, 'bounce cheques')
+  const c = chequeById(ctx, id)
+  if (c.state === 'cleared' || c.state === 'bounced') throw new EngineError(c.state === 'cleared' ? 'A cleared cheque can’t bounce: reverse it with a journal voucher if the bank takes it back' : 'This cheque already bounced')
+  const why = String(reason ?? '').trim()
+  if (why.length < 3) throw new EngineError('Give the reason (e.g. insufficient funds, cancelled)')
+  chequeDate(ctx, c, date, 'bounce')
+  const holding = c.state === 'deposited' ? '1160' : undefined
+  for (const p of ctx.ws.data.payments.filter((x) => x.cheque?.id === id && !x.reverses)) {
+    const rec = findRecord(ctx.ws, p.doc)!
+    const je = ctx.ws.data.journal.find((j) => j.ref === p.ref && j.doc === p.doc)!
+    const ref = `REV ${p.ref}`
+    ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
+    journal(ctx, {
+      date, ref, memo: `Cheque ${c.no} bounced: ${why}`, doc: p.doc, cheque: { id, step: 'bounced' },
+      lines: je.lines.map((l) => ({ account: holding && l.account === '1150' ? holding : l.account, debit: l.credit, credit: l.debit })),
+    }, rec)
+    rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
+    refreshBalance(rec)
+  }
+  logLedger(ctx, `cheque ${c.no} bounced (${why})`)
+}
+
+/* ---------------- bank reconciliation ---------------- */
+
+export interface BankLine {
+  entry: string
+  date: string
+  ref: string
+  memo: string
+  /** money in (+) or out (−) of the account */
+  amount: number
+}
+
+/** Every movement on a cash box or bank account, oldest first, one per journal entry. */
+export function bankLines(ws: Workspace, account: string): BankLine[] {
+  const out: BankLine[] = []
+  for (const j of ws.data.journal) {
+    const amount = round2(j.lines.filter((l) => l.account === account).reduce((s, l) => s + l.debit - l.credit, 0))
+    if (j.lines.some((l) => l.account === account) && amount !== 0) out.push({ entry: j.id, date: j.date, ref: j.ref, memo: j.memo, amount })
+  }
+  return out.reverse()
+}
+
+/** Where the reconciliation of an account stands: the last statement balance agreed, and the movements not yet on a statement. */
+export function reconciliationState(ws: Workspace, account: string) {
+  const done = (ws.books?.reconciliations ?? []).filter((r) => r.account === account)
+  const last = done[done.length - 1]
+  const cleared = new Set(done.flatMap((r) => r.entries))
+  const lines = bankLines(ws, account)
+  return { last, opening: last?.balance ?? 0, uncleared: lines.filter((l) => !cleared.has(l.entry)), book: round2(lines.reduce((s, l) => s + l.amount, 0)) }
+}
+
+/**
+ * Agrees a bank statement: the movements ticked, added to the last agreed balance, must give the statement's ending
+ * balance exactly. Those movements are then marked as on the bank's statement.
+ */
+export function reconcileBank(ctx: Ctx, r: { account: string; date: string; balance: number; entries: string[] }) {
+  needFinance(ctx, 'reconcile bank accounts')
+  const account = bankAccount(ctx, r.account)
+  noFutureDate(ctx, r.date, 'statement')
+  const st = reconciliationState(ctx.ws, account)
+  if (st.last && r.date <= st.last.date) throw new EngineError(`The last statement agreed was dated ${st.last.date}: use a later statement`)
+  const ids = [...new Set(r.entries ?? [])]
+  const picked = ids.map((id) => st.uncleared.find((l) => l.entry === id))
+  if (picked.some((l) => !l)) throw new EngineError('One of the movements isn’t on this account or is already reconciled')
+  if (picked.some((l) => l!.date > r.date)) throw new EngineError('A movement dated after the statement can’t be on it')
+  const balance = round2(Number(r.balance))
+  const reached = round2(st.opening + picked.reduce((s, l) => s + l!.amount, 0))
+  if (reached !== balance) throw new EngineError(`The ticked movements give ${money(reached, ctx.schema.company.currency)}, the statement says ${money(balance, ctx.schema.company.currency)}: a difference of ${money(round2(balance - reached), ctx.schema.company.currency)}`)
+  ctx.ws.books = { ...ctx.ws.books, reconciliations: [...(ctx.ws.books?.reconciliations ?? []), { account, date: r.date, balance, entries: ids, at: nowISO(), by: ctx.user.id }] }
+  logLedger(ctx, `reconciled ${account} to the statement of ${r.date} (${money(balance, ctx.schema.company.currency)})`)
 }
 
 /* ---------------- closing the books: lock date, month-end checks, year-end close ---------------- */
@@ -1045,6 +1303,10 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   const ap = round2(-accountBalance(ws, '2100'))
   checks.push({ id: 'ar', ok: owed('invoices') === ar, blocking: true, title: 'Customer balances match receivables', detail: owed('invoices') === ar ? `Both ${money(ar, cur)}` : `Customers ${money(owed('invoices'), cur)}, account 1200 ${money(ar, cur)}` })
   checks.push({ id: 'ap', ok: owed('purchases') === ap, blocking: true, title: 'Supplier balances match payables', detail: owed('purchases') === ap ? `Both ${money(ap, cur)}` : `Suppliers ${money(owed('purchases'), cur)}, account 2100 ${money(ap, cur)}` })
+  const reg = cheques(ws)
+  const held = (st: ChequeState) => round2(reg.filter((c) => c.state === st).reduce((s, c) => s + c.amount, 0))
+  const chequesOk = held('in_hand') === accountBalance(ws, '1150') && held('deposited') === accountBalance(ws, '1160') && held('issued') === round2(-accountBalance(ws, '2150'))
+  checks.push({ id: 'cheques', ok: chequesOk, blocking: true, title: 'Cheques match the register', detail: chequesOk ? `In hand ${money(held('in_hand'), cur)}, under collection ${money(held('deposited'), cur)}, issued ${money(held('issued'), cur)}` : 'The cheque accounts (1150, 1160, 2150) differ from the cheque register. Contact support before closing.' })
   const sample = ws.data.journal.some((j) => j.sample)
   checks.push({ id: 'sample', ok: !sample, blocking: true, title: 'No sample data in the books', detail: sample ? 'Remove the sample data first.' : 'Only real figures.' })
   const vat = vatForPeriod(ws, start, end)
@@ -1296,7 +1558,7 @@ export function accountBalance(ws: Workspace, code: string) {
   return round2(b)
 }
 
-export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: string; type: AccountType }) {
+export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }) {
   needFinance(ctx, 'change the chart of accounts')
   const code = String(a.code ?? '').trim()
   const name = String(a.name ?? '').trim()
@@ -1304,7 +1566,8 @@ export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: s
   if (name.length < 2) throw new EngineError('Give the account a name')
   if (!TYPES.includes(a.type)) throw new EngineError('Choose the account type')
   if (findAccount(ctx.ws, code)) throw new EngineError(`Account ${code} already exists`)
-  ctx.ws.chart = [...chartOf(ctx.ws), { code, name, nameAr: a.nameAr?.trim() || undefined, type: a.type, active: true }].sort((x, y) => x.code.localeCompare(y.code))
+  if (a.money && (a.type !== 'asset' || !['cash', 'bank'].includes(a.money))) throw new EngineError('Only an asset account can be a cash box or bank account')
+  ctx.ws.chart = [...chartOf(ctx.ws), { code, name, nameAr: a.nameAr?.trim() || undefined, type: a.type, active: true, ...(a.money ? { money: a.money } : {}) }].sort((x, y) => x.code.localeCompare(y.code))
 }
 
 export function updateAccount(ctx: Ctx, code: string, change: { name?: string; nameAr?: string; active?: boolean }) {

@@ -64,7 +64,11 @@ export interface JournalEntry {
   manual?: boolean
   /** this entry cancels the manual entry with this id */
   reverses?: string
+  /** a step in a cheque's life (see Payment.cheque): deposited, cleared or bounced */
+  cheque?: { id: string; step: ChequeStep; account?: string }
 }
+
+export type ChequeStep = 'deposited' | 'cleared' | 'bounced'
 
 export interface Payment {
   id: string
@@ -80,6 +84,12 @@ export interface Payment {
   reverses?: string
   /** withholding tax kept back from this payment: `amount` settles the document, `amount − wht.amount` changed hands */
   wht?: { rate: number; base: number; amount: number }
+  /** the cash box or bank account the money went into or out of (cheques: 1150 in hand, 2150 issued) */
+  account?: string
+  /** paid by cheque: one cheque can settle several documents (one row each, the same id) */
+  cheque?: { id: string; no: string; bank?: string; due: string }
+  /** the receipt or payment voucher (RV-/PV-…) when one payment covered several documents */
+  voucher?: string
 }
 
 export interface Note {
@@ -167,6 +177,8 @@ export interface Workspace {
     closedYears?: { year: number; at: string; by: string; entry: string }[]
     /** monthly VAT returns settled: output and input moved to 2210 by the entry */
     vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
+    /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
+    reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
   }
   /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
   chart?: import('./accounts').Account[]

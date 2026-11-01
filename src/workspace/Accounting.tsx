@@ -5,11 +5,12 @@ import { useApp } from './useApp'
 import { accountBalance, ageing, canPost, money, round2, trialBalance } from '../lib/engine'
 import { account, accountName, debitNormal } from '../lib/accounts'
 import { useLang } from '../lib/i18n'
+import Treasury from './Treasury'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax'>('tb')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax' | 'bank'>('tb')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">Only Admin and finance roles can see accounting.</div>
   const cur = schema.company.currency
@@ -49,6 +50,7 @@ export default function Accounting() {
         <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>Chart of accounts</button>
         <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>Opening balances</button>
         <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>Payments</button>
+        <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>Bank &amp; cash</button>
         <button className={tab === 'tax' ? 'on' : ''} onClick={() => setTab('tax')}>VAT &amp; withholding</button>
         <button className={tab === 'close' ? 'on' : ''} onClick={() => setTab('close')}>Close the books</button>
       </div>
@@ -105,6 +107,7 @@ export default function Accounting() {
       {tab === 'opening' && <OpeningBalances />}
       {tab === 'close' && <CloseBooks />}
       {tab === 'tax' && <TaxReturns />}
+      {tab === 'bank' && <Treasury />}
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">

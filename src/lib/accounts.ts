@@ -15,6 +15,8 @@ export interface Account {
   /** fed only by documents (invoices, bills, stock); no manual journal lines */
   control?: boolean
   active: boolean
+  /** a cash box or bank account that payments can go into and out of */
+  money?: 'cash' | 'bank'
 }
 
 const sys = (code: string, name: string, nameAr: string, type: AccountType, control = false): Account => ({ code, name, nameAr, type, system: true, control, active: true })
@@ -24,12 +26,15 @@ const own = (code: string, name: string, nameAr: string, type: AccountType): Acc
 export const DEFAULT_CHART: Account[] = [
   sys('1100', 'Cash & bank', 'النقدية والبنوك', 'asset'),
   own('1110', 'Bank account', 'الحساب البنكي', 'asset'),
+  sys('1150', 'Cheques in hand', 'أوراق القبض (شيكات بالخزينة)', 'asset', true),
+  sys('1160', 'Cheques under collection', 'شيكات تحت التحصيل', 'asset', true),
   sys('1200', 'Accounts receivable', 'العملاء (ذمم مدينة)', 'asset', true),
   sys('1300', 'Inventory', 'المخزون', 'asset', true),
   sys('1400', 'VAT input (recoverable)', 'ضريبة القيمة المضافة على المشتريات', 'asset'),
   sys('1450', 'Withholding tax deducted by customers', 'ضرائب خصم من المنبع لدى العملاء', 'asset'),
   own('1500', 'Fixed assets', 'الأصول الثابتة', 'asset'),
   sys('2100', 'Accounts payable', 'الموردون (ذمم دائنة)', 'liability', true),
+  sys('2150', 'Cheques issued (not yet cashed)', 'أوراق الدفع (شيكات صادرة)', 'liability', true),
   sys('2200', 'VAT output (payable)', 'ضريبة القيمة المضافة على المبيعات', 'liability'),
   sys('2210', 'VAT due to the Tax Authority', 'ضريبة القيمة المضافة المستحقة لمصلحة الضرائب', 'liability'),
   own('2300', 'Loans', 'القروض', 'liability'),
@@ -47,6 +52,16 @@ export const DEFAULT_CHART: Account[] = [
   own('5500', 'Bank charges', 'مصروفات بنكية', 'expense'),
   sys('5900', 'Inventory adjustments', 'تسويات المخزون', 'expense'),
 ]
+
+/** Whether an account is a cash box or a bank account (1100 and 1110 are, in the standard chart). */
+export function moneyKind(a: Account): 'cash' | 'bank' | undefined {
+  return a.money ?? (a.code === '1100' ? 'cash' : a.code === '1110' ? 'bank' : undefined)
+}
+
+/** The active cash boxes and bank accounts. */
+export function moneyAccounts(ws: Pick<Workspace, 'chart'>, kind?: 'cash' | 'bank') {
+  return chartOf(ws).filter((a) => a.active && a.type === 'asset' && moneyKind(a) && (!kind || moneyKind(a) === kind))
+}
 
 /** The company's chart: its own accounts, with every system account always present. */
 export function chartOf(ws: Pick<Workspace, 'chart'>): Account[] {

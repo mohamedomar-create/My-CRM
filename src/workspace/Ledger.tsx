@@ -87,9 +87,11 @@ export function ChartOfAccounts() {
   const [name, setName] = useState('')
   const [nameAr, setNameAr] = useState('')
   const [type, setType] = useState<AccountType>('expense')
+  const [moneyKind, setMoneyKind] = useState<'' | 'cash' | 'bank'>('')
   function add(e: React.FormEvent) {
     e.preventDefault()
-    if (act('accounts.add', { code, name, nameAr, type }, `Account ${code} added`, `Added account ${code} ${name}`) !== undefined) {
+    const money = type === 'asset' && moneyKind ? moneyKind : undefined
+    if (act('accounts.add', { code, name, nameAr, type, money }, `Account ${code} added`, `Added account ${code} ${name}`) !== undefined) {
       setCode('')
       setName('')
       setNameAr('')
@@ -125,6 +127,7 @@ export function ChartOfAccounts() {
         <label className="field">Name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Marketing" /></label>
         <label className="field">Arabic name<input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="مثال: التسويق" /></label>
         <label className="field">Type<select value={type} onChange={(e) => setType(e.target.value as AccountType)}>{Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        {type === 'asset' && <label className="field">Payments can go through it<select value={moneyKind} onChange={(e) => setMoneyKind(e.target.value as '' | 'cash' | 'bank')}><option value="">No</option><option value="cash">Yes, as a cash box</option><option value="bank">Yes, as a bank account</option></select></label>}
         <button>Add account</button>
         <p className="tiny muted">Accounts used by posting can be renamed but not turned off. An account with a balance can be turned off only after moving its balance.</p>
       </form>
