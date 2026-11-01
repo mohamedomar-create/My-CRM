@@ -2,23 +2,28 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calculator, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useApp } from './useApp'
-import { ageing, canPost, money, round2, trialBalance } from '../lib/engine'
-import { CHART } from '../lib/types'
+import { accountBalance, ageing, canPost, money, round2, trialBalance } from '../lib/engine'
+import { account, accountName, debitNormal } from '../lib/accounts'
+import { useLang } from '../lib/i18n'
+import { ChartOfAccounts, JournalVoucher, OpeningBalances, ReverseButton } from './Ledger'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'payments'>('tb')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments'>('tb')
+  const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">Only Admin and finance roles can see accounting.</div>
   const cur = schema.company.currency
   const tb = trialBalance(ws)
   const dr = round2(tb.reduce((s, [, r]) => s + r.debit, 0))
   const cr = round2(tb.reduce((s, [, r]) => s + r.credit, 0))
-  const bal = (code: keyof typeof CHART) => {
-    const r = tb.find(([c]) => c === code)?.[1]
-    if (!r) return 0
-    const t = CHART[code].type
-    return round2(t === 'asset' || t === 'expense' ? r.debit - r.credit : r.credit - r.debit)
+  /** an account's balance on its usual side (assets and expenses: debits − credits; the rest the other way) */
+  const bal = (code: string) => {
+    const b = accountBalance(ws, code)
+    const a = account(ws, code)
+    return a && !debitNormal(a.type) ? round2(-b) : b
   }
+  const name = (code: string) => accountName(ws, code, lang)
+  const reversed = new Set(ws.data.journal.filter((j) => j.reverses).map((j) => j.reverses))
   const revenue = bal('4000')
   const cogs = bal('5000') + bal('5100')
   const vatDue = round2(bal('2200') - bal('1400'))
@@ -39,6 +44,9 @@ export default function Accounting() {
         <button className={tab === 'tb' ? 'on' : ''} onClick={() => setTab('tb')}>Trial balance</button>
         <button className={tab === 'ageing' ? 'on' : ''} onClick={() => setTab('ageing')}>Ageing</button>
         <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>Journal</button>
+        <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>New journal voucher</button>
+        <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>Chart of accounts</button>
+        <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>Opening balances</button>
         <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>Payments</button>
       </div>
       {tab === 'tb' && (
@@ -46,7 +54,7 @@ export default function Accounting() {
           <table className="data">
             <thead><tr><th>Account</th><th>Type</th><th className="num">Debit</th><th className="num">Credit</th><th className="num">Balance</th></tr></thead>
             <tbody>
-              {tb.map(([code, r]) => <tr key={code}><td><span className="mono">{code}</span> {CHART[code].name}</td><td className="muted">{CHART[code].type}</td><td className="num">{money(r.debit, cur)}</td><td className="num">{money(r.credit, cur)}</td><td className="num"><b>{money(bal(code), cur)}</b></td></tr>)}
+              {tb.map(([code, r]) => <tr key={code}><td><span className="mono">{code}</span> {name(code)}</td><td className="muted">{account(ws, code)?.type ?? ''}</td><td className="num">{money(r.debit, cur)}</td><td className="num">{money(r.credit, cur)}</td><td className="num"><b>{money(bal(code), cur)}</b></td></tr>)}
             </tbody>
             <tfoot><tr><td>Total</td><td /><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td /></tr></tfoot>
           </table>
@@ -81,14 +89,17 @@ export default function Accounting() {
         <div className="stack">
           {ws.data.journal.slice(0, 60).map((j) => (
             <div className="card" key={j.id} style={{ padding: 12 }}>
-              <div className="row between"><b className="mono">{j.ref}</b><span className="muted small">{j.date} · {j.memo} {j.doc && <Link to={`/app/r/${j.doc}`}>open</Link>}</span></div>
+              <div className="row between"><b className="mono">{j.ref}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {j.memo} {j.doc && <Link to={`/app/r/${j.doc}`}>open</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
               <table className="lines" style={{ marginTop: 6 }}>
-                <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {CHART[l.account].name}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
+                <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
               </table>
             </div>
           ))}
         </div>
       )}
+      {tab === 'voucher' && <JournalVoucher />}
+      {tab === 'chart' && <ChartOfAccounts />}
+      {tab === 'opening' && <OpeningBalances />}
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">
