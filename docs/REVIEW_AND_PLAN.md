@@ -564,6 +564,8 @@ A smaller team stretches the timeline roughly in proportion.
 
 **Goal.** A company that joins with years of history brings it in once, correctly, across every module, and works in Bonyan as if it had always been there. The full plan is in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md).
 
+> **Phase H1 done (import engine).** Excel and CSV, large files in parts with progress, a check before saving, update by old id, phone or e-mail instead of duplicating, links by old id, value and stage mapping, original dates, old-system fields on the record, no automations, and Undo per import. Details in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md#h1-import-engine-ml). Next: H2, opening books.
+
 **Work items**
 - **H1:** import engine (Excel, large files, dry run, update by key, links by old id, value mapping, original dates and owners, batches with undo, no side effects).
 - **H2:** opening books (go-live date, trial balance, open invoices and bills, credits, cheques, bank starting point, bulk opening stock, WHT for the quarter, 3900 = 0, Go live).

@@ -34,6 +34,35 @@ export interface Rec {
   links?: { source?: string }
   /** created by "Try with sample data"; removed in one click before going live */
   sample?: boolean
+  /** what the company's old system knew this record as (Phase H) */
+  legacy?: { id?: string; number?: string; notes?: string }
+  /** the imports that created or changed this record, oldest first; the last one can be undone */
+  imports?: RecordImport[]
+}
+
+/** One import's mark on a record: the batch, when, and what the record was before (when the import changed it). */
+export interface RecordImport {
+  batch: string
+  at: string
+  /** the record's fingerprint right after the import: a different one means it was changed since */
+  sum: string
+  created?: boolean
+  before?: { values: Record<string, unknown>; stage?: string; stageHistory?: { stage: string; at: string }[]; legacy?: Rec['legacy']; createdAt?: string; updatedAt?: string }
+}
+
+/** One import from a file, possibly sent in several parts. */
+export interface ImportBatch {
+  id: string
+  module: string
+  file: string
+  at: string
+  by: string
+  created: number
+  updated: number
+  skipped: number
+  parts: number
+  undoneAt?: string
+  undoneBy?: string
 }
 
 export interface StockMove {
@@ -160,6 +189,8 @@ export interface WorkspaceData {
   approvals?: Approval[]
   comments?: Comment[]
   views?: SavedView[]
+  /** imports from files (Phase H), newest first */
+  imports?: ImportBatch[]
 }
 
 export interface Workspace {

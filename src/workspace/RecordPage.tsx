@@ -226,9 +226,21 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {rec && (
             <div className="card">
               <h2>{tr('History')}</h2>
+              {rec.legacy && (
+                <div className="info small" style={{ marginBottom: 10 }}>
+                  {[rec.legacy.id && tr('Old system id: {id}', { id: rec.legacy.id }), rec.legacy.number && tr('Old system number: {n}', { n: rec.legacy.number })].filter(Boolean).join(' · ')}
+                  {rec.legacy.notes && <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{rec.legacy.notes}</div>}
+                </div>
+              )}
               <ul className="timeline">
                 {history.map((a) => <li key={a.id}><b>{a.user}</b> {msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>)}
-                <li>{tr('Created {date} by {name}', { date: new Date(rec.createdAt).toLocaleDateString(dateLocale()), name: ws.users.find((u) => u.id === rec.createdBy)?.name ?? '—' })}</li>
+                {[...(rec.imports ?? [])].reverse().map((m) => {
+                  const b = ws.data.imports?.find((x) => x.id === m.batch)
+                  const who = ws.users.find((u) => u.id === b?.by)?.name ?? '—'
+                  const file = b?.file || tr('a file')
+                  return <li key={m.batch + m.at}><b>{who}</b> {m.created ? tr('imported this record from {file}', { file }) : tr('updated this record from {file}', { file })}<br /><span className="tiny muted">{new Date(m.at).toLocaleString(dateLocale())}</span></li>
+                })}
+                <li>{rec.imports?.[0]?.created && rec.createdAt < rec.imports[0].at ? tr('Created {date} in the old system', { date: new Date(rec.createdAt).toLocaleDateString(dateLocale()) }) : tr('Created {date} by {name}', { date: new Date(rec.createdAt).toLocaleDateString(dateLocale()), name: ws.users.find((u) => u.id === rec.createdBy)?.name ?? '—' })}</li>
               </ul>
             </div>
           )}
