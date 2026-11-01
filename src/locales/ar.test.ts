@@ -37,6 +37,7 @@ const DONE = [
   'src/workspace/Treasury.tsx',
   'src/workspace/Statements.tsx',
   'src/workspace/GoLive.tsx',
+  'src/workspace/Migrate.tsx',
   'src/builder/Builder.tsx',
   'src/builder/ModulesTab.tsx',
   'src/builder/PipelinesTab.tsx',

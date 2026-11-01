@@ -6,7 +6,8 @@ import type { AppSchema, FieldDef, ModuleDef } from '../lib/schema'
 import { uid } from '../lib/schema'
 import { flush } from '../lib/store'
 import { readXlsx, type Sheet } from '../lib/xlsx'
-import { dateLocale, msg, N_, tr, translate } from '../lib/i18n'
+import { IMPORT_COLUMNS } from '../lib/migration'
+import { dateLocale, msg, tr, translate } from '../lib/i18n'
 
 /** Parses CSV exported from Excel or Google Sheets (quotes, commas or semicolons, BOM). */
 export function parseCsv(text: string): string[][] {
@@ -61,43 +62,54 @@ const PART = 500
 const MAX_ROWS = 50_000
 
 /** Columns that go somewhere other than a field. */
-const TARGETS: { key: string; label: string; stages?: boolean }[] = [
-  { key: '__legacy_id', label: N_('Old system id') },
-  { key: '__legacy_number', label: N_('Old system number') },
-  { key: '__legacy_notes', label: N_('Notes from the old system') },
-  { key: '__created', label: N_('Created on (in the old system)') },
-  { key: '__stage', label: N_('Stage'), stages: true },
-  { key: '__stage_date', label: N_('Date it reached that stage'), stages: true },
-]
+const TARGETS = IMPORT_COLUMNS
 
 /** Fields whose values must be one of a list: those values can be matched to what the file says. */
 const listField = (f?: FieldDef) => f && ['select', 'multiselect', 'user'].includes(f.type)
 
 type Choice = { value: string; label: string; also: string[] }
 
-export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => void }) {
+export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose: () => void; preset?: { fileName: string; sheet: Sheet } }) {
   const { ws, user, act } = useApp()
   // The saved schema (English names), which the server imports with; mod is the one shown, in the chosen language.
   const saved = ws.published as AppSchema
   const raw = saved.modules.find((m) => m.id === mod.id) ?? mod
   const isAdmin = Boolean(saved.roles.find((r) => r.id === user.roleId)?.admin)
 
-  const [fileName, setFileName] = useState('')
-  const [sheets, setSheets] = useState<Sheet[]>([])
+  const fields = raw.fields.filter((f) => !f.readOnly && !['formula', 'lookup', 'rollup'].includes(f.type))
+  const shown = (f: FieldDef) => mod.fields.find((x) => x.id === f.id)?.label ?? f.label
+  const targets = TARGETS.filter((t) => !t.stages || raw.stages)
+
+  /** Columns matched to fields by their names (in either language, * for required ignored). */
+  function mapFor(h: string[]) {
+    const m: Record<string, string> = {}
+    const names = [
+      ...fields.map((f) => ({ key: f.key, names: [f.label, shown(f), translate('ar', f.label), f.key] })),
+      ...targets.map((t) => ({ key: t.key, names: [t.label, translate('ar', t.label)] })),
+    ]
+    for (const col of h) {
+      const c = norm(col)
+      const hit = names.find((x) => x.names.some((n) => norm(n) === c)) ?? names.find((x) => x.names.some((n) => norm(n).length > 2 && (c.includes(norm(n)) || norm(n).includes(c))))
+      if (hit && !Object.values(m).includes(hit.key)) m[col] = hit.key
+    }
+    return m
+  }
+  const headerOf = (sh?: Sheet) => (sh?.rows[0] ?? []).map((x, i) => x.trim() || tr('Column {n}', { n: i + 1 }))
+  // A sheet handed over by the migration wizard opens straight on the matching step.
+  const [initial] = useState(() => (preset ? mapFor(headerOf(preset.sheet)) : {}))
+
+  const [fileName, setFileName] = useState(preset?.fileName ?? '')
+  const [sheets, setSheets] = useState<Sheet[]>(preset ? [preset.sheet] : [])
   const [sheet, setSheet] = useState(0)
   const [problem, setProblem] = useState('')
-  const [mapping, setMapping] = useState<Record<string, string>>({})
-  const [match, setMatch] = useState('')
+  const [mapping, setMapping] = useState<Record<string, string>>(initial)
+  const [match, setMatch] = useState(Object.values(initial).includes('__legacy_id') ? '__legacy_id' : '')
   const [onlyUpdate, setOnlyUpdate] = useState(false)
   const [manual, setManual] = useState<Record<string, Record<string, string>>>({})
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [result, setResult] = useState<(Pick<ImportResult, 'created' | 'updated' | 'skipped' | 'errors'> & { batch: string; stopped: boolean }) | null>(null)
-
-  const fields = raw.fields.filter((f) => !f.readOnly && !['formula', 'lookup', 'rollup'].includes(f.type))
-  const shown = (f: FieldDef) => mod.fields.find((x) => x.id === f.id)?.label ?? f.label
-  const targets = TARGETS.filter((t) => !t.stages || raw.stages)
 
   // The chosen sheet as a header and rows of named cells (duplicate or empty headers made unique).
   const table = useMemo(() => sheets[sheet]?.rows ?? [], [sheets, sheet])
@@ -113,16 +125,7 @@ export function ImportModal({ mod, onClose }: { mod: ModuleDef; onClose: () => v
   const objects = useMemo(() => table.slice(1).map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? '']))), [table, header])
 
   function autoMap(h: string[]) {
-    const m: Record<string, string> = {}
-    const names = [
-      ...fields.map((f) => ({ key: f.key, names: [f.label, shown(f), translate('ar', f.label), f.key] })),
-      ...targets.map((t) => ({ key: t.key, names: [t.label, translate('ar', t.label)] })),
-    ]
-    for (const col of h) {
-      const c = norm(col)
-      const hit = names.find((x) => x.names.some((n) => norm(n) === c)) ?? names.find((x) => x.names.some((n) => norm(n).length > 2 && (c.includes(norm(n)) || norm(n).includes(c))))
-      if (hit && !Object.values(m).includes(hit.key)) m[col] = hit.key
-    }
+    const m = mapFor(h)
     setMapping(m)
     setMatch(Object.values(m).includes('__legacy_id') ? '__legacy_id' : '')
   }

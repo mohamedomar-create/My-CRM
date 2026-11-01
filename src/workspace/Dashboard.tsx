@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Clock, Sparkles, Wand2 } from 'lucide-react'
+import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
@@ -26,6 +26,13 @@ export default function Dashboard() {
         </div>
         {role?.admin && <Link to="/builder" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
       </div>
+
+      {role?.admin && !ws.books?.opening?.done && !(ws.data.imports ?? []).length && (
+        <div className="info row between" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          <span><b>{tr('Coming from another system?')}</b> {tr('Bring your customers, deals, products and opening books in from one Excel workbook.')}</span>
+          <Link to="/app/migrate" className="btn secondary small"><FileSpreadsheet size={15} /> {tr('Bring your data in')}</Link>
+        </div>
+      )}
 
       {reports.length === 0 && (
         <div className="card empty">
