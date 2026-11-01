@@ -5,11 +5,13 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
 import { accountBalance, booksHealth, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
-import { whtName } from '../lib/tax'
+import { taxCode } from '../lib/tax'
+import { TYPE_LABEL, typeLabel, whtLabel } from './labels'
 import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
+import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 
-const TYPE_LABEL: Record<AccountType, string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', income: 'Income', expense: 'Expense' }
+
 
 /** Amount typed by a person, with Arabic digits and thousands separators accepted. */
 function num(v: string) {
@@ -36,7 +38,7 @@ export function JournalVoucher() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note }))
-    const out = act<{ ref: string }>('journal.manual', { date, memo, lines }, 'Journal voucher posted', `Journal voucher: ${memo}`)
+    const out = act<{ ref: string }>('journal.manual', { date, memo, lines }, tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
       setRows([emptyRow(), emptyRow()])
@@ -44,30 +46,30 @@ export function JournalVoucher() {
   }
   return (
     <form className="card stack" onSubmit={submit}>
-      <h2>New journal voucher</h2>
-      <p className="small muted">For entries no document makes: rent, salaries, capital, loans, depreciation, corrections. Customer, supplier and stock balances change only through their documents, opening balances and stock adjustments.</p>
+      <h2>{tr('New journal voucher')}</h2>
+      <p className="small muted">{tr('For entries no document makes: rent, salaries, capital, loans, depreciation, corrections. Customer, supplier and stock balances change only through their documents, opening balances and stock adjustments.')}</p>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <label className="field" style={{ width: 170 }}>Date<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label className="field grow">Description<input required value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. Office rent for January" /></label>
+        <label className="field" style={{ width: 170 }}>{tr('Date')}<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="field grow">{tr('Description')}<input required value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={tr('e.g. Office rent for January')} /></label>
       </div>
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>Account</th><th className="num">Debit</th><th className="num">Credit</th><th>Note</th><th /></tr></thead>
+          <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th><th>{tr('Note')}</th><th /></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} style={{ cursor: 'default' }}>
-                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">Choose…</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></td>
+                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></td>
                 <td><input inputMode="decimal" value={r.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? '' : r.credit })} style={{ textAlign: 'end' }} /></td>
                 <td><input inputMode="decimal" value={r.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? '' : r.debit })} style={{ textAlign: 'end' }} /></td>
                 <td><input value={r.note} onChange={(e) => set(i, { note: e.target.value })} /></td>
-                <td>{rows.length > 2 && <button type="button" className="ghost icon" aria-label="Remove line" onClick={() => setRows(rows.filter((_, j) => j !== i))}><Trash2 size={14} /></button>}</td>
+                <td>{rows.length > 2 && <button type="button" className="ghost icon" aria-label={tr('Remove line')} onClick={() => setRows(rows.filter((_, j) => j !== i))}><Trash2 size={14} /></button>}</td>
               </tr>
             ))}
           </tbody>
-          <tfoot><tr><td><button type="button" className="ghost small" onClick={() => setRows([...rows, emptyRow()])}><Plus size={14} /> Line</button></td><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td colSpan={2} className={dr === cr ? 'tiny muted' : 'tiny'} style={dr === cr ? undefined : { color: 'var(--danger)' }}>{dr === cr ? (dr ? 'Balanced' : '') : `Difference ${money(Math.abs(round2(dr - cr)), cur)}`}</td></tr></tfoot>
+          <tfoot><tr><td><button type="button" className="ghost small" onClick={() => setRows([...rows, emptyRow()])}><Plus size={14} /> {tr('Line')}</button></td><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td colSpan={2} className={dr === cr ? 'tiny muted' : 'tiny'} style={dr === cr ? undefined : { color: 'var(--danger)' }}>{dr === cr ? (dr ? tr('Balanced') : '') : tr('Difference {amount}', { amount: money(Math.abs(round2(dr - cr)), cur) })}</td></tr></tfoot>
         </table>
       </div>
-      <button disabled={!dr || dr !== cr}>Post journal voucher</button>
+      <button disabled={!dr || dr !== cr}>{tr('Post journal voucher')}</button>
     </form>
   )
 }
@@ -75,8 +77,8 @@ export function JournalVoucher() {
 /** The reverse button next to a journal voucher in the journal list. */
 export function ReverseButton({ id, reversed }: { id: string; reversed: boolean }) {
   const { act } = useApp()
-  if (reversed) return <span className="pill gray tiny">reversed</span>
-  return <button className="ghost small" onClick={() => confirm('Reverse this journal voucher? An opposite entry is posted today; the original stays in the books.') && act('journal.reverse', { id }, 'Reversed', 'Reversed a journal voucher')}><Undo2 size={13} /> Reverse</button>
+  if (reversed) return <span className="pill gray tiny">{tr('reversed')}</span>
+  return <button className="ghost small" onClick={() => confirm(tr('Reverse this journal voucher? An opposite entry is posted today; the original stays in the books.')) && act('journal.reverse', { id }, tr('Reversed'), 'Reversed a journal voucher')}><Undo2 size={13} /> {tr('Reverse')}</button>
 }
 
 /* ---------------- chart of accounts ---------------- */
@@ -92,7 +94,7 @@ export function ChartOfAccounts() {
   function add(e: React.FormEvent) {
     e.preventDefault()
     const money = type === 'asset' && moneyKind ? moneyKind : undefined
-    if (act('accounts.add', { code, name, nameAr, type, money }, `Account ${code} added`, `Added account ${code} ${name}`) !== undefined) {
+    if (act('accounts.add', { code, name, nameAr, type, money }, tr('Account {code} added', { code }), `Added account ${code} ${name}`) !== undefined) {
       setCode('')
       setName('')
       setNameAr('')
@@ -102,19 +104,19 @@ export function ChartOfAccounts() {
     <div className="record-grid">
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>Code</th><th>Account</th><th>Type</th><th className="num">Balance</th><th /></tr></thead>
+          <thead><tr><th>{tr('Code')}</th><th>{tr('Account')}</th><th>{tr('Type')}</th><th className="num">{tr('Balance')}</th><th /></tr></thead>
           <tbody>
             {chartOf(ws).map((a) => {
               const b = accountBalance(ws, a.code)
               return (
                 <tr key={a.code} style={{ cursor: 'default', opacity: a.active ? 1 : 0.5 }}>
                   <td className="mono">{a.code}</td>
-                  <td>{a.name}{a.nameAr && <span className="muted small" dir="rtl"> · {a.nameAr}</span>} {a.control && <span className="pill gray tiny" title="Changed only by documents">by documents</span>}</td>
-                  <td className="muted">{TYPE_LABEL[a.type]}</td>
+                  <td>{a.name}{a.nameAr && <span className="muted small" dir="rtl"> · {a.nameAr}</span>} {a.control && <span className="pill gray tiny" title={tr('Changed only by documents')}>{tr('by documents')}</span>}</td>
+                  <td className="muted">{typeLabel(a.type)}</td>
                   <td className="num">{money(debitNormal(a.type) ? b : -b, cur)}</td>
                   <td className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
-                    <button className="ghost small" onClick={() => { const n = prompt('New name', a.name); if (n) act('accounts.update', { code: a.code, name: n }, 'Renamed', `Renamed account ${a.code}`) }}>Rename</button>
-                    {!a.system && <button className="ghost small" onClick={() => act('accounts.update', { code: a.code, active: !a.active }, a.active ? 'Turned off' : 'Turned on', `${a.active ? 'Turned off' : 'Turned on'} account ${a.code}`)}>{a.active ? 'Turn off' : 'Turn on'}</button>}
+                    <button className="ghost small" onClick={() => { const n = prompt(tr('New name'), a.name); if (n) act('accounts.update', { code: a.code, name: n }, tr('Renamed'), `Renamed account ${a.code}`) }}>{tr('Rename')}</button>
+                    {!a.system && <button className="ghost small" onClick={() => act('accounts.update', { code: a.code, active: !a.active }, a.active ? tr('Turned off') : tr('Turned on'), `${a.active ? 'Turned off' : 'Turned on'} account ${a.code}`)}>{a.active ? tr('Turn off') : tr('Turn on')}</button>}
                   </td>
                 </tr>
               )
@@ -123,14 +125,14 @@ export function ChartOfAccounts() {
         </table>
       </div>
       <form className="card stack" onSubmit={add}>
-        <h2><Plus size={18} /> Add an account</h2>
-        <label className="field">Code<input required inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. 5250" /></label>
-        <label className="field">Name<input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Marketing" /></label>
-        <label className="field">Arabic name<input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="مثال: التسويق" /></label>
-        <label className="field">Type<select value={type} onChange={(e) => setType(e.target.value as AccountType)}>{Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-        {type === 'asset' && <label className="field">Payments can go through it<select value={moneyKind} onChange={(e) => setMoneyKind(e.target.value as '' | 'cash' | 'bank')}><option value="">No</option><option value="cash">Yes, as a cash box</option><option value="bank">Yes, as a bank account</option></select></label>}
-        <button>Add account</button>
-        <p className="tiny muted">Accounts used by posting can be renamed but not turned off. An account with a balance can be turned off only after moving its balance.</p>
+        <h2><Plus size={18} /> {tr('Add an account')}</h2>
+        <label className="field">{tr('Code')}<input required inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. 5250" /></label>
+        <label className="field">{tr('Name')}<input required value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('e.g. Marketing')} /></label>
+        <label className="field">{tr('Arabic name')}<input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="مثال: التسويق" /></label>
+        <label className="field">{tr('Type')}<select value={type} onChange={(e) => setType(e.target.value as AccountType)}>{Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}</select></label>
+        {type === 'asset' && <label className="field">{tr('Payments can go through it')}<select value={moneyKind} onChange={(e) => setMoneyKind(e.target.value as '' | 'cash' | 'bank')}><option value="">{tr('No')}</option><option value="cash">{tr('Yes, as a cash box')}</option><option value="bank">{tr('Yes, as a bank account')}</option></select></label>}
+        <button>{tr('Add account')}</button>
+        <p className="tiny muted">{tr('Accounts used by posting can be renamed but not turned off. An account with a balance can be turned off only after moving its balance.')}</p>
       </form>
     </div>
   )
@@ -162,26 +164,26 @@ export function OpeningBalances() {
     })
     const net = round2(lines.reduce((s, l) => s + l.debit - l.credit, 0))
     if (net) lines.push({ account: '3900', debit: net < 0 ? -net : 0, credit: net > 0 ? net : 0 })
-    if (act('journal.manual', { date, memo: 'Opening balances', lines }, 'Opening balances posted', 'Posted opening balances') !== undefined) setGl({})
+    if (act('journal.manual', { date, memo: 'Opening balances', lines }, tr('Opening balances posted'), 'Posted opening balances') !== undefined) setGl({})
   }
   function saveParty(e: React.FormEvent) {
     e.preventDefault()
-    if (act('opening.balance', { kind: party.kind, party: party.id, amount: num(party.amount), date, ref: party.ref }, 'Opening balance saved', `Opening balance for a ${party.kind}`) !== undefined) setParty({ ...party, id: '', amount: '', ref: '' })
+    if (act('opening.balance', { kind: party.kind, party: party.id, amount: num(party.amount), date, ref: party.ref }, tr('Opening balance saved'), `Opening balance for a ${party.kind}`) !== undefined) setParty({ ...party, id: '', amount: '', ref: '' })
   }
   function saveStock(e: React.FormEvent) {
     e.preventDefault()
-    if (act('stock.adjust', { product: stock.product, qty: num(stock.qty), unitCost: num(stock.cost), reason: 'Opening stock', date, opening: true }, 'Opening stock saved', 'Opening stock') !== undefined) setStock({ product: '', qty: '', cost: '' })
+    if (act('stock.adjust', { product: stock.product, qty: num(stock.qty), unitCost: num(stock.cost), reason: 'Opening stock', date, opening: true }, tr('Opening stock saved'), 'Opening stock') !== undefined) setStock({ product: '', qty: '', cost: '' })
   }
   const parties = party.kind === 'customer' ? customers : suppliers
   return (
     <div className="stack">
-      <div className="info">Enter what you had on the day you start with Bonyan. The differences go to <b>3900 Opening balance equity</b>, which your accountant later moves to capital or retained earnings.</div>
-      <label className="field" style={{ maxWidth: 220 }}>Opening date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-      {already && <div className="note">Opening balances were already entered. Anything you add now adds to them; to undo a mistake, reverse its journal voucher or void its opening document.</div>}
+      <div className="info">{tr('Enter what you had on the day you start with Bonyan. The differences go to')} <b>{tr('3900 Opening balance equity')}</b>{tr(', which your accountant later moves to capital or retained earnings.')}</div>
+      <label className="field" style={{ maxWidth: 220 }}>{tr('Opening date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+      {already && <div className="note">{tr('Opening balances were already entered. Anything you add now adds to them; to undo a mistake, reverse its journal voucher or void its opening document.')}</div>}
 
       <form className="card stack" onSubmit={saveGl}>
-        <h2>1. Cash, bank and other balances</h2>
-        <p className="small muted">Positive means the account's usual side: what you have (cash, bank, fixed assets) or what you owe (loans, VAT payable).</p>
+        <h2>{tr('1. Cash, bank and other balances')}</h2>
+        <p className="small muted">{tr('Positive means the account’s usual side: what you have (cash, bank, fixed assets) or what you owe (loans, VAT payable).')}</p>
         <div className="table-wrap">
           <table className="data">
             <tbody>{accounts.filter((a) => a.type !== 'income' && a.type !== 'expense').map((a) => (
@@ -189,35 +191,35 @@ export function OpeningBalances() {
             ))}</tbody>
           </table>
         </div>
-        <button disabled={!Object.values(gl).some((v) => num(v))}>Post these balances</button>
+        <button disabled={!Object.values(gl).some((v) => num(v))}>{tr('Post these balances')}</button>
       </form>
 
       <form className="card stack" onSubmit={saveParty}>
-        <h2>2. What customers owe you and what you owe suppliers</h2>
-        <p className="small muted">One line per customer or supplier. Each becomes an opening document you can later receive or pay against, and it shows in their balance and ageing.</p>
+        <h2>{tr('2. What customers owe you and what you owe suppliers')}</h2>
+        <p className="small muted">{tr('One line per customer or supplier. Each becomes an opening document you can later receive or pay against, and it shows in their balance and ageing.')}</p>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <select value={party.kind} onChange={(e) => setParty({ ...party, kind: e.target.value as 'customer' | 'supplier', id: '' })} style={{ width: 'auto' }}><option value="customer">Customer owes us</option><option value="supplier">We owe supplier</option></select>
+          <select value={party.kind} onChange={(e) => setParty({ ...party, kind: e.target.value as 'customer' | 'supplier', id: '' })} style={{ width: 'auto' }}><option value="customer">{tr('Customer owes us')}</option><option value="supplier">{tr('We owe supplier')}</option></select>
           <select required value={party.id} onChange={(e) => setParty({ ...party, id: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-            <option value="">Choose…</option>
+            <option value="">{tr('Choose…')}</option>
             {parties && list(ws, parties.id).map((r) => <option key={r.id} value={r.id}>{String(r.values.name ?? '')}</option>)}
           </select>
-          <input required inputMode="decimal" value={party.amount} onChange={(e) => setParty({ ...party, amount: e.target.value })} placeholder={`Amount (${cur})`} style={{ width: 160, textAlign: 'end' }} />
-          <input value={party.ref} onChange={(e) => setParty({ ...party, ref: e.target.value })} placeholder="Old reference (optional)" style={{ width: 200 }} />
-          <button>Add</button>
+          <input required inputMode="decimal" value={party.amount} onChange={(e) => setParty({ ...party, amount: e.target.value })} placeholder={tr('Amount ({cur})', { cur })} style={{ width: 160, textAlign: 'end' }} />
+          <input value={party.ref} onChange={(e) => setParty({ ...party, ref: e.target.value })} placeholder={tr('Old reference (optional)')} style={{ width: 200 }} />
+          <button>{tr('Add')}</button>
         </div>
       </form>
 
       {products && (
         <form className="card stack" onSubmit={saveStock}>
-          <h2>3. Stock on hand</h2>
+          <h2>{tr('3. Stock on hand')}</h2>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <select required value={stock.product} onChange={(e) => setStock({ ...stock, product: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-              <option value="">Choose a product…</option>
+              <option value="">{tr('Choose a product…')}</option>
               {list(ws, products.id).filter((p) => p.values.track_stock).map((p) => <option key={p.id} value={p.id}>{String(p.values.name)} ({onHand(ws, p.id)} on hand)</option>)}
             </select>
-            <input required inputMode="decimal" value={stock.qty} onChange={(e) => setStock({ ...stock, qty: e.target.value })} placeholder="Quantity" style={{ width: 120, textAlign: 'end' }} />
-            <input required inputMode="decimal" value={stock.cost} onChange={(e) => setStock({ ...stock, cost: e.target.value })} placeholder={`Cost per unit (${cur})`} style={{ width: 170, textAlign: 'end' }} />
-            <button>Add</button>
+            <input required inputMode="decimal" value={stock.qty} onChange={(e) => setStock({ ...stock, qty: e.target.value })} placeholder={tr('Quantity')} style={{ width: 120, textAlign: 'end' }} />
+            <input required inputMode="decimal" value={stock.cost} onChange={(e) => setStock({ ...stock, cost: e.target.value })} placeholder={tr('Cost per unit ({cur})', { cur })} style={{ width: 170, textAlign: 'end' }} />
+            <button>{tr('Add')}</button>
           </div>
         </form>
       )}
@@ -240,7 +242,7 @@ export function StockTools() {
   function adjust(e: React.FormEvent) {
     e.preventDefault()
     const qty = num(adj.qty)
-    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date }, 'Stock adjusted', `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
+    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
       setAdj({ ...adj, product: '', qty: '', cost: '', reason: '' })
       setMode('')
     }
@@ -250,7 +252,7 @@ export function StockTools() {
     const list_ = Object.entries(counts).filter(([, v]) => v !== '').map(([product, v]) => ({ product, counted: num(v) }))
     const out = act<{ ref: string; adjusted: number }>('stock.count', { date: countDate, counts: list_, note }, undefined, 'Stock count')
     if (out) {
-      showToast({ kind: 'ok', text: out.adjusted ? `Count saved: ${out.adjusted} product${out.adjusted > 1 ? 's' : ''} adjusted` : 'Count saved: everything matched' })
+      showToast({ kind: 'ok', text: out.adjusted ? `Count saved: ${out.adjusted} product${out.adjusted > 1 ? 's' : ''} adjusted` : tr('Count saved: everything matched') })
       setCounts({})
       setNote('')
       setMode('')
@@ -259,37 +261,37 @@ export function StockTools() {
   return (
     <div className="stack" style={{ marginBottom: 14 }}>
       <div className="row" style={{ gap: 8 }}>
-        <button className={mode === 'adjust' ? '' : 'secondary'} onClick={() => setMode(mode === 'adjust' ? '' : 'adjust')}>Adjust stock</button>
-        <button className={mode === 'count' ? '' : 'secondary'} onClick={() => setMode(mode === 'count' ? '' : 'count')}>Stock count</button>
+        <button className={mode === 'adjust' ? '' : 'secondary'} onClick={() => setMode(mode === 'adjust' ? '' : 'adjust')}>{tr('Adjust stock')}</button>
+        <button className={mode === 'count' ? '' : 'secondary'} onClick={() => setMode(mode === 'count' ? '' : 'count')}>{tr('Stock count')}</button>
       </div>
       {mode === 'adjust' && (
         <form className="card stack" onSubmit={adjust}>
-          <h2>Adjust stock</h2>
-          <p className="small muted">For damage, loss, samples or stock found. Use + to add and − to take away. Removals are valued at average cost and go to 5900 Inventory adjustments.</p>
+          <h2>{tr('Adjust stock')}</h2>
+          <p className="small muted">{tr('For damage, loss, samples or stock found. Use + to add and − to take away. Removals are valued at average cost and go to 5900 Inventory adjustments.')}</p>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <input type="date" value={adj.date} onChange={(e) => setAdj({ ...adj, date: e.target.value })} style={{ width: 160 }} />
             <select required value={adj.product} onChange={(e) => setAdj({ ...adj, product: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-              <option value="">Choose a product…</option>
+              <option value="">{tr('Choose a product…')}</option>
               {items.map((p) => <option key={p.id} value={p.id}>{String(p.values.name)} ({onHand(ws, p.id)} on hand)</option>)}
             </select>
-            <input required inputMode="decimal" value={adj.qty} onChange={(e) => setAdj({ ...adj, qty: e.target.value })} placeholder="+5 or −2" style={{ width: 110, textAlign: 'end' }} />
-            {num(adj.qty) > 0 && <input inputMode="decimal" value={adj.cost} onChange={(e) => setAdj({ ...adj, cost: e.target.value })} placeholder="Cost per unit (blank = average)" style={{ width: 220 }} />}
-            <input required value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} placeholder="Reason (e.g. damaged in storage)" style={{ minWidth: 240 }} />
-            <button>Save</button>
+            <input required inputMode="decimal" value={adj.qty} onChange={(e) => setAdj({ ...adj, qty: e.target.value })} placeholder={tr('+5 or −2')} style={{ width: 110, textAlign: 'end' }} />
+            {num(adj.qty) > 0 && <input inputMode="decimal" value={adj.cost} onChange={(e) => setAdj({ ...adj, cost: e.target.value })} placeholder={tr('Cost per unit (blank = average)')} style={{ width: 220 }} />}
+            <input required value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} placeholder={tr('Reason (e.g. damaged in storage)')} style={{ minWidth: 240 }} />
+            <button>{tr('Save')}</button>
           </div>
         </form>
       )}
       {mode === 'count' && (
         <form className="card stack" onSubmit={count}>
-          <h2>Stock count</h2>
-          <p className="small muted">Type what you counted. Only the products you fill in are changed; each difference is adjusted under one count number.</p>
+          <h2>{tr('Stock count')}</h2>
+          <p className="small muted">{tr('Type what you counted. Only the products you fill in are changed; each difference is adjusted under one count number.')}</p>
           <div className="row" style={{ gap: 8 }}>
             <input type="date" value={countDate} onChange={(e) => setCountDate(e.target.value)} style={{ width: 160 }} />
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (e.g. month-end count)" style={{ minWidth: 240 }} />
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr('Note (e.g. month-end count)')} style={{ minWidth: 240 }} />
           </div>
           <div className="table-wrap">
             <table className="data">
-              <thead><tr><th>Item</th><th className="num">In the system</th><th className="num">Counted</th><th className="num">Difference</th></tr></thead>
+              <thead><tr><th>{tr('Item')}</th><th className="num">{tr('In the system')}</th><th className="num">{tr('Counted')}</th><th className="num">{tr('Difference')}</th></tr></thead>
               <tbody>{items.map((p) => {
                 const q = onHand(ws, p.id)
                 const v = counts[p.id] ?? ''
@@ -305,7 +307,7 @@ export function StockTools() {
               })}</tbody>
             </table>
           </div>
-          <button disabled={!Object.values(counts).some((v) => v !== '')}>Save the count</button>
+          <button disabled={!Object.values(counts).some((v) => v !== '')}>{tr('Save the count')}</button>
         </form>
       )}
     </div>
@@ -349,58 +351,58 @@ export function CloseBooks() {
   const blocked = checks.some((c) => c.blocking && !c.ok)
   const pl = profitAndLoss(ws, `${year}-01-01`, `${year}-12-31`)
   const yearChecks = years.length ? booksHealth(ws, schema, `${year}-12`).filter((c) => c.blocking && !c.ok) : []
-  const label = (mo: string) => new Date(`${mo}-15T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  const label = (mo: string) => new Date(`${mo}-15T00:00:00Z`).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric', timeZone: 'UTC' })
   return (
     <div className="stack">
       <div className={lock ? 'ok-box row' : 'info row'} style={{ gap: 8 }}>
         <Lock size={16} />
         {lock
-          ? <span>The books are closed up to <b>{lock}</b>. Nothing can be posted on or before that date.{closedYears.length > 0 && <> Closed years: {closedYears.map((c) => c.year).join(', ')}.</>}</span>
-          : <span>No period is closed yet. Close each month once its documents are in, so last month’s figures can’t change by accident.</span>}
+          ? <span>{tr('The books are closed up to {date}. Nothing can be posted on or before that date.', { date: lock })}{closedYears.length > 0 && <> {tr('Closed years: {years}.', { years: closedYears.map((c) => c.year).join('، ') })}</>}</span>
+          : <span>{tr('No period is closed yet. Close each month once its documents are in, so last month’s figures can’t change by accident.')}</span>}
       </div>
 
       <div className="card stack">
-        <h2>Month-end close</h2>
-        {months.length === 0 ? <p className="muted small">Every month that has ended is already closed.</p> : (
+        <h2>{tr('Month-end close')}</h2>
+        {months.length === 0 ? <p className="muted small">{tr('Every month that has ended is already closed.')}</p> : (
           <>
-            <label className="field" style={{ width: 220 }}>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
+            <label className="field" style={{ width: 220 }}>{tr('Month')}<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
             <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0, gap: 6 }}>
               {checks.map((c) => (
                 <li key={c.id} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
                   {c.ok ? <CheckCircle2 size={16} color="var(--success)" /> : c.blocking ? <XCircle size={16} color="var(--danger)" /> : <AlertTriangle size={16} color="var(--warning)" />}
-                  <span><b>{c.title}</b> <span className="muted small">· {c.detail}</span></span>
+                  <span><b>{msg(c.title)}</b> <span className="muted small">· {msg(c.detail)}</span></span>
                 </li>
               ))}
             </ul>
             <div className="row" style={{ gap: 10 }}>
-              <button className="primary" disabled={blocked} onClick={() => confirm(`Close ${label(month)}? Nothing dated on or before its last day can be posted afterwards; only an admin can reopen it.`) && act('books.closeMonth', { month }, `${label(month)} closed`, `Closed ${month}`)}>
-                <Lock size={14} /> Close {label(month)}
+              <button className="primary" disabled={blocked} onClick={() => confirm(tr('Close {month}? Nothing dated on or before its last day can be posted afterwards; only an admin can reopen it.', { month: label(month) })) && act('books.closeMonth', { month }, tr('{month} closed', { month: label(month) }), `Closed ${month}`)}>
+                <Lock size={14} /> {tr('Close {month}', { month: label(month) })}
               </button>
-              {blocked && <span className="small muted">Fix the red items first.</span>}
+              {blocked && <span className="small muted">{tr('Fix the red items first.')}</span>}
             </div>
           </>
         )}
       </div>
 
       <div className="card stack">
-        <h2>Year-end close</h2>
-        <p className="small muted">Moves the year’s income and expenses to 3100 Retained earnings in one closing entry dated 31 December, then locks the year. Income and expense accounts start the new year at zero; the balance sheet keeps the profit in equity.</p>
-        {years.length === 0 ? <p className="muted small">No ended year is waiting to be closed.</p> : (
+        <h2>{tr('Year-end close')}</h2>
+        <p className="small muted">{tr('Moves the year’s income and expenses to 3100 Retained earnings in one closing entry dated 31 December, then locks the year. Income and expense accounts start the new year at zero; the balance sheet keeps the profit in equity.')}</p>
+        {years.length === 0 ? <p className="muted small">{tr('No ended year is waiting to be closed.')}</p> : (
           <>
-            <label className="field" style={{ width: 160 }}>Year<select value={year} onChange={(e) => setYear(Number(e.target.value))}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label>
+            <label className="field" style={{ width: 160 }}>{tr('Year')}<select value={year} onChange={(e) => setYear(Number(e.target.value))}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label>
             <div className="table-wrap">
               <table className="data">
                 <tbody>
-                  <tr><td>Income</td><td className="num">{money(pl.totalIncome, cur)}</td></tr>
-                  <tr><td>Expenses (cost of goods included)</td><td className="num">{money(pl.totalExpenses, cur)}</td></tr>
+                  <tr><td>{tr('Income')}</td><td className="num">{money(pl.totalIncome, cur)}</td></tr>
+                  <tr><td>{tr('Expenses (cost of goods included)')}</td><td className="num">{money(pl.totalExpenses, cur)}</td></tr>
                 </tbody>
-                <tfoot><tr><td>{pl.profit >= 0 ? 'Profit' : 'Loss'} to retained earnings</td><td className="num" style={{ color: pl.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(Math.abs(pl.profit), cur)}</td></tr></tfoot>
+                <tfoot><tr><td>{pl.profit >= 0 ? tr('Profit to retained earnings') : tr('Loss to retained earnings')}</td><td className="num" style={{ color: pl.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(Math.abs(pl.profit), cur)}</td></tr></tfoot>
               </table>
             </div>
-            {yearChecks.length > 0 && <div className="error-box">Can’t close yet: {yearChecks.map((c) => c.title.toLowerCase()).join('; ')}.</div>}
+            {yearChecks.length > 0 && <div className="error-box">{tr('Can’t close yet: {problems}.', { problems: yearChecks.map((c) => msg(c.title)).join('؛ ') })}</div>}
             <div>
-              <button className="primary" disabled={yearChecks.length > 0} onClick={() => confirm(`Close ${year}? A closing entry moves ${money(pl.profit, cur)} to retained earnings and the books lock up to ${year}-12-31.`) && act('books.closeYear', { year }, `${year} closed`, `Closed the year ${year}`)}>
-                <Lock size={14} /> Close {year}
+              <button className="primary" disabled={yearChecks.length > 0} onClick={() => confirm(tr('Close {year}? A closing entry moves {amount} to retained earnings and the books lock up to {date}.', { year, amount: money(pl.profit, cur), date: `${year}-12-31` })) && act('books.closeYear', { year }, tr('{year} closed', { year }), `Closed the year ${year}`)}>
+                <Lock size={14} /> {tr('Close {year}', { year })}
               </button>
             </div>
           </>
@@ -410,16 +412,16 @@ export function CloseBooks() {
       {lock && isAdmin && (
         <form className="card stack" onSubmit={(e) => {
           e.preventDefault()
-          if (!confirm(`Reopen the books after ${reopenDate}? ${closedYears.some((c) => `${c.year}-12-31` > reopenDate) ? 'Closed years in that range have their closing entry reversed. ' : ''}This is recorded in the audit trail with your reason.`)) return
-          if (act('books.reopen', { date: reopenDate, reason }, 'Books reopened', `Reopened the books after ${reopenDate}`) !== undefined) setReason('')
+          if (!confirm(`${tr('Reopen the books after {date}?', { date: reopenDate })} ${closedYears.some((c) => `${c.year}-12-31` > reopenDate) ? tr('Closed years in that range have their closing entry reversed.') : ''} ${tr('This is recorded in the audit trail with your reason.')}`)) return
+          if (act('books.reopen', { date: reopenDate, reason }, tr('Books reopened'), `Reopened the books after ${reopenDate}`) !== undefined) setReason('')
         }}>
-          <h2>Reopen (admin)</h2>
-          <p className="small muted">Only for a real correction, e.g. a supplier bill found after the close. Choose the last day that stays closed; everything after it opens again.</p>
+          <h2>{tr('Reopen (admin)')}</h2>
+          <p className="small muted">{tr('Only for a real correction, e.g. a supplier bill found after the close. Choose the last day that stays closed; everything after it opens again.')}</p>
           <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-            <label className="field" style={{ width: 190 }}>Keep closed up to<input type="date" required max={lock} value={reopenDate} onChange={(e) => setReopenDate(e.target.value)} /></label>
-            <label className="field grow">Reason<input required minLength={10} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. October electricity bill arrived late" /></label>
+            <label className="field" style={{ width: 190 }}>{tr('Keep closed up to')}<input type="date" required max={lock} value={reopenDate} onChange={(e) => setReopenDate(e.target.value)} /></label>
+            <label className="field grow">{tr('Reason')}<input required minLength={10} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tr('e.g. October electricity bill arrived late')} /></label>
           </div>
-          <div><button className="danger" type="submit"><Unlock size={14} /> Reopen</button></div>
+          <div><button className="danger" type="submit"><Unlock size={14} /> {tr('Reopen')}</button></div>
         </form>
       )}
     </div>
@@ -470,22 +472,22 @@ export function TaxReturns() {
   const box = (title: string, rows: VatBox[], total: number) => (
     <div className="table-wrap">
       <table className="data">
-        <thead><tr><th>{title}</th><th className="num">Value before VAT</th><th className="num">VAT</th></tr></thead>
+        <thead><tr><th>{title}</th><th className="num">{tr('Value before VAT')}</th><th className="num">{tr('VAT')}</th></tr></thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={3} className="muted">Nothing this month.</td></tr>}
-          {rows.map((b) => <tr key={b.code}><td><span className="mono">{b.code}</span> {b.name}</td><td className="num">{money(b.base, cur)}</td><td className="num">{money(b.vat, cur)}</td></tr>)}
+          {rows.length === 0 && <tr><td colSpan={3} className="muted">{tr('Nothing this month.')}</td></tr>}
+          {rows.map((b) => <tr key={b.code}><td><span className="mono">{b.code}</span> {getLang() === 'ar' ? taxCode(b.code)?.nameAr ?? b.name : b.name}</td><td className="num">{money(b.base, cur)}</td><td className="num">{money(b.vat, cur)}</td></tr>)}
         </tbody>
-        <tfoot><tr><td>Total</td><td className="num">{money(round2(rows.reduce((s, b) => s + b.base, 0)), cur)}</td><td className="num">{money(total, cur)}</td></tr></tfoot>
+        <tfoot><tr><td>{tr('Total')}</td><td className="num">{money(round2(rows.reduce((s, b) => s + b.base, 0)), cur)}</td><td className="num">{money(total, cur)}</td></tr></tfoot>
       </table>
     </div>
   )
   const whtTable = (rows: WhtRow[], who: string) => (
     <div className="table-wrap">
       <table className="data">
-        <thead><tr><th>Date</th><th>{who}</th><th>Tax reg. no.</th><th>Nature</th><th className="num">Before VAT</th><th className="num">Tax</th></tr></thead>
+        <thead><tr><th>{tr('Date')}</th><th>{who}</th><th>{tr('Tax reg. no.')}</th><th>{tr('Nature')}</th><th className="num">{tr('Before VAT')}</th><th className="num">{tr('Tax')}</th></tr></thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={6} className="muted">None this quarter.</td></tr>}
-          {rows.map((x, i) => <tr key={i}><td>{x.date}</td><td>{x.name}</td><td className="mono">{x.taxId || <span className="pill red tiny">missing</span>}</td><td>{whtName(x.rate)}</td><td className="num">{money(x.base, cur)}</td><td className="num">{money(x.amount, cur)}</td></tr>)}
+          {rows.length === 0 && <tr><td colSpan={6} className="muted">{tr('None this quarter.')}</td></tr>}
+          {rows.map((x, i) => <tr key={i}><td>{x.date}</td><td>{x.name}</td><td className="mono">{x.taxId || <span className="pill red tiny">{tr('missing')}</span>}</td><td>{whtLabel(x.rate)}</td><td className="num">{money(x.base, cur)}</td><td className="num">{money(x.amount, cur)}</td></tr>)}
         </tbody>
       </table>
     </div>
@@ -494,55 +496,55 @@ export function TaxReturns() {
     <div className="stack">
       <div className="card stack">
         <div className="row between" style={{ flexWrap: 'wrap', gap: 10 }}>
-          <h2 style={{ margin: 0 }}>VAT return</h2>
-          <label className="field" style={{ width: 200 }}>Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{mo}</option>)}</select></label>
+          <h2 style={{ margin: 0 }}>{tr('VAT return')}</h2>
+          <label className="field" style={{ width: 200 }}>{tr('Month')}<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{mo}</option>)}</select></label>
         </div>
-        {box('Sales (output VAT)', r.sales, r.output)}
-        {box('Purchases (input VAT)', r.purchases, r.input)}
+        {box(tr('Sales (output VAT)'), r.sales, r.output)}
+        {box(tr('Purchases (input VAT)'), r.purchases, r.input)}
         <div className="table-wrap">
           <table className="data">
             <tbody>
-              <tr><td>Output VAT − input VAT</td><td className="num">{money(r.due, cur)}</td></tr>
-              {r.carried > 0 && <tr><td>Credit carried from earlier months</td><td className="num">− {money(r.carried, cur)}</td></tr>}
+              <tr><td>{tr('Output VAT − input VAT')}</td><td className="num">{money(r.due, cur)}</td></tr>
+              {r.carried > 0 && <tr><td>{tr('Credit carried from earlier months')}</td><td className="num">− {money(r.carried, cur)}</td></tr>}
             </tbody>
-            <tfoot><tr><td>{r.due < 0 ? 'Credit to carry forward' : 'To pay to the Tax Authority'}</td><td className="num">{money(r.due < 0 ? -r.due : r.toPay, cur)}</td></tr></tfoot>
+            <tfoot><tr><td>{r.due < 0 ? tr('Credit to carry forward') : tr('To pay to the Tax Authority')}</td><td className="num">{money(r.due < 0 ? -r.due : r.toPay, cur)}</td></tr></tfoot>
           </table>
         </div>
         <div className={r.matches ? 'ok-box row' : 'error-box row'} style={{ gap: 8 }}>
           {r.matches ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-          {r.matches ? 'The documents agree with the VAT accounts (2200 and 1400) for this month.' : `The VAT accounts show output ${money(r.ledger.output, cur)} and input ${money(r.ledger.input, cur)}, which differ from the documents. Contact support before filing.`}
+          {r.matches ? tr('The documents agree with the VAT accounts (2200 and 1400) for this month.') : tr('The VAT accounts show output {output} and input {input}, which differ from the documents. Contact support before filing.', { output: money(r.ledger.output, cur), input: money(r.ledger.input, cur) })}
         </div>
         {missing.length > 0 && (
           <div className="warn-box">
-            <b>{missing.length} invoice{missing.length > 1 ? 's' : ''} of {month} without an e-invoice number</b> (issue {missing.length > 1 ? 'them' : 'it'} on the ETA portal and enter the number on the invoice):{' '}
-            {missing.map((x, i) => <span key={x.id}>{i > 0 && ', '}<Link className="mono" to={`/app/r/${x.id}`}>{x.number}</Link></span>)}
+            <b>{tr('Invoices of {month} without an e-invoice number: {n}', { month, n: missing.length })}</b> {tr('(issue them on the ETA portal and enter the number on each invoice):')}{' '}
+            {missing.map((x, i) => <span key={x.id}>{i > 0 && '، '}<Link className="mono" to={`/app/r/${x.id}`}>{x.number}</Link></span>)}
           </div>
         )}
         {r.settled
-          ? <div className="info row" style={{ gap: 8 }}><Lock size={16} /> Settled on {r.settled.at.slice(0, 10)}: {money(Math.abs(r.settled.due), cur)} {r.settled.due >= 0 ? 'moved to 2210 VAT due to the Tax Authority' : 'credit kept in 2210'}. Record the payment to the Authority with a journal voucher (debit 2210, credit the bank).</div>
+          ? <div className="info row" style={{ gap: 8 }}><Lock size={16} /> {tr(r.settled.due >= 0 ? 'Settled on {date}: {amount} moved to 2210 VAT due to the Tax Authority.' : 'Settled on {date}: {amount} credit kept in 2210.', { date: r.settled.at.slice(0, 10), amount: money(Math.abs(r.settled.due), cur) })} {tr('Record the payment to the Authority with a journal voucher (debit 2210, credit the bank).')}</div>
           : (
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-              <button className="primary" disabled={!closed || later || !r.matches} onClick={() => confirm(`Settle the VAT for ${month}? Output and input VAT move to 2210 VAT due to the Tax Authority, dated ${r.to}.`) && act('vat.settle', { month }, `VAT for ${month} settled`, `Settled VAT for ${month}`)}>
-                <FileCheck size={14} /> Settle VAT for {month}
+              <button className="primary" disabled={!closed || later || !r.matches} onClick={() => confirm(tr('Settle the VAT for {month}? Output and input VAT move to 2210 VAT due to the Tax Authority, dated {date}.', { month, date: r.to })) && act('vat.settle', { month }, tr('VAT for {month} settled', { month }), `Settled VAT for ${month}`)}>
+                <FileCheck size={14} /> {tr('Settle VAT for {month}', { month })}
               </button>
-              {!closed && <span className="small muted">Close {month} first (Close the books tab), so its figures can’t change after you file.</span>}
-              {closed && later && <span className="small muted">A later month is already settled.</span>}
+              {!closed && <span className="small muted">{tr('Close {month} first (Close the books tab), so its figures can’t change after you file.', { month })}</span>}
+              {closed && later && <span className="small muted">{tr('A later month is already settled.')}</span>}
             </div>
           )}
       </div>
 
       <div className="card stack">
         <div className="row between" style={{ flexWrap: 'wrap', gap: 10 }}>
-          <h2 style={{ margin: 0 }}>Withholding tax (Form 41)</h2>
-          <label className="field" style={{ width: 200 }}>Quarter<select value={qi} onChange={(e) => setQi(Number(e.target.value))}>{quarters.map((q, i) => <option key={i} value={i}>Q{q.quarter} {q.year}</option>)}</select></label>
+          <h2 style={{ margin: 0 }}>{tr('Withholding tax (Form 41)')}</h2>
+          <label className="field" style={{ width: 200 }}>{tr('Quarter')}<select value={qi} onChange={(e) => setQi(Number(e.target.value))}>{quarters.map((q, i) => <option key={i} value={i}>{tr('Q{q} {year}', { q: q.quarter, year: q.year })}</option>)}</select></label>
         </div>
-        <p className="small muted" style={{ margin: 0 }}>Choose the withholding rate when you register a payment. What you keep back from suppliers is owed to the Tax Authority (account 2400) and goes on Form 41; what customers deduct from you is a claim (account 1450), to match against the certificates they send.</p>
-        <h3 style={{ margin: 0 }}>Kept back from suppliers: {money(w.totalWithheld, cur)}</h3>
-        {whtTable(w.withheld, 'Supplier')}
-        {w.missingTaxIds.length > 0 && <div className="error-box">Add the tax registration number of {w.missingTaxIds.join(', ')} before filing.</div>}
-        <div><button className="secondary" disabled={!w.withheld.length} onClick={() => download(`form-41-${year}-Q${quarter}.csv`, form41Csv(ws, year, quarter))}><Download size={14} /> Download Form 41 (CSV)</button></div>
-        <h3 style={{ margin: 0 }}>Deducted by customers: {money(w.totalDeducted, cur)}</h3>
-        {whtTable(w.deducted, 'Customer')}
+        <p className="small muted" style={{ margin: 0 }}>{tr('Choose the withholding rate when you register a payment. What you keep back from suppliers is owed to the Tax Authority (account 2400) and goes on Form 41; what customers deduct from you is a claim (account 1450), to match against the certificates they send.')}</p>
+        <h3 style={{ margin: 0 }}>{tr('Kept back from suppliers: {amount}', { amount: money(w.totalWithheld, cur) })}</h3>
+        {whtTable(w.withheld, tr('Supplier'))}
+        {w.missingTaxIds.length > 0 && <div className="error-box">{tr('Add the tax registration number of {names} before filing.', { names: w.missingTaxIds.join('، ') })}</div>}
+        <div><button className="secondary" disabled={!w.withheld.length} onClick={() => download(`form-41-${year}-Q${quarter}.csv`, form41Csv(ws, year, quarter))}><Download size={14} /> {tr('Download Form 41 (CSV)')}</button></div>
+        <h3 style={{ margin: 0 }}>{tr('Deducted by customers: {amount}', { amount: money(w.totalDeducted, cur) })}</h3>
+        {whtTable(w.deducted, tr('Customer'))}
       </div>
     </div>
   )

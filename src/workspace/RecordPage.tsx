@@ -13,7 +13,7 @@ import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 import { moneyAccounts } from '../lib/accounts'
-import { dateLocale, msg, tr } from '../lib/i18n'
+import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -362,7 +362,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
                   <td>
                     <select value={lineTaxCode(l)} onChange={(e) => upd(i, { taxCode: e.target.value, vat: TAX_CODES.find((t) => t.code === e.target.value)?.rate ?? l.vat })} disabled={disabled} style={{ width: 150 }} title={tr('VAT treatment of this line')}>
                       {!TAX_CODES.some((t) => t.code === lineTaxCode(l)) && <option value={lineTaxCode(l)}>VAT {l.vat}%</option>}
-                      {TAX_CODES.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+                      {TAX_CODES.map((t) => <option key={t.code} value={t.code}>{getLang() === 'ar' ? t.nameAr : t.name}</option>)}
                     </select>
                   </td>
                   <td className="num">{lineNet(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
@@ -429,7 +429,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
             <label className="field">{sales ? tr('Withholding tax the customer deducted') : tr('Withholding tax to keep back')}
               <select value={wht} onChange={(e) => setWht(Number(e.target.value))}>
                 <option value={0}>{tr('None')}</option>
-                {WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{w.name}</option>)}
+                {WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{getLang() === 'ar' ? w.nameAr : w.name}</option>)}
               </select>
             </label>
           )}

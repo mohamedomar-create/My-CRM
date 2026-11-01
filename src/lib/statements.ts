@@ -3,6 +3,7 @@
 import type { JournalEntry, Workspace } from './types'
 import { account, accountName, chartOf, moneyKind, type Account } from './accounts'
 import { isClosingEntry, round2 } from './engine'
+import { N_ } from './i18n'
 
 export interface Row {
   code: string
@@ -45,12 +46,12 @@ const isCostOfSales = (a: Account) => a.type === 'expense' && (a.code === '5000'
 /** Profit and loss for entries dated from…to (inclusive). The year-end closing entries are left out. */
 export function incomeStatement(ws: Workspace, from: string, to: string, lang: 'en' | 'ar' = 'en') {
   const b = balances(ws, (j) => inPeriod(j, from, to) && !isClosingEntry(j))
-  const revenue = section(ws, 'Revenue', b, (a) => a.type === 'income' && !isOtherIncome(a), -1, lang)
-  const cost = section(ws, 'Cost of sales', b, isCostOfSales, 1, lang)
+  const revenue = section(ws, N_('Revenue'), b, (a) => a.type === 'income' && !isOtherIncome(a), -1, lang)
+  const cost = section(ws, N_('Cost of sales'), b, isCostOfSales, 1, lang)
   const gross = round2(revenue.total - cost.total)
-  const overheads = section(ws, 'Operating expenses', b, (a) => a.type === 'expense' && !isCostOfSales(a), 1, lang)
+  const overheads = section(ws, N_('Operating expenses'), b, (a) => a.type === 'expense' && !isCostOfSales(a), 1, lang)
   const operating = round2(gross - overheads.total)
-  const other = section(ws, 'Other income', b, isOtherIncome, -1, lang)
+  const other = section(ws, N_('Other income'), b, isOtherIncome, -1, lang)
   const net = round2(operating + other.total)
   return { from, to, revenue, cost, gross, grossMargin: revenue.total ? round2((gross / revenue.total) * 100) : 0, overheads, operating, other, net }
 }
@@ -63,9 +64,9 @@ export function incomeStatement(ws: Workspace, from: string, to: string, lang: '
  */
 export function balanceSheet(ws: Workspace, asOf: string, lang: 'en' | 'ar' = 'en') {
   const b = balances(ws, (j) => j.date <= asOf)
-  const assets = section(ws, 'Assets', b, (a) => a.type === 'asset', 1, lang)
-  const liabilities = section(ws, 'Liabilities', b, (a) => a.type === 'liability', -1, lang)
-  const equity = section(ws, 'Equity', b, (a) => a.type === 'equity', -1, lang)
+  const assets = section(ws, N_('Assets'), b, (a) => a.type === 'asset', 1, lang)
+  const liabilities = section(ws, N_('Liabilities'), b, (a) => a.type === 'liability', -1, lang)
+  const equity = section(ws, N_('Equity'), b, (a) => a.type === 'equity', -1, lang)
   let unclosed = 0
   for (const a of chartOf(ws)) if (a.type === 'income' || a.type === 'expense') unclosed -= b.get(a.code) ?? 0
   unclosed = round2(unclosed)
@@ -84,15 +85,15 @@ export function balanceSheet(ws: Workspace, asOf: string, lang: 'en' | 'ar' = 'e
 type Flow = 'customers' | 'suppliers' | 'expenses' | 'taxes' | 'otherOperating' | 'investing' | 'loans' | 'owners' | 'opening'
 
 const FLOW: Record<Flow, string> = {
-  customers: 'Received from customers',
-  suppliers: 'Paid to suppliers',
-  expenses: 'Paid for expenses (rent, salaries, services…)',
-  taxes: 'Taxes paid or refunded (VAT, withholding)',
-  otherOperating: 'Other operating',
-  investing: 'Fixed assets bought or sold',
-  loans: 'Loans taken or repaid',
-  owners: 'Owners’ capital and drawings',
-  opening: 'Opening balances entered',
+  customers: N_('Received from customers'),
+  suppliers: N_('Paid to suppliers'),
+  expenses: N_('Paid for expenses (rent, salaries, services…)'),
+  taxes: N_('Taxes paid or refunded (VAT, withholding)'),
+  otherOperating: N_('Other operating'),
+  investing: N_('Fixed assets bought or sold'),
+  loans: N_('Loans taken or repaid'),
+  owners: N_('Owners’ capital and drawings'),
+  opening: N_('Opening balances entered'),
 }
 
 function flowOf(ws: Workspace, code: string): Flow {
@@ -133,9 +134,9 @@ export function cashFlow(ws: Workspace, from: string, to: string) {
     const rows = keys.filter((k) => (flows.get(k) ?? 0) !== 0).map((k) => ({ code: k, name: FLOW[k], amount: flows.get(k)! }))
     return { title, rows, total: sum(rows) }
   }
-  const operating = group('Operating activities', ['customers', 'suppliers', 'expenses', 'taxes', 'otherOperating'])
-  const investing = group('Investing activities', ['investing'])
-  const financing = group('Financing activities', ['loans', 'owners', 'opening'])
+  const operating = group(N_('Operating activities'), ['customers', 'suppliers', 'expenses', 'taxes', 'otherOperating'])
+  const investing = group(N_('Investing activities'), ['investing'])
+  const financing = group(N_('Financing activities'), ['loans', 'owners', 'opening'])
   const net = round2(operating.total + investing.total + financing.total)
   return { from, to, opening: round2(opening), operating, investing, financing, net, closing: round2(closing), agrees: round2(opening + net) === round2(closing) }
 }

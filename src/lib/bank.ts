@@ -1,6 +1,7 @@
 // Bank statement import: reads the CSV most Egyptian banks export (date, description, amount — or debit and credit
 // columns) and suggests which book movements each statement line is, so reconciliation is mostly ticking.
 import type { BankLine } from './engine'
+import { N_ } from './i18n'
 
 export interface StatementRow {
   date: string
@@ -46,7 +47,7 @@ function toDate(v: string) {
 /** Reads a statement CSV. Throws a plain message when the columns can't be found. */
 export function parseStatementCsv(text: string): StatementRow[] {
   const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim())
-  if (lines.length < 2) throw new Error('The file has no rows')
+  if (lines.length < 2) throw new Error(N_('The file has no rows'))
   const sep = [',', ';', '\t'].sort((a, b) => lines[0].split(b).length - lines[0].split(a).length)[0]
   const head = splitCsv(lines[0], sep).map((h) => h.toLowerCase())
   const find = (...names: string[]) => head.findIndex((h) => names.some((n) => h.includes(n)))
@@ -55,7 +56,7 @@ export function parseStatementCsv(text: string): StatementRow[] {
   const amount = find('amount', 'المبلغ')
   const debit = find('debit', 'withdrawal', 'مدين', 'سحب')
   const credit = find('credit', 'deposit', 'دائن', 'إيداع')
-  if (date < 0 || (amount < 0 && (debit < 0 || credit < 0))) throw new Error('Couldn’t find the date and amount columns (or debit and credit columns) in the first row')
+  if (date < 0 || (amount < 0 && (debit < 0 || credit < 0))) throw new Error(N_('Couldn’t find the date and amount columns (or debit and credit columns) in the first row'))
   const rows: StatementRow[] = []
   for (const l of lines.slice(1)) {
     const c = splitCsv(l, sep)

@@ -14,6 +14,7 @@ let lang: Lang = (() => {
 const subs = new Set<() => void>()
 
 function apply() {
+  if (typeof document === 'undefined') return
   document.documentElement.lang = lang
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'
 }
@@ -109,6 +110,9 @@ export function translateMessage(l: Lang, msg: string) {
   }
   return msg
 }
+
+/** The language chosen now (for code outside components). */
+export const getLang = () => lang
 
 /** A message (possibly carrying values) in the language chosen now. */
 export const msg = (m: string) => translateMessage(lang, m)

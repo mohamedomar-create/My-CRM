@@ -9,15 +9,16 @@ import { moneyAccounts, moneyKind } from '../lib/accounts'
 import { matchStatement, parseStatementCsv, type StatementRow } from '../lib/bank'
 import { WHT_RATES } from '../lib/tax'
 import { moduleByRole } from '../lib/schema'
+import { N_, getLang, msg, tr } from '../lib/i18n'
 
 type Method = 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
 
 const STATE: Record<ChequeState, [string, string]> = {
-  in_hand: ['in hand', 'amber'],
-  issued: ['issued', 'amber'],
-  deposited: ['under collection', ''],
-  cleared: ['cleared', 'green'],
-  bounced: ['bounced', 'red'],
+  in_hand: [N_('in hand'), 'amber'],
+  issued: [N_('issued'), 'amber'],
+  deposited: [N_('under collection'), ''],
+  cleared: [N_('cleared'), 'green'],
+  bounced: [N_('bounced'), 'red'],
 }
 
 export default function Treasury() {
@@ -33,9 +34,9 @@ export default function Treasury() {
             <div className="kpi-value" style={accountBalance(ws, a.code) < 0 ? { color: 'var(--danger)' } : undefined}>{money(accountBalance(ws, a.code), cur)}</div>
           </div>
         ))}
-        <div className="card"><h2>Cheques in hand and under collection</h2><div className="kpi-value">{money(round2(accountBalance(ws, '1150') + accountBalance(ws, '1160')), cur)}</div><div className="kpi-sub">Issued, not yet cashed: {money(-accountBalance(ws, '2150'), cur)}</div></div>
+        <div className="card"><h2>{tr('Cheques in hand and under collection')}</h2><div className="kpi-value">{money(round2(accountBalance(ws, '1150') + accountBalance(ws, '1160')), cur)}</div><div className="kpi-sub">{tr('Issued, not yet cashed: {amount}', { amount: money(-accountBalance(ws, '2150'), cur) })}</div></div>
       </div>
-      <p className="small muted" style={{ margin: 0 }}>Add another cash box or bank account in the Chart of accounts (an asset account that payments can go through). Moving money between them, or paying the Tax Authority, is a journal voucher.</p>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Add another cash box or bank account in the Chart of accounts (an asset account that payments can go through). Moving money between them, or paying the Tax Authority, is a journal voucher.')}</p>
       <Voucher />
       <ChequeRegister />
       <Reconcile />
@@ -83,7 +84,7 @@ function Voucher() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const allocations = docs.filter((r) => Number(amounts[r.id]) > 0).map((r) => ({ doc: r.id, amount: Number(amounts[r.id]) }))
-    const out = act<{ voucher: string }>('payment.voucher', { party: who, date, method, wht, allocations, ...(method === 'cheque' ? { cheque } : { account: chosen }) }, side === 'in' ? 'Receipt registered' : 'Payment registered', `${side === 'in' ? 'Receipt' : 'Payment'} voucher`)
+    const out = act<{ voucher: string }>('payment.voucher', { party: who, date, method, wht, allocations, ...(method === 'cheque' ? { cheque } : { account: chosen }) }, side === 'in' ? tr('Receipt registered') : tr('Payment registered'), `${side === 'in' ? tr('Receipt') : tr('Payment')} voucher`)
     if (out) {
       setAmounts({})
       setReceived('')
@@ -92,22 +93,22 @@ function Voucher() {
   return (
     <form className="card stack" onSubmit={submit}>
       <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h2 style={{ margin: 0 }}>{side === 'in' ? 'Receipt voucher' : 'Payment voucher'}</h2>
+        <h2 style={{ margin: 0 }}>{side === 'in' ? tr('Receipt voucher') : tr('Payment voucher')}</h2>
         <div className="seg">
-          <button type="button" className={side === 'in' ? 'on' : ''} onClick={() => { setSide('in'); setParty(''); setAmounts({}) }}>From a customer</button>
-          <button type="button" className={side === 'out' ? 'on' : ''} onClick={() => { setSide('out'); setParty(''); setAmounts({}) }}>To a supplier</button>
+          <button type="button" className={side === 'in' ? 'on' : ''} onClick={() => { setSide('in'); setParty(''); setAmounts({}) }}>{tr('From a customer')}</button>
+          <button type="button" className={side === 'out' ? 'on' : ''} onClick={() => { setSide('out'); setParty(''); setAmounts({}) }}>{tr('To a supplier')}</button>
         </div>
       </div>
-      <p className="small muted" style={{ margin: 0 }}>One payment that settles several {side === 'in' ? 'invoices' : 'bills'} at once. Type the amount and it is spread over the oldest first, or set each line yourself.</p>
+      <p className="small muted" style={{ margin: 0 }}>{side === 'in' ? tr('One payment that settles several invoices at once. Type the amount and it is spread over the oldest first, or set each line yourself.') : tr('One payment that settles several bills at once. Type the amount and it is spread over the oldest first, or set each line yourself.')}</p>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <label className="field grow">{side === 'in' ? 'Customer' : 'Supplier'}<select required value={who} onChange={(e) => { setParty(e.target.value); setAmounts({}); setReceived('') }}><option value="">Choose…</option>{parties.map((p) => <option key={p} value={p}>{recordTitle(ws, schema, list(ws, moduleByRole(schema, side === 'in' ? 'accounts' : 'suppliers')?.id ?? '').find((x) => x.id === p))}</option>)}</select></label>
-        <label className="field" style={{ width: 160 }}>Date<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label className="field" style={{ width: 160 }}>Amount<input inputMode="decimal" value={received} onChange={(e) => spread(e.target.value)} disabled={!who} /></label>
+        <label className="field grow">{side === 'in' ? tr('Customer') : tr('Supplier')}<select required value={who} onChange={(e) => { setParty(e.target.value); setAmounts({}); setReceived('') }}><option value="">{tr('Choose…')}</option>{parties.map((p) => <option key={p} value={p}>{recordTitle(ws, schema, list(ws, moduleByRole(schema, side === 'in' ? 'accounts' : 'suppliers')?.id ?? '').find((x) => x.id === p))}</option>)}</select></label>
+        <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="field" style={{ width: 160 }}>{tr('Amount')}<input inputMode="decimal" value={received} onChange={(e) => spread(e.target.value)} disabled={!who} /></label>
       </div>
       {who && (
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Document</th><th>Date</th><th className="num">Owed</th><th className="num">This payment</th></tr></thead>
+            <thead><tr><th>{tr('Document')}</th><th>{tr('Date')}</th><th className="num">{tr('Owed')}</th><th className="num">{tr('This payment')}</th></tr></thead>
             <tbody>{docs.map((r) => (
               <tr key={r.id} style={{ cursor: 'default' }}>
                 <td><Link className="mono" to={`/app/r/${r.id}`}>{r.number}</Link></td>
@@ -116,24 +117,24 @@ function Voucher() {
                 <td style={{ width: 150 }}><input inputMode="decimal" value={amounts[r.id] ?? ''} onChange={(e) => setAmounts({ ...amounts, [r.id]: e.target.value })} style={{ textAlign: 'end' }} /></td>
               </tr>
             ))}</tbody>
-            <tfoot><tr><td colSpan={3}>Total</td><td className="num">{money(total, cur)}</td></tr></tfoot>
+            <tfoot><tr><td colSpan={3}>{tr('Total')}</td><td className="num">{money(total, cur)}</td></tr></tfoot>
           </table>
         </div>
       )}
-      <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+      <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? tr('InstaPay') : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         {method === 'cheque' ? (
           <>
-            <label className="field" style={{ width: 140 }}>Cheque no.<input required value={cheque.no} onChange={(e) => setCheque({ ...cheque, no: e.target.value })} /></label>
-            <label className="field" style={{ width: 150 }}>Bank<input value={cheque.bank} onChange={(e) => setCheque({ ...cheque, bank: e.target.value })} /></label>
-            <label className="field" style={{ width: 160 }}>Cheque date<input type="date" value={cheque.due} onChange={(e) => setCheque({ ...cheque, due: e.target.value })} /></label>
+            <label className="field" style={{ width: 140 }}>{tr('Cheque no.')}<input required value={cheque.no} onChange={(e) => setCheque({ ...cheque, no: e.target.value })} /></label>
+            <label className="field" style={{ width: 150 }}>{tr('Bank')}<input value={cheque.bank} onChange={(e) => setCheque({ ...cheque, bank: e.target.value })} /></label>
+            <label className="field" style={{ width: 160 }}>{tr('Cheque date')}<input type="date" value={cheque.due} onChange={(e) => setCheque({ ...cheque, due: e.target.value })} /></label>
           </>
         ) : (
-          <label className="field" style={{ width: 240 }}>{kind === 'cash' ? 'Cash box' : 'Bank account'}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
+          <label className="field" style={{ width: 240 }}>{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
         )}
-        <label className="field" style={{ width: 260 }}>Withholding tax<select value={wht} onChange={(e) => setWht(Number(e.target.value))}><option value={0}>None</option>{WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{w.name}</option>)}</select></label>
+        <label className="field" style={{ width: 260 }}>{tr('Withholding tax')}<select value={wht} onChange={(e) => setWht(Number(e.target.value))}><option value={0}>{tr('None')}</option>{WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{getLang() === 'ar' ? w.nameAr : w.name}</option>)}</select></label>
       </div>
-      <div><button className="success" disabled={!who || total <= 0}><CheckCircle2 size={15} /> Register {money(total, cur)}</button></div>
+      <div><button className="success" disabled={!who || total <= 0}><CheckCircle2 size={15} /> {tr('Register {amount}', { amount: money(total, cur) })}</button></div>
     </form>
   )
 }
@@ -151,18 +152,18 @@ function ChequeRegister() {
   const partyName = (id: string) => recordTitle(ws, schema, [...list(ws, moduleByRole(schema, 'accounts')?.id ?? ''), ...list(ws, moduleByRole(schema, 'suppliers')?.id ?? '')].find((r) => r.id === id))
   const pickBank = () => {
     if (banks.length === 1) return banks[0].code
-    const v = prompt(`Which bank account? ${banks.map((b) => `${b.code} ${b.name}`).join(', ')}`, banks[0]?.code)
+    const v = prompt(tr('Which bank account? {list}', { list: banks.map((b) => `${b.code} ${b.name}`).join('، ') }), banks[0]?.code)
     return v?.trim() || undefined
   }
-  const pickDate = (label: string, def: string) => prompt(`${label} (yyyy-mm-dd)`, def)?.trim()
+  const pickDate = (label: string, def: string) => prompt(`${tr(label)} (yyyy-mm-dd)`, def)?.trim()
   return (
     <div className="card stack">
-      <div className="row between"><h2 style={{ margin: 0 }}>Cheque register</h2><label className="row small" style={{ gap: 6 }}><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show cleared and bounced</label></div>
+      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Cheque register')}</h2><label className="row small" style={{ gap: 6 }}><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> {tr('Show cleared and bounced')}</label></div>
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>Cheque</th><th>From / to</th><th>Received / issued</th><th>Cheque date</th><th className="num">Amount</th><th>State</th><th /></tr></thead>
+          <thead><tr><th>{tr('Cheque')}</th><th>{tr('From / to')}</th><th>{tr('Received / issued')}</th><th>{tr('Cheque date')}</th><th className="num">{tr('Amount')}</th><th>{tr('State')}</th><th /></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={7} className="muted">No open cheques. Register a payment by cheque to add one.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="muted">{tr('No open cheques. Register a payment by cheque to add one.')}</td></tr>}
             {rows.map((c) => (
               <tr key={c.id} style={{ cursor: 'default' }}>
                 <td className="mono">{c.no}{c.bank && <span className="muted small"> · {c.bank}</span>}</td>
@@ -170,11 +171,11 @@ function ChequeRegister() {
                 <td>{c.date}</td>
                 <td style={{ color: c.due <= today && (c.state === 'in_hand' || c.state === 'issued') ? 'var(--warning)' : undefined }}>{c.due}</td>
                 <td className="num">{money(c.amount, cur)}</td>
-                <td><span className={`pill ${STATE[c.state][1]} tiny`}>{STATE[c.state][0]}</span></td>
+                <td><span className={`pill ${STATE[c.state][1]} tiny`}>{tr(STATE[c.state][0])}</span></td>
                 <td className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
-                  {c.state === 'in_hand' && <button className="ghost small" onClick={() => { const account = pickBank(); const date = pickDate('Deposit date', today); if (account && date) act('cheque.deposit', { id: c.id, account, date }, 'Cheque deposited', `Deposited cheque ${c.no}`) }}>Deposit</button>}
-                  {(c.state === 'deposited' || c.state === 'issued') && <button className="ghost small" onClick={() => { const account = c.state === 'issued' ? pickBank() : undefined; const date = pickDate('Date the bank paid it', c.due > today ? today : c.due); if (date && (account || c.state === 'deposited')) act('cheque.clear', { id: c.id, date, account }, 'Cheque cleared', `Cleared cheque ${c.no}`) }}>Cleared</button>}
-                  {(c.state === 'in_hand' || c.state === 'deposited' || c.state === 'issued') && <button className="ghost small" onClick={() => { const reason = prompt('Why? (e.g. insufficient funds, cancelled)'); const date = reason && pickDate('Date', today); if (reason && date) act('cheque.bounce', { id: c.id, date, reason }, 'Cheque bounced: the documents are owed again', `Cheque ${c.no} bounced`) }}>Bounced</button>}
+                  {c.state === 'in_hand' && <button className="ghost small" onClick={() => { const account = pickBank(); const date = pickDate(N_('Deposit date'), today); if (account && date) act('cheque.deposit', { id: c.id, account, date }, tr('Cheque deposited'), `Deposited cheque ${c.no}`) }}>{tr('Deposit')}</button>}
+                  {(c.state === 'deposited' || c.state === 'issued') && <button className="ghost small" onClick={() => { const account = c.state === 'issued' ? pickBank() : undefined; const date = pickDate(N_('Date the bank paid it'), c.due > today ? today : c.due); if (date && (account || c.state === 'deposited')) act('cheque.clear', { id: c.id, date, account }, tr('Cheque cleared'), `Cleared cheque ${c.no}`) }}>{tr('Cleared')}</button>}
+                  {(c.state === 'in_hand' || c.state === 'deposited' || c.state === 'issued') && <button className="ghost small" onClick={() => { const reason = prompt(tr('Why? (e.g. insufficient funds, cancelled)')); const date = reason && pickDate(N_('Date'), today); if (reason && date) act('cheque.bounce', { id: c.id, date, reason }, tr('Cheque bounced: the documents are owed again'), `Cheque ${c.no} bounced`) }}>{tr('Bounced')}</button>}
                 </td>
               </tr>
             ))}
@@ -212,12 +213,12 @@ function Reconcile() {
       const last = rows.map((r) => r.date).sort().pop()
       if (last) setDate(last)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t read the file')
+      setError(e instanceof Error ? e.message : tr('Couldn’t read the file'))
     }
   }
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (act('bank.reconcile', { account: acct, date, balance: Number(balance), entries: lines.filter((l) => ticked.has(l.entry)).map((l) => l.entry) }, 'Bank statement agreed', `Reconciled ${acct} to ${date}`) !== undefined) {
+    if (act('bank.reconcile', { account: acct, date, balance: Number(balance), entries: lines.filter((l) => ticked.has(l.entry)).map((l) => l.entry) }, tr('Bank statement agreed'), `Reconciled ${acct} to ${date}`) !== undefined) {
       setTicked(new Set())
       setUnmatched([])
       setBalance('')
@@ -226,27 +227,27 @@ function Reconcile() {
   if (!banks.length) return null
   return (
     <form className="card stack" onSubmit={submit}>
-      <h2 style={{ margin: 0 }}><Scale size={17} /> Bank reconciliation</h2>
+      <h2 style={{ margin: 0 }}><Scale size={17} /> {tr('Bank reconciliation')}</h2>
       <p className="small muted" style={{ margin: 0 }}>
         Tick the movements that appear on the bank statement (or load the bank’s CSV to tick them for you), and enter the statement’s ending balance. It must agree to the piastre.
-        {st.last ? ` Last agreed: ${st.last.date}, ${money(st.last.balance, cur)}.` : ' Nothing reconciled yet.'}
+        {' '}{st.last ? tr('Last agreed: {date}, {amount}.', { date: st.last.date, amount: money(st.last.balance, cur) }) : tr('Nothing reconciled yet.')}
       </p>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label className="field" style={{ width: 240 }}>Bank account<select value={acct} onChange={(e) => { setAccount(e.target.value); setTicked(new Set()); setUnmatched([]) }}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {b.name}</option>)}</select></label>
-        <label className="field" style={{ width: 170 }}>Statement date<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label className="field" style={{ width: 170 }}>Ending balance<input required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></label>
-        <label className="btn secondary" style={{ cursor: 'pointer' }}><FileUp size={14} /> Load statement CSV<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>
+        <label className="field" style={{ width: 240 }}>{tr('Bank account')}<select value={acct} onChange={(e) => { setAccount(e.target.value); setTicked(new Set()); setUnmatched([]) }}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {b.name}</option>)}</select></label>
+        <label className="field" style={{ width: 170 }}>{tr('Statement date')}<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="field" style={{ width: 170 }}>{tr('Ending balance')}<input required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></label>
+        <label className="btn secondary" style={{ cursor: 'pointer' }}><FileUp size={14} /> {tr('Load statement CSV')}<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>
       </div>
-      {error && <div className="error-box">{error}</div>}
+      {error && <div className="error-box">{msg(error)}</div>}
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th /><th>Date</th><th>Ref</th><th>Description</th><th className="num">In</th><th className="num">Out</th></tr></thead>
+          <thead><tr><th /><th>{tr('Date')}</th><th>{tr('Ref')}</th><th>{tr('Description')}</th><th className="num">{tr('In')}</th><th className="num">{tr('Out')}</th></tr></thead>
           <tbody>
-            {lines.length === 0 && <tr><td colSpan={6} className="muted">Every movement up to this date is reconciled.</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={6} className="muted">{tr('Every movement up to this date is reconciled.')}</td></tr>}
             {lines.map((l) => (
               <tr key={l.entry} style={{ cursor: 'pointer' }} onClick={() => { const t = new Set(ticked); if (t.has(l.entry)) t.delete(l.entry); else t.add(l.entry); setTicked(t) }}>
                 <td><input type="checkbox" readOnly checked={ticked.has(l.entry)} /></td>
-                <td>{l.date}</td><td className="mono">{l.ref}</td><td className="small">{l.memo}</td>
+                <td>{l.date}</td><td className="mono">{l.ref}</td><td className="small">{msg(l.memo)}</td>
                 <td className="num">{l.amount > 0 ? money(l.amount, cur) : ''}</td><td className="num">{l.amount < 0 ? money(-l.amount, cur) : ''}</td>
               </tr>
             ))}
@@ -255,14 +256,14 @@ function Reconcile() {
       </div>
       {unmatched.length > 0 && (
         <div className="info">
-          <b>On the statement but not in the books</b> (record them with a journal voucher, e.g. bank charges to 5500, then load the file again):
+          <b>{tr('On the statement but not in the books')}</b> {tr('(record them with a journal voucher, e.g. bank charges to 5500, then load the file again):')}
           <ul style={{ margin: '6px 0 0' }}>{unmatched.map((r, i) => <li key={i} className="small">{r.date} · {r.description || '—'} · {money(r.amount, cur)}</li>)}</ul>
         </div>
       )}
       <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
-        <span>Opening {money(st.opening, cur)} + ticked = <b>{money(sum, cur)}</b></span>
-        <span style={{ color: diff === 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>Difference {money(diff, cur)}</span>
-        <button className="primary" disabled={diff !== 0 || balance === ''}><CheckCircle2 size={14} /> Agree statement</button>
+        <span>{tr('Opening {opening} + ticked = {sum}', { opening: money(st.opening, cur), sum: money(sum, cur) })}</span>
+        <span style={{ color: diff === 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>{tr('Difference {amount}', { amount: money(diff, cur) })}</span>
+        <button className="primary" disabled={diff !== 0 || balance === ''}><CheckCircle2 size={14} /> {tr('Agree statement')}</button>
       </div>
     </form>
   )
