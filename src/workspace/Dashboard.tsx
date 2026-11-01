@@ -3,7 +3,7 @@ import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-re
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
-import { can, canSeeCosts, costKeys, list, matches, todayISO } from '../lib/engine'
+import { can, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { useLang } from '../lib/i18n'
 
@@ -33,6 +33,8 @@ export default function Dashboard() {
           <Link to="/app/migrate" className="btn secondary small"><FileSpreadsheet size={15} /> {tr('Bring your data in')}</Link>
         </div>
       )}
+
+      <SalesHistory />
 
       {reports.length === 0 && (
         <div className="card empty">
@@ -84,6 +86,39 @@ export default function Dashboard() {
         const weighted = open.reduce((s, d) => s + Number(d.values.amount ?? 0) * ((deals.stages?.find((x) => x.id === d.stage)?.probability ?? 0) / 100), 0)
         return <p className="muted small" style={{ marginTop: 16 }}>{tr('Weighted forecast')}: <b>{schema.company.currency} {Math.round(weighted).toLocaleString('en-US')}</b> {tr('across {n} open {what} (amount × stage probability).', { n: open.length, what: deals.name.toLowerCase() })}</p>
       })()}
+    </div>
+  )
+}
+
+/** Won, lost, win rate and sales cycle this year and last year, imported deals included (Phase H4). */
+function SalesHistory() {
+  const { ws, schema, user } = useApp()
+  const { tr } = useLang()
+  const deals = moduleByRole(schema, 'deals')
+  if (!deals || !can({ schema, user }, deals.id, 'view')) return null
+  const y = Number(todayISO().slice(0, 4))
+  const years = [y, y - 1].map((year) => ({ year, s: salesHistory(ws, schema, `${year}-01-01`, `${year}-12-31`)! }))
+  if (years.every(({ s }) => !s || s.won + s.lost === 0)) return null
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <h2 style={{ marginTop: 0 }}>{tr('Sales history')} · {deals.name}</h2>
+      <div className="table-wrap">
+        <table className="data">
+          <thead><tr><th /><th style={{ textAlign: 'end' }}>{tr('Won')}</th><th style={{ textAlign: 'end' }}>{tr('Lost')}</th><th style={{ textAlign: 'end' }}>{tr('Win rate')}</th><th style={{ textAlign: 'end' }}>{tr('Average sales cycle')}</th><th style={{ textAlign: 'end' }}>{tr('Value won')}</th></tr></thead>
+          <tbody>
+            {years.map(({ year, s }) => (
+              <tr key={year} style={{ cursor: 'default' }}>
+                <td><b>{year}</b></td>
+                <td style={{ textAlign: 'end' }}>{s.won}</td>
+                <td style={{ textAlign: 'end' }}>{s.lost}</td>
+                <td style={{ textAlign: 'end' }}>{s.won + s.lost ? `${s.winRate}%` : '—'}</td>
+                <td style={{ textAlign: 'end' }}>{s.won ? tr('{n} days', { n: s.cycleDays }) : '—'}</td>
+                <td className="mono" style={{ textAlign: 'end' }}>{money(s.wonAmount, schema.company.currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

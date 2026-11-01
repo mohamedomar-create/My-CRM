@@ -14,6 +14,7 @@ import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 import { moneyAccounts } from '../lib/accounts'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
+import { activityLabel } from './labels'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -228,7 +229,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               <h2>{tr('History')}</h2>
               {rec.legacy && (
                 <div className="info small" style={{ marginBottom: 10 }}>
-                  {[rec.legacy.id && tr('Old system id: {id}', { id: rec.legacy.id }), rec.legacy.number && tr('Old system number: {n}', { n: rec.legacy.number })].filter(Boolean).join(' · ')}
+                  {[rec.legacy.id && tr('Old system id: {id}', { id: rec.legacy.id }), rec.legacy.number && tr('Old system number: {n}', { n: rec.legacy.number }), rec.legacy.lostReason && tr('Lost reason: {reason}', { reason: rec.legacy.lostReason })].filter(Boolean).join(' · ')}
                   {rec.legacy.notes && <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{rec.legacy.notes}</div>}
                 </div>
               )}
@@ -320,7 +321,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema }: { field: F
       return (
         <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
           <option value="">—</option>
-          {ws.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {ws.users.filter((u) => !u.former || u.id === str).map((u) => <option key={u.id} value={u.id}>{u.former ? tr('{name} (former)', { name: u.name }) : u.name}</option>)}
         </select>
       )
     case 'email':
@@ -618,18 +619,26 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
 function Comments({ rec }: { rec: Rec }) {
   const { ws, act } = useApp()
   const [text, setText] = useState('')
-  const comments = (ws.data.comments ?? []).filter((c) => c.record === rec.id)
-  const name = (id: string) => ws.users.find((u) => u.id === id)?.name ?? '—'
+  // Newest first, by when it happened: calls and visits brought in from the old system keep their own dates.
+  const comments = (ws.data.comments ?? []).filter((c) => c.record === rec.id).sort((a, b) => b.at.localeCompare(a.at))
+  const name = (id: string) => { const u = ws.users.find((x) => x.id === id); return u ? (u.former ? tr('{name} (former)', { name: u.name }) : u.name) : '—' }
   return (
     <div className="card">
       <h2><MessageSquare size={17} /> {tr('Notes & comments')}</h2>
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={tr('Add a note. Type @name to notify a colleague.')} dir="auto" style={{ minHeight: 64 }} />
       <div className="row between" style={{ marginTop: 6 }}>
-        <span className="tiny muted">{ws.users.slice(0, 4).map((u) => `@${u.name.split(' ')[0]}`).join(' ')}</span>
+        <span className="tiny muted">{ws.users.filter((u) => !u.former).slice(0, 4).map((u) => `@${u.name.split(' ')[0]}`).join(' ')}</span>
         <button onClick={() => { if (act('comment.add', { id: rec.id, text }, undefined, 'Added a note')) setText('') }} disabled={!text.trim()}><Send size={14} /> {tr('Add note')}</button>
       </div>
       <ul className="timeline" style={{ marginTop: 10 }}>
-        {comments.map((c) => <li key={c.id}><b>{name(c.user)}</b> <span dir="auto">{c.text}</span><br /><span className="tiny muted">{new Date(c.at).toLocaleString(dateLocale())}</span></li>)}
+        {comments.map((c) => (
+          <li key={c.id}>
+            {c.kind && c.kind !== 'note' && <span className="pill tiny" style={{ marginInlineEnd: 6 }}>{activityLabel(c.kind)}</span>}
+            <b>{name(c.user)}</b> <span dir="auto">{c.text}</span>
+            {c.outcome && <div className="small"><b>{tr('Outcome')}:</b> <span dir="auto">{c.outcome}</span></div>}
+            <br /><span className="tiny muted">{c.batch ? new Date(c.at).toLocaleDateString(dateLocale()) : new Date(c.at).toLocaleString(dateLocale())}{c.batch ? ` · ${tr('from the old system')}` : ''}</span>
+          </li>
+        ))}
       </ul>
     </div>
   )

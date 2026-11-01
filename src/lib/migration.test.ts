@@ -31,8 +31,8 @@ describe('the migration workbook', () => {
   it('orders the steps so every list comes after the lists it links to, and leaves documents to the opening books', () => {
     const schema = generateSchema(templateById('distribution'), emptyAnswers('Co'))
     const steps = migrationSteps(schema)
-    const roles = steps.map((s) => (s.kind === 'module' ? s.module.role : s.step))
-    expect(roles).toEqual(['accounts', 'contacts', 'suppliers', 'products', 'leads', 'deals', 'tasks', 'tb', 'customers', 'suppliers', 'cheques', 'stock', 'wht'])
+    const roles = steps.map((s) => (s.kind === 'module' ? s.module.role : s.kind === 'books' ? s.step : s.kind))
+    expect(roles).toEqual(['accounts', 'contacts', 'suppliers', 'products', 'leads', 'deals', 'tasks', 'activities', 'tb', 'customers', 'suppliers', 'cheques', 'stock', 'wht'])
     // A custom module that links to deals comes after deals, whatever its role.
     const custom = { ...schema.modules.find((m) => m.role === 'contacts')!, id: 'm_visits', role: 'custom' as const, name: 'Visits', fields: [{ id: 'f1', key: 'deal', label: 'Deal', type: 'relation' as const, target: schema.modules.find((m) => m.role === 'deals')!.id }] }
     const order = migrationSteps({ ...schema, modules: [custom, ...schema.modules] }).map((s) => s.id)
@@ -49,7 +49,7 @@ describe('the migration workbook', () => {
     expect(sheets[0].name).toBe(t('Instructions'))
     expect(sheets.at(-1)!.name).toBe('Lists')
     // Withholding from before going live isn't asked for when going live on the first day of a quarter.
-    expect(steps.filter((s) => s.kind === 'module' || s.step !== 'wht').every((s) => findStepSheet(sheets, [stepSheetName(s, t)]))).toBe(true)
+    expect(steps.filter((s) => s.kind !== 'books' || s.step !== 'wht').every((s) => findStepSheet(sheets, [stepSheetName(s, t)]))).toBe(true)
     expect(findStepSheet(sheets, [t('Withholding tax earlier this quarter')])).toBeUndefined()
     const customers = steps.find((s) => s.kind === 'module' && s.module.role === 'accounts')!
     const head = findStepSheet(sheets, [stepSheetName(customers, t)])!.rows[0]

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { CheckCircle2, Circle, Download, FileSpreadsheet, Lock, Upload } from 'lucide-react'
 import { useApp } from './useApp'
 import { ImportModal } from './ImportModal'
+import { ActivityImport } from './ActivityImport'
 import GoLive, { type SheetPreset } from './GoLive'
 import { can, canPost, list, money, openingStatus } from '../lib/engine'
 import { findStepSheet, migrationSteps, migrationWorkbook, stepSheetName, type MigrationStep } from '../lib/migration'
@@ -108,6 +109,19 @@ export default function Migrate() {
                 </tr>
               )
             })}
+            {(() => {
+              const step = steps.find((s) => s.kind === 'activities')!
+              const sh = sheetOf(step)
+              const count = (ws.data.comments ?? []).filter((c) => c.batch).length
+              return (
+                <tr style={{ cursor: 'default' }}>
+                  <td style={{ width: 28 }}>{count ? <CheckCircle2 size={18} color="#10b981" /> : <Circle size={18} color="#94a3b8" />}</td>
+                  <td><b>{modules.length + 1}. {tr('Calls, visits and notes')}</b><br /><span className="tiny muted">{count ? tr('{n} brought in', { n: count }) : tr('Nothing yet')}</span></td>
+                  <td className="small">{sh ? tr('{n} rows in your workbook', { n: rowsIn(sh) }) : book ? <span className="muted">{tr('No rows in the workbook')}</span> : ''}</td>
+                  <td style={{ textAlign: 'end' }}><button className={sh ? 'glow small' : 'ghost small'} onClick={() => setOpen('activities')}><Upload size={14} /> {sh ? tr('Import these rows') : tr('Import')}</button></td>
+                </tr>
+              )
+            })()}
           </tbody>
         </table>
       </div>
@@ -119,6 +133,10 @@ export default function Migrate() {
         </div>
       )}
 
+      {open === 'activities' && (() => {
+        const sh = sheetOf(steps.find((s) => s.kind === 'activities')!)
+        return <ActivityImport key={book?.file ?? ''} preset={sh && book ? { fileName: `${book.file} · ${sh.name}`, sheet: sh } : undefined} onClose={() => setOpen(null)} />
+      })()}
       {current && <ImportModal key={current.id + (book?.file ?? '')} mod={current.module} preset={sheetOf(current) && book ? { fileName: `${book.file} · ${sheetOf(current)!.name}`, sheet: sheetOf(current)! } : undefined} onClose={() => setOpen(null)} />}
     </div>
   )

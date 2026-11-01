@@ -7,7 +7,7 @@ import type { AppSchema } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
 import type { Line, User, Workspace } from './types'
 import {
-  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, moveStage, postDocument,
+  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
@@ -53,6 +53,8 @@ export interface CommandArgs {
   'team.addUser': { id: string; name: string; email: string; roleId: string }
   'team.setRole': { userId: string; roleId: string }
   'team.removeUser': { userId: string }
+  'team.handOver': { from: string; to: string; scope?: 'open' | 'all' }
+  'import.activities': { rows: Record<string, string>[]; batch?: { id: string; file: string }; firstRow?: number; people?: Record<string, string> }
   'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
   'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
@@ -177,6 +179,16 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
     },
   },
   'import.undo': { run: (ws, u, a) => undoImport(ctx(ws, u), String(a.batch)) },
+  'import.activities': {
+    run: (ws, u, a) => {
+      if (!Array.isArray(a.rows) || a.rows.length > 5000) throw new EngineError('Import up to 5,000 rows at a time')
+      const strings = (o: unknown) => typeof o === 'object' && o !== null && !Array.isArray(o) && Object.values(o).every((v) => typeof v === 'string')
+      if (!a.rows.every(strings) || (a.people !== undefined && !strings(a.people))) throw new EngineError('That setup is not valid')
+      if (a.batch !== undefined && !(typeof a.batch?.id === 'string' && /^imp_[A-Za-z0-9_-]{1,60}$/.test(a.batch.id) && typeof a.batch.file === 'string')) throw new EngineError('That setup is not valid')
+      if (a.firstRow !== undefined && !(Number.isInteger(a.firstRow) && a.firstRow >= 2)) throw new EngineError('That setup is not valid')
+      return importActivities(ctx(ws, u), a.rows, { batch: a.batch, firstRow: a.firstRow, people: a.people })
+    },
+  },
   'sample.remove': { admin: true, run: (ws, u) => removeSampleData(ctx(ws, u)) },
   'automation.runScheduled': { run: (ws, u) => runScheduled(ctx(ws, u)) },
 
@@ -293,9 +305,14 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
     admin: true,
     run: (ws, user, a) => {
       if (a.userId === user.id) throw new EngineError('You can’t remove yourself')
-      ws.users = ws.users.filter((x) => x.id !== a.userId)
+      const target = ws.users.find((x) => x.id === a.userId)
+      if (!target) return
+      // Someone whose name is on records stays as a former member (no login, no access), so history keeps its owner.
+      if (!target.demo && ws.published && userIsReferenced(ws, ws.published, target.id)) Object.assign(target, { former: true, formerEmail: target.email || target.formerEmail, email: '', roleId: '' })
+      else ws.users = ws.users.filter((x) => x.id !== a.userId)
     },
   },
+  'team.handOver': { admin: true, run: (ws, u, a) => handOver(ctx(ws, u), String(a.from), String(a.to), a.scope === 'all' ? 'all' : 'open') },
 }
 
 export interface Actor {

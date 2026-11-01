@@ -38,6 +38,7 @@ const DONE = [
   'src/workspace/Statements.tsx',
   'src/workspace/GoLive.tsx',
   'src/workspace/Migrate.tsx',
+  'src/workspace/ActivityImport.tsx',
   'src/builder/Builder.tsx',
   'src/builder/ModulesTab.tsx',
   'src/builder/PipelinesTab.tsx',
@@ -120,5 +121,7 @@ describe('Arabic translation', () => {
     expect(translateMessage('ar', 'Something nobody wrote')).toBe('Something nobody wrote')
     expect(translateMessage('ar', 'Phone is required · Price can’t be negative (Rice)')).toBe(`${AR['Phone']} مطلوب · ${translateMessage('ar', 'Price can’t be negative (Rice)')}`)
     expect(translateMessage('ar', 'imported 3 customers')).toContain(AR['Customers'])
+    // The most specific pattern wins over a general one that also fits.
+    expect(translateMessage('ar', 'imported 3 activities and notes')).toBe('استورد 3 نشاط وملاحظة')
   })
 })

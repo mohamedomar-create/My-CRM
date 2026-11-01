@@ -471,9 +471,31 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 - former members, and hand-over of their records.
 
 **Done when**
-- [ ] Win rate and average sales cycle for last year show from imported deals.
-- [ ] A customer's page shows its imported calls and visits in date order.
-- [ ] Reports by person include people who have left.
+- [x] Win rate and average sales cycle for last year show from imported deals.
+- [x] A customer's page shows its imported calls and visits in date order.
+- [x] Reports by person include people who have left.
+
+> **Progress (H4 done).**
+> - **Deals and tickets from the past:**
+>   - a "Date it reached «stage»" column per stage fills the whole stage history (and the stage, when no stage column is given);
+>   - a won deal's close date is the day it was won;
+>   - "Lost reason" is kept on the record and shown there;
+>   - boards show won and lost records of the last 90 days, older ones only when asked.
+> - **Calls, meetings, visits, e-mails and notes:**
+>   - they come in from their own sheet, each on the record it was about (by old id or name, in the list named or any list);
+>   - they join the record's notes timeline in date order, marked with their type, outcome and "from the old system";
+>   - they notify nobody, and the whole import can be undone.
+> - **Former members:**
+>   - someone in the old data who has left is kept as a former member: a name with no login and no access;
+>   - an admin chooses that in the import's people matching;
+>   - removing a team member whose name is on records now keeps them as a former member instead of deleting them;
+>   - the Team page lists them and hands their open records (or all) over to someone else in one step;
+>   - pickers and @-mentions leave them out.
+> - **Dashboard "Sales history":** won, lost, win rate, average sales cycle and value won, this year against last year, imported deals included.
+> - **Fixed on the way:**
+>   - a message now takes the most specific translation that fits;
+>   - report cards' "records" count is translated.
+> - **Not built yet:** activities are kept with the records the app loads, so very large histories wait for the history store (H5).
 
 ### H5. History store and document history (L)
 

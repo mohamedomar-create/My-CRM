@@ -105,7 +105,7 @@ export default function Shell() {
           </span>
           {self?.roleId === 'role_admin' ? (
             <select value={user.id} onChange={(e) => switchUser(e.target.value)} style={{ width: 'auto' }} title={tr('Switch user (try the system as each role)')}>
-              {ws.users.map((u) => <option key={u.id} value={u.id}>{u.name} · {schema.roles.find((r) => r.id === u.roleId)?.name ?? tr('No role')}</option>)}
+              {ws.users.filter((u) => !u.former).map((u) => <option key={u.id} value={u.id}>{u.name} · {schema.roles.find((r) => r.id === u.roleId)?.name ?? tr('No role')}</option>)}
             </select>
           ) : <span className="small">{user.name}</span>}
           <button className="ghost small" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title={lang === 'ar' ? 'English' : 'العربية'}>{lang === 'ar' ? 'EN' : 'ع'}</button>

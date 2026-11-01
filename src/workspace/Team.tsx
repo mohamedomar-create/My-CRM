@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, Crown, Link2, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowRightLeft, Copy, Crown, Link2, ShieldCheck, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useApp, showToast } from './useApp'
 import { inviteMember, listInvitations, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, useStore, type Invitation, type Member } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { User } from '../lib/types'
 import { tr } from '../lib/i18n'
+import { list } from '../lib/engine'
 
 export default function Team() {
   const { ws, schema, user, act } = useApp()
@@ -125,7 +126,7 @@ export default function Team() {
           <table className="data">
             <thead><tr><th>{tr('Name')}</th><th>{tr('E-mail')}</th><th>{tr('Role')}</th><th>{tr('Access')}</th><th /></tr></thead>
             <tbody>
-              {ws.users.map((u) => {
+              {ws.users.filter((u) => !u.former).map((u) => {
                 const isOwner = Boolean(member(u)?.is_owner)
                 return (
                   <tr key={u.id} style={{ cursor: 'default' }}>
@@ -170,6 +171,7 @@ export default function Team() {
           </label>
           {!myTwoFactor && <p className="tiny muted">{tr('Turn it on for yourself first on the')} <Link to="/security">{tr('Security page')}</Link>.</p>}
         </div>
+        <FormerMembers />
         <form className="card stack" onSubmit={add}>
           <h2><UserPlus size={18} /> {tr('Add a team member')}</h2>
           <label className="field">{tr('Name')}<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
@@ -182,6 +184,39 @@ export default function Team() {
         </form>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * People who have left (Phase H4): kept as former members, with no login and no access, so their history keeps its
+ * owner. Their open records can be handed over to someone else in one step; what they closed stays theirs.
+ */
+function FormerMembers() {
+  const { ws, schema, act } = useApp()
+  const former = ws.users.filter((u) => u.former)
+  const active = ws.users.filter((u) => !u.former && !u.demo)
+  const [to, setTo] = useState<Record<string, string>>({})
+  const [all, setAll] = useState<Record<string, boolean>>({})
+  if (!former.length) return null
+  const owned = (id: string) => schema.modules.reduce((n, m) => n + list(ws, m.id).filter((r) => m.fields.some((f) => f.type === 'user' && r.values[f.key] === id)).length, 0)
+  return (
+    <div className="card stack">
+      <h2><UserMinus size={18} /> {tr('People who have left')}</h2>
+      <p className="tiny muted" style={{ margin: 0 }}>{tr('They can’t sign in and have no access. Their names stay on the records they worked on, so history and reports by person stay true.')}</p>
+      {former.map((u) => (
+        <div key={u.id} className="stack" style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+          <div><b>{u.name}</b> <span className="tiny muted">{u.formerEmail ?? ''} · {tr('{n} records', { n: owned(u.id) })}</span></div>
+          <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+            <select value={to[u.id] ?? ''} onChange={(e) => setTo({ ...to, [u.id]: e.target.value })} style={{ width: 'auto' }}>
+              <option value="">{tr('Hand over to…')}</option>
+              {active.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+            <label className="inline small"><input type="checkbox" checked={Boolean(all[u.id])} onChange={(e) => setAll({ ...all, [u.id]: e.target.checked })} /> {tr('Closed ones too')}</label>
+            <button className="secondary small" disabled={!to[u.id]} onClick={() => act('team.handOver', { from: u.id, to: to[u.id], scope: all[u.id] ? 'all' : 'open' }, tr('Records handed over'))}><ArrowRightLeft size={14} /> {tr('Hand over')}</button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -88,7 +88,7 @@ export const tr = (en: string, vars?: Vars) => translate(lang, en, vars)
 
 // Messages built with values (from the engine and the server) are matched against the dictionary entries that have
 // {placeholders}: "Only 3 of “Rice” can still be credited" finds "Only {n} of “{item}” can still be credited".
-let patterns: { re: RegExp; keys: string[]; ar: string }[] | undefined
+let patterns: { re: RegExp; keys: string[]; ar: string; literal: number }[] | undefined
 const escape = (s: string) => s.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
 
 const known = (v: string) => AR[v] ?? AR[v.charAt(0).toUpperCase() + v.slice(1)] ?? v
@@ -106,8 +106,9 @@ export function translateMessage(l: Lang, msg: string): string {
       if (m) { keys.push(m[1]); return '(.+?)' }
       return escape(part)
     }).join('') + '$')
-    return { re, keys, ar }
-  })
+    return { re, keys, ar, literal: en.replace(/\{\w+\}/g, '').length }
+  }).sort((a, b) => b.literal - a.literal) // the most specific first: "imported {a} activities and notes" before "imported {a} {b}"
+
   for (const p of patterns) {
     const m = p.re.exec(msg)
     // Values that are themselves known texts ("Invoice", "you keep stock", "imported 3 customers") are translated too.
