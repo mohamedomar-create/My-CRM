@@ -370,8 +370,12 @@ table.data tfoot td { font-weight: 800; background: var(--surface-2); }
 .tabs-inline button { background: none; color: var(--muted); border-radius: 0; border-bottom: 2px solid transparent; padding: 10px 14px; }
 .tabs-inline button.on { color: var(--primary-600); border-bottom-color: var(--primary); }
 
+table.statement .section-row td { background: var(--surface-2); padding-top: 10px; }
+table.statement .total-row td { border-top: 2px solid var(--border-strong); }
+
 @media print {
   .sidebar, .topbar, .no-print { display: none !important; }
+  table.statement { font-size: 11pt; }
   .app { display: block; }
   .print-doc { border: none; }
 }

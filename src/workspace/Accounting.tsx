@@ -2,15 +2,17 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calculator, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useApp } from './useApp'
-import { accountBalance, ageing, canPost, money, round2, trialBalance } from '../lib/engine'
+import { accountBalance, ageing, canPost, money, round2, todayISO, trialBalance } from '../lib/engine'
 import { account, accountName, debitNormal } from '../lib/accounts'
 import { useLang } from '../lib/i18n'
 import Treasury from './Treasury'
+import Statements from './Statements'
+import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax' | 'bank'>('tb')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">Only Admin and finance roles can see accounting.</div>
   const cur = schema.company.currency
@@ -25,24 +27,27 @@ export default function Accounting() {
   }
   const name = (code: string) => accountName(ws, code, lang)
   const reversed = new Set(ws.data.journal.filter((j) => j.reverses).map((j) => j.reverses))
-  const revenue = bal('4000')
-  const cogs = bal('5000') + bal('5100')
+  // This year so far; gross profit takes off the cost of the goods sold only, not services or overheads.
+  const year = incomeStatement(ws, `${todayISO().slice(0, 4)}-01-01`, todayISO())
+  const revenue = year.revenue.total
+  const cogs = year.cost.total
   // Not yet settled (2200 − 1400) plus settled but not yet paid to the Tax Authority (2210)
   const vatDue = round2(bal('2200') - bal('1400') + bal('2210'))
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>Accounting</h1></div>
-      <div className="dash" style={{ marginBottom: 14 }}>
-        <div className="card"><h2>Revenue</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
-        <div className="card"><h2>Gross profit</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0}% margin</div></div>
+      <div className="page-head no-print"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>Accounting</h1></div>
+      <div className="dash no-print" style={{ marginBottom: 14 }}>
+        <div className="card"><h2>Revenue this year</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
+        <div className="card"><h2>Gross profit this year</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0}% margin</div></div>
         <div className="card"><h2>Customers owe you</h2><div className="kpi-value">{money(bal('1200'), cur)}</div></div>
         <div className="card"><h2>{vatDue >= 0 ? 'VAT payable (output − input)' : 'VAT credit (input more than output)'}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success, #047857)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
       </div>
-      <div className={dr === cr ? 'ok-box row' : 'error-box row'} style={{ marginBottom: 14 }}>
+      <div className={`${dr === cr ? 'ok-box row' : 'error-box row'} no-print`} style={{ marginBottom: 14 }}>
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
         {dr === cr ? `Books balance: total debits = total credits = ${money(dr, cur)} across ${ws.data.journal.length} journal entries.` : `Books do not balance (${dr} vs ${cr}). Contact support.`}
       </div>
-      <div className="tabs-inline">
+      <div className="tabs-inline no-print">
+        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Financial statements</button>
         <button className={tab === 'tb' ? 'on' : ''} onClick={() => setTab('tb')}>Trial balance</button>
         <button className={tab === 'ageing' ? 'on' : ''} onClick={() => setTab('ageing')}>Ageing</button>
         <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>Journal</button>
@@ -108,6 +113,7 @@ export default function Accounting() {
       {tab === 'close' && <CloseBooks />}
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}
+      {tab === 'reports' && <Statements />}
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">
