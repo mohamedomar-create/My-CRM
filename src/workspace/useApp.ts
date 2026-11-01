@@ -4,6 +4,7 @@ import { currentUser, currentWorkspace, run, useStore } from '../lib/store'
 import type { CommandArgs, CommandName } from '../lib/commands'
 import type { User, Workspace } from '../lib/types'
 import type { Ctx } from '../lib/engine'
+import { N_, tr } from '../lib/i18n'
 
 type Toast = { kind: 'ok' | 'error'; text: string } | null
 let toast: Toast = null
@@ -48,3 +49,11 @@ export function useApp() {
   const ctx: Ctx = { ws, schema, user }
   return { ws, user, schema, act, ctx }
 }
+
+/** Document and approval statuses, shown in the chosen language. */
+const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
+export const statusLabel = (s?: string) => (s && (STATUS_WORDS as string[]).includes(s) ? tr(s) : s ?? '')
+
+/** How a payment was made, shown in the chosen language. */
+const METHODS: Record<string, string> = { bank: N_('Bank transfer'), cash: N_('Cash'), instapay: N_('InstaPay'), cheque: N_('Cheque'), card: N_('Card') }
+export const methodLabel = (m: string) => (METHODS[m] ? tr(METHODS[m]) : m)

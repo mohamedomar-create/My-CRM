@@ -76,6 +76,9 @@ export function translate(l: Lang, en: string, vars?: Vars) {
   return fill(l === 'ar' ? AR[en] ?? en : en, vars)
 }
 
+/** The locale for dates and times in the chosen language (Western digits, as Egyptian businesses use them). */
+export const dateLocale = () => (lang === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB')
+
 /** Marks an English text for translation where it is defined (a constant), to be shown later with msg() / tr(). */
 export const N_ = <T extends string>(en: T) => en
 
@@ -106,6 +109,9 @@ export function translateMessage(l: Lang, msg: string) {
   }
   return msg
 }
+
+/** A message (possibly carrying values) in the language chosen now. */
+export const msg = (m: string) => translateMessage(lang, m)
 
 export function useLang() {
   const l = useSyncExternalStore(

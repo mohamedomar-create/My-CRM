@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Flame, Kanban, Plus, Table2, Upload } from 'lucide-react'
 import { ImportModal } from './ImportModal'
-import { useApp } from './useApp'
+import { statusLabel, useApp } from './useApp'
 import { Icon } from '../components/Icon'
 import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, list, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
 import { addView, useStore } from '../lib/store'
@@ -12,6 +12,7 @@ import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById } from '../lib/schema'
 import type { Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
+import { dateLocale, N_, tr } from '../lib/i18n'
 
 const STATUS_PILL: Record<string, string> = { draft: 'gray', posted: '', partial: 'amber', paid: 'green', void: 'red', sent: '', accepted: 'green', declined: 'red', invoiced: 'green' }
 
@@ -19,7 +20,7 @@ export default function ModuleView() {
   const { moduleId } = useParams()
   const { ws, user, schema } = useApp()
   const mod = moduleById(schema, moduleId ?? '')
-  if (!mod) return <div className="page">This module no longer exists.</div>
+  if (!mod) return <div className="page">{tr('This module no longer exists.')}</div>
   if (!can({ schema, user }, mod.id, 'view')) return <div className="page">Your role can’t see {mod.name}.</div>
   return <View key={mod.id} mod={mod} ws={ws} schema={schema} />
 }
@@ -39,7 +40,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const myViews = useStore((s) => s.prefs.views)
   const views = [...(ws.data.views ?? []).filter((v) => v.user === user.id), ...(myViews ?? [])].filter((v) => v.module === mod.id)
   function saveView() {
-    const name = prompt('Name this view', stage ? 'My filtered view' : 'My view')
+    const name = prompt(tr('Name this view'), stage ? tr('My filtered view') : tr('My view'))
     if (!name) return
     addView({ id: uid('v'), module: mod.id, user: user.id, name, q, stage, sort, view })
   }
@@ -63,8 +64,8 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
 
   function exportCsv() {
     const fields = mod.fields.filter((f) => !hidden(f.key))
-    const header = ['Title', ...(mod.stages ? ['Stage'] : []), ...(mod.lines ? ['Status'] : []), ...fields.map((f) => f.label)]
-    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [r.status ?? ''] : []), ...fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key]))])
+    const header = [tr('Title'), ...(mod.stages ? [tr('Stage')] : []), ...(mod.lines ? [tr('Status')] : []), ...fields.map((f) => f.label)]
+    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [statusLabel(r.status)] : []), ...fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key]))])
     const csv = [header, ...lines].map((l) => l.map((c) => `"${csvSafe(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
@@ -80,39 +81,39 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
         <h1><span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>{mod.name} <span className="pill gray">{all.length}</span></h1>
         <div className="row">
           <div className="seg">
-            {mod.stages && <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}><Kanban size={15} /> Board</button>}
-            <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}><Table2 size={15} /> Table</button>
-            {dateField && <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}><CalendarDays size={15} /> Calendar</button>}
+            {mod.stages && <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}><Kanban size={15} /> {tr('Board')}</button>}
+            <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}><Table2 size={15} /> {tr('Table')}</button>
+            {dateField && <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}><CalendarDays size={15} /> {tr('Calendar')}</button>}
           </div>
-          {can({ schema, user }, mod.id, 'create') && !mod.lines && <button className="secondary" onClick={() => setImporting(true)}><Upload size={15} /> Import</button>}
-          <button className="secondary" onClick={exportCsv}><Download size={15} /> Export</button>
-          {can({ schema, user }, mod.id, 'create') && <button onClick={() => nav(`/app/new/${mod.id}`)}><Plus size={16} /> New {mod.singular.toLowerCase()}</button>}
+          {can({ schema, user }, mod.id, 'create') && !mod.lines && <button className="secondary" onClick={() => setImporting(true)}><Upload size={15} /> {tr('Import')}</button>}
+          <button className="secondary" onClick={exportCsv}><Download size={15} /> {tr('Export')}</button>
+          {can({ schema, user }, mod.id, 'create') && <button onClick={() => nav(`/app/new/${mod.id}`)}><Plus size={16} /> {tr('New {what}', { what: mod.singular.toLowerCase() })}</button>}
         </div>
       </div>
       <div className="row" style={{ marginBottom: 12 }}>
-        <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} placeholder={`Search ${mod.name.toLowerCase()}…`} style={{ maxWidth: 320 }} />
+        <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} placeholder={tr('Search {what}…', { what: mod.name.toLowerCase() })} style={{ maxWidth: 320 }} />
         {(mod.stages || mod.lines) && (
           <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }}>
-            <option value="">{mod.stages ? 'All stages' : 'All statuses'}</option>
+            <option value="">{mod.stages ? tr('All stages') : tr('All statuses')}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{s}</option>)}
+            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         )}
         <span className="grow" />
         {views.length > 0 && (
           <select value="" onChange={(e) => { const v = views.find((x) => x.id === e.target.value); if (v) { setQ(v.q); setStage(v.stage); setSort(v.sort); setView(v.view === 'board' && !mod.stages ? 'table' : v.view) } }} style={{ width: 'auto' }}>
-            <option value="">Saved views…</option>
+            <option value="">{tr('Saved views…')}</option>
             {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
         )}
-        <button className="ghost" onClick={saveView} title="Save the current search, filter, sort and layout"><Bookmark size={15} /> Save view</button>
+        <button className="ghost" onClick={saveView} title={tr('Save the current search, filter, sort and layout')}><Bookmark size={15} /> {tr('Save view')}</button>
       </div>
 
       {all.length === 0 ? (
         <div className="card empty">
           <div className="big-ic" style={{ background: mod.color }}><Icon name={mod.icon} size={32} /></div>
-          <b>No {mod.name.toLowerCase()} yet</b>
-          <p className="small">Create the first one to get started.</p>
+          <b>{tr('No {what} yet', { what: mod.name.toLowerCase() })}</b>
+          <p className="small">{tr('Create the first one to get started.')}</p>
           {can({ schema, user }, mod.id, 'create') && <Link className="btn" to={`/app/new/${mod.id}`}><Plus size={16} /> New {mod.singular.toLowerCase()}</Link>}
         </div>
       ) : view === 'calendar' && dateField ? (
@@ -124,10 +125,10 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
           <table className="data">
             <thead>
               <tr>
-                <th onClick={() => setSort({ key: mod.titleField, dir: sort.dir === 1 ? -1 : 1 })}>{mod.lines ? 'Number' : mod.fields.find((f) => f.key === mod.titleField)?.label}</th>
-                {mod.stages && <th>Stage</th>}
-                {mod.lines && <th>Status</th>}
-                {scored && <th onClick={() => setSort({ key: '__score', dir: sort.key === '__score' && sort.dir === -1 ? 1 : -1 })}>Score{sort.key === '__score' ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>}
+                <th onClick={() => setSort({ key: mod.titleField, dir: sort.dir === 1 ? -1 : 1 })}>{mod.lines ? tr('Number') : mod.fields.find((f) => f.key === mod.titleField)?.label}</th>
+                {mod.stages && <th>{tr('Stage')}</th>}
+                {mod.lines && <th>{tr('Status')}</th>}
+                {scored && <th onClick={() => setSort({ key: '__score', dir: sort.key === '__score' && sort.dir === -1 ? 1 : -1 })}>{tr('Score')}{sort.key === '__score' ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>}
                 {cols.filter((c) => c.key !== mod.titleField).map((c) => (
                   <th key={c.id} className={isNum(c) ? 'num' : ''} onClick={() => setSort({ key: c.key, dir: sort.key === c.key && sort.dir === 1 ? -1 : 1 })}>{c.label}{sort.key === c.key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>
                 ))}
@@ -136,9 +137,9 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             <tbody>
               {rows.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)}>
-                  <td><b>{mod.lines ? (r.number ?? 'Draft') : recordTitle(ws, schema, r)}</b></td>
+                  <td><b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b></td>
                   {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : null })()}</td>}
-                  {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{r.status}</span></td>}
+                  {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{statusLabel(r.status)}</span></td>}
                   {scored && <td><ScorePill n={score(ws, schema, r)} /></td>}
                   {cols.filter((c) => c.key !== mod.titleField).map((c) => <td key={c.id} className={isNum(c) ? 'num' : ''}><Cell field={c} rec={r} ws={ws} schema={schema} /></td>)}
                 </tr>
@@ -158,8 +159,8 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
           </table>
           {rows.length > limit && (
             <div className="row" style={{ justifyContent: 'center', padding: 12, gap: 12 }}>
-              <span className="tiny muted">Showing {limit.toLocaleString()} of {rows.length.toLocaleString()}</span>
-              <button className="secondary small" onClick={() => setLimit(limit + PAGE)}>Show {Math.min(PAGE, rows.length - limit)} more</button>
+              <span className="tiny muted">{tr('Showing {n} of {total}', { n: limit.toLocaleString('en-US'), total: rows.length.toLocaleString('en-US') })}</span>
+              <button className="secondary small" onClick={() => setLimit(limit + PAGE)}>{tr('Show {n} more', { n: Math.min(PAGE, rows.length - limit) })}</button>
             </div>
           )}
         </div>
@@ -206,7 +207,7 @@ function Board({ mod, rows, ws, schema, onMove }: { mod: ModuleDef; rows: Rec[];
             <Column key={s.id} id={s.id}>
               <div className="kcol-head"><span className="dot" style={{ background: s.color }} />{s.name} <span className="pill gray tiny">{items.length}</span><span className="sum">{amountField ? money(sum, schema.company.currency).replace('.00', '') : `${s.probability}%`}</span></div>
               {items.slice(0, BOARD_CARDS).map((r) => <Card key={r.id} rec={r} color={s.color} mod={mod} ws={ws} schema={schema} amountField={amountField} />)}
-              {items.length > BOARD_CARDS && <div className="tiny muted" style={{ padding: 8, textAlign: 'center' }}>+{(items.length - BOARD_CARDS).toLocaleString()} more. Search or use the table to find them.</div>}
+              {items.length > BOARD_CARDS && <div className="tiny muted" style={{ padding: 8, textAlign: 'center' }}>{tr('+{n} more. Search or use the table to find them.', { n: (items.length - BOARD_CARDS).toLocaleString('en-US') })}</div>}
             </Column>
           )
         })}
@@ -261,12 +262,12 @@ function Calendar({ rows, dateKey, ws, schema, color }: { rows: Rec[]; dateKey: 
   return (
     <div className="card">
       <div className="row between" style={{ marginBottom: 10 }}>
-        <button className="ghost icon" onClick={() => shift(-1)}><ChevronLeft size={18} /></button>
-        <b>{first.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' })}</b>
-        <button className="ghost icon" onClick={() => shift(1)}><ChevronRight size={18} /></button>
+        <button className="ghost icon" onClick={() => shift(-1)} aria-label={tr('Previous month')}><ChevronLeft size={18} className="flip" /></button>
+        <b>{first.toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric', timeZone: 'UTC' })}</b>
+        <button className="ghost icon" onClick={() => shift(1)} aria-label={tr('Next month')}><ChevronRight size={18} className="flip" /></button>
       </div>
       <div className="cal">
-        {['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((d) => <div key={d} className="cal-h">{d}</div>)}
+        {[N_('Sat'), N_('Sun'), N_('Mon'), N_('Tue'), N_('Wed'), N_('Thu'), N_('Fri')].map((d) => <div key={d} className="cal-h">{tr(d)}</div>)}
         {Array.from({ length: lead }, (_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: days }, (_, i) => {
           const d = i + 1
@@ -275,7 +276,7 @@ function Calendar({ rows, dateKey, ws, schema, color }: { rows: Rec[]; dateKey: 
             <div key={d} className={`cal-d ${iso === today ? 'today' : ''}`}>
               <span className="cal-n">{d}</span>
               {(byDay.get(d) ?? []).slice(0, 4).map((r) => <div key={r.id} className="cal-ev" style={{ borderColor: color }} onClick={() => nav(`/app/r/${r.id}`)}>{recordTitle(ws, schema, r)}</div>)}
-              {(byDay.get(d)?.length ?? 0) > 4 && <span className="tiny muted">+{byDay.get(d)!.length - 4} more</span>}
+              {(byDay.get(d)?.length ?? 0) > 4 && <span className="tiny muted">{tr('+{n} more', { n: byDay.get(d)!.length - 4 })}</span>}
             </div>
           )
         })}

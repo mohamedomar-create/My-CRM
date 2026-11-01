@@ -21,6 +21,13 @@ const DONE = [
   'src/pages/Security.tsx',
   'src/components/Invitations.tsx',
   'src/components/CodeStep.tsx',
+  'src/workspace/ModuleView.tsx',
+  'src/workspace/RecordPage.tsx',
+  'src/workspace/Approvals.tsx',
+  'src/workspace/Team.tsx',
+  'src/workspace/Audit.tsx',
+  'src/workspace/Inventory.tsx',
+  'src/workspace/ImportModal.tsx',
 ]
 
 describe('Arabic translation', () => {
