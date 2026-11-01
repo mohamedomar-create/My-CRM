@@ -59,3 +59,67 @@ export function rawText(src: string): string[] {
   }
   return [...new Set(found)]
 }
+
+/** Reads a string or template literal starting at src[i] (a quote or backtick). Values in templates become {a}, {b}, … */
+function readLiteral(src: string, i: number): { text: string; end: number } | undefined {
+  const q = src[i]
+  if (q !== "'" && q !== '"' && q !== '`') return undefined
+  let text = ''
+  let n = 0
+  let j = i + 1
+  while (j < src.length && src[j] !== q) {
+    if (src[j] === '\\') { const e = src[j + 1]; text += e === 'n' ? '\n' : e === 't' ? '\t' : e; j += 2; continue }
+    if (q === '`' && src[j] === '$' && src[j + 1] === '{') {
+      // skip the expression, minding nested braces, strings and templates
+      let depth = 1
+      j += 2
+      while (j < src.length && depth > 0) {
+        const c = src[j]
+        if (c === "'" || c === '"' || c === '`') { const lit = readLiteral(src, j); j = lit ? lit.end + 1 : j + 1; continue }
+        if (c === '{') depth++
+        else if (c === '}') depth--
+        j++
+      }
+      text += `{${String.fromCharCode(97 + n++)}}`
+      continue
+    }
+    text += src[j]
+    j++
+  }
+  return { text, end: j }
+}
+
+/**
+ * Messages written by the engine and the server, with their values as {a}, {b}, …: the first text argument of
+ * EngineError / HttpError / Error, log(ctx, …), logLedger(ctx, …) and issue messages (message: …).
+ */
+export function extractMessages(src: string): string[] {
+  const out: string[] = []
+  const re = /new EngineError\(\s*|new HttpError\(\s*\d+\s*,\s*|throw new Error\(\s*|\blog\(ctx,\s*|logLedger\(ctx,\s*|\bmessage:\s*|\btitle:\s*|\bdetail:\s*|reasons\.push\(\s*/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const lit = readLiteral(src, m.index + m[0].length)
+    if (lit && /[A-Za-z]{2,}/.test(lit.text) && !/^\{[a-z]\}$/.test(lit.text)) out.push(lit.text)
+  }
+  return out
+}
+
+/** Names and descriptions in the library's tables (field types, module roles, report fields). */
+export function extractLabels(src: string): string[] {
+  const out: string[] = []
+  const re = /\b(?:label|hint|description|group)\s*:\s*/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const lit = readLiteral(src, m.index + m[0].length)
+    if (lit && /[A-Za-z]{2,}/.test(lit.text)) out.push(lit.text)
+  }
+  return out
+}
+
+/** The values of a `const NAME: Record<…> = { key: 'text', … }` table. */
+export function extractTable(src: string, name: string): string[] {
+  const start = src.indexOf(`const ${name}`)
+  if (start < 0) return []
+  const body = src.slice(src.indexOf('{', src.indexOf('=', start)), src.indexOf('\n}', start))
+  return [...body.matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1])
+}
