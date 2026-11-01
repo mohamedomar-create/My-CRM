@@ -29,7 +29,11 @@ moneyVoucher(ctx, { party: customer.id, date: '2026-01-12', method: 'cheque', ch
 closeMonth(ctx, '2026-01')
 
 vi.mock('./useApp', () => ({ useApp: () => ({ ws, schema, user: admin, act: () => undefined }), showToast: () => undefined }))
-vi.mock('../lib/i18n', () => ({ useLang: () => ({ lang: 'en', t: (s: string) => s }) }))
+// The real translations, with the hook replaced (server rendering has no store snapshot); the language is set per test.
+vi.mock('../lib/i18n', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/i18n')>()
+  return { ...real, useLang: () => ({ lang: real.getLang(), t: (s: string) => s, tr: real.tr, msg: real.msg, setLang: real.setLang }) }
+})
 
 describe('accounting screens', () => {
   it('bank & cash, VAT & withholding and close the books render with real figures', async () => {
@@ -41,7 +45,7 @@ describe('accounting screens', () => {
     expect(html).toContain('Bank reconciliation')
     expect(html).toContain('VAT return')
     expect(html).toContain('Withholding tax (Form 41)')
-    expect(html).toContain('closed up to <b>2026-01-31</b>')
+    expect(html).toContain('The books are closed up to 2026-01-31.')
   })
 
   it('the financial statements render, with gross profit from the cost of goods sold', async () => {
@@ -50,5 +54,20 @@ describe('accounting screens', () => {
     expect(html).toContain('Profit and loss')
     expect(html).toContain('Gross profit')
     expect(html).toContain('Sales revenue')
+  })
+
+  it('the same screens render in Arabic', async () => {
+    const { setLang } = await import('../lib/i18n')
+    setLang('ar')
+    try {
+      const { default: Treasury } = await import('./Treasury')
+      const { CloseBooks, TaxReturns } = await import('./Ledger')
+      const { default: Statements } = await import('./Statements')
+      const html = renderToString(<MemoryRouter><Treasury /><TaxReturns /><CloseBooks /><Statements /></MemoryRouter>)
+      for (const ar of ['سجل الشيكات', 'التسوية البنكية', 'إقرار ضريبة القيمة المضافة', 'إقفال نهاية الشهر', 'الأرباح والخسائر', 'مجمل الربح']) expect(html).toContain(ar)
+      expect(html).not.toContain('Cheque register')
+    } finally {
+      setLang('en')
+    }
   })
 })

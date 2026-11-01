@@ -28,6 +28,10 @@ const DONE = [
   'src/workspace/Audit.tsx',
   'src/workspace/Inventory.tsx',
   'src/workspace/ImportModal.tsx',
+  'src/workspace/Accounting.tsx',
+  'src/workspace/Ledger.tsx',
+  'src/workspace/Treasury.tsx',
+  'src/workspace/Statements.tsx',
 ]
 
 describe('Arabic translation', () => {

@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calculator, CheckCircle2, AlertTriangle } from 'lucide-react'
-import { useApp } from './useApp'
+import { methodLabel, useApp } from './useApp'
 import { accountBalance, ageing, canPost, money, round2, todayISO, trialBalance } from '../lib/engine'
 import { account, accountName, debitNormal } from '../lib/accounts'
-import { useLang } from '../lib/i18n'
+import { msg, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
 import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
+import { typeLabel } from './labels'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
   const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
   const { lang } = useLang()
-  if (!canPost({ schema, user })) return <div className="page">Only Admin and finance roles can see accounting.</div>
+  if (!canPost({ schema, user })) return <div className="page">{tr('Only Admin and finance roles can see accounting.')}</div>
   const cur = schema.company.currency
   const tb = trialBalance(ws)
   const dr = round2(tb.reduce((s, [, r]) => s + r.debit, 0))
@@ -35,38 +36,38 @@ export default function Accounting() {
   const vatDue = round2(bal('2200') - bal('1400') + bal('2210'))
   return (
     <div className="page">
-      <div className="page-head no-print"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>Accounting</h1></div>
+      <div className="page-head no-print"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>{tr('Accounting')}</h1></div>
       <div className="dash no-print" style={{ marginBottom: 14 }}>
-        <div className="card"><h2>Revenue this year</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
-        <div className="card"><h2>Gross profit this year</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0}% margin</div></div>
-        <div className="card"><h2>Customers owe you</h2><div className="kpi-value">{money(bal('1200'), cur)}</div></div>
-        <div className="card"><h2>{vatDue >= 0 ? 'VAT payable (output − input)' : 'VAT credit (input more than output)'}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success, #047857)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
+        <div className="card"><h2>{tr('Revenue this year')}</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
+        <div className="card"><h2>{tr('Gross profit this year')}</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{tr('{n}% margin', { n: revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0 })}</div></div>
+        <div className="card"><h2>{tr('Customers owe you')}</h2><div className="kpi-value">{money(bal('1200'), cur)}</div></div>
+        <div className="card"><h2>{vatDue >= 0 ? tr('VAT payable (output − input)') : tr('VAT credit (input more than output)')}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success, #047857)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
       </div>
       <div className={`${dr === cr ? 'ok-box row' : 'error-box row'} no-print`} style={{ marginBottom: 14 }}>
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-        {dr === cr ? `Books balance: total debits = total credits = ${money(dr, cur)} across ${ws.data.journal.length} journal entries.` : `Books do not balance (${dr} vs ${cr}). Contact support.`}
+        {dr === cr ? tr('Books balance: total debits = total credits = {amount} across {n} journal entries.', { amount: money(dr, cur), n: ws.data.journal.length }) : tr('Books do not balance ({dr} vs {cr}). Contact support.', { dr, cr })}
       </div>
       <div className="tabs-inline no-print">
-        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Financial statements</button>
-        <button className={tab === 'tb' ? 'on' : ''} onClick={() => setTab('tb')}>Trial balance</button>
-        <button className={tab === 'ageing' ? 'on' : ''} onClick={() => setTab('ageing')}>Ageing</button>
-        <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>Journal</button>
-        <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>New journal voucher</button>
-        <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>Chart of accounts</button>
-        <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>Opening balances</button>
-        <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>Payments</button>
-        <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>Bank &amp; cash</button>
-        <button className={tab === 'tax' ? 'on' : ''} onClick={() => setTab('tax')}>VAT &amp; withholding</button>
-        <button className={tab === 'close' ? 'on' : ''} onClick={() => setTab('close')}>Close the books</button>
+        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>{tr('Financial statements')}</button>
+        <button className={tab === 'tb' ? 'on' : ''} onClick={() => setTab('tb')}>{tr('Trial balance')}</button>
+        <button className={tab === 'ageing' ? 'on' : ''} onClick={() => setTab('ageing')}>{tr('Ageing')}</button>
+        <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>{tr('Journal')}</button>
+        <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>{tr('New journal voucher')}</button>
+        <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>{tr('Chart of accounts')}</button>
+        <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>{tr('Opening balances')}</button>
+        <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>{tr('Payments')}</button>
+        <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>{tr('Bank & cash')}</button>
+        <button className={tab === 'tax' ? 'on' : ''} onClick={() => setTab('tax')}>{tr('VAT & withholding')}</button>
+        <button className={tab === 'close' ? 'on' : ''} onClick={() => setTab('close')}>{tr('Close the books')}</button>
       </div>
       {tab === 'tb' && (
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Account</th><th>Type</th><th className="num">Debit</th><th className="num">Credit</th><th className="num">Balance</th></tr></thead>
+            <thead><tr><th>{tr('Account')}</th><th>{tr('Type')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th><th className="num">{tr('Balance')}</th></tr></thead>
             <tbody>
-              {tb.map(([code, r]) => <tr key={code}><td><span className="mono">{code}</span> {name(code)}</td><td className="muted">{account(ws, code)?.type ?? ''}</td><td className="num">{money(r.debit, cur)}</td><td className="num">{money(r.credit, cur)}</td><td className="num"><b>{money(bal(code), cur)}</b></td></tr>)}
+              {tb.map(([code, r]) => <tr key={code}><td><span className="mono">{code}</span> {name(code)}</td><td className="muted">{account(ws, code) ? typeLabel(account(ws, code)!.type) : ''}</td><td className="num">{money(r.debit, cur)}</td><td className="num">{money(r.credit, cur)}</td><td className="num"><b>{money(bal(code), cur)}</b></td></tr>)}
             </tbody>
-            <tfoot><tr><td>Total</td><td /><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td /></tr></tfoot>
+            <tfoot><tr><td>{tr('Total')}</td><td /><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td /></tr></tfoot>
           </table>
         </div>
       )}
@@ -77,17 +78,17 @@ export default function Accounting() {
             const sum = (k: 'current' | 'd30' | 'd60' | 'd90' | 'over90' | 'total') => round2(rows.reduce((s, r) => s + r[k], 0))
             return (
               <div key={role}>
-                <h2>{role === 'invoices' ? 'Who owes us (receivables)' : 'Who we owe (payables)'}</h2>
+                <h2>{role === 'invoices' ? tr('Who owes us (receivables)') : tr('Who we owe (payables)')}</h2>
                 <div className="table-wrap">
                   <table className="data">
-                    <thead><tr><th>{role === 'invoices' ? 'Customer' : 'Supplier'}</th><th className="num">Not yet due</th><th className="num">1–30 days</th><th className="num">31–60</th><th className="num">61–90</th><th className="num">90+ days</th><th className="num">Total</th></tr></thead>
+                    <thead><tr><th>{role === 'invoices' ? tr('Customer') : tr('Supplier')}</th><th className="num">{tr('Not yet due')}</th><th className="num">{tr('1–30 days')}</th><th className="num">31–60</th><th className="num">61–90</th><th className="num">{tr('90+ days')}</th><th className="num">{tr('Total')}</th></tr></thead>
                     <tbody>
-                      {rows.length === 0 && <tr><td colSpan={7} className="muted">Nothing outstanding.</td></tr>}
+                      {rows.length === 0 && <tr><td colSpan={7} className="muted">{tr('Nothing outstanding.')}</td></tr>}
                       {rows.map((r) => (
                         <tr key={r.party}><td><Link to={`/app/r/${r.party}`}>{r.name}</Link></td><td className="num">{money(r.current, cur)}</td><td className="num">{money(r.d30, cur)}</td><td className="num" style={{ color: r.d60 ? 'var(--warning)' : undefined }}>{money(r.d60, cur)}</td><td className="num" style={{ color: r.d90 ? 'var(--danger)' : undefined }}>{money(r.d90, cur)}</td><td className="num" style={{ color: r.over90 ? 'var(--danger)' : undefined, fontWeight: r.over90 ? 800 : undefined }}>{money(r.over90, cur)}</td><td className="num"><b>{money(r.total, cur)}</b></td></tr>
                       ))}
                     </tbody>
-                    {rows.length > 0 && <tfoot><tr><td>Total</td><td className="num">{money(sum('current'), cur)}</td><td className="num">{money(sum('d30'), cur)}</td><td className="num">{money(sum('d60'), cur)}</td><td className="num">{money(sum('d90'), cur)}</td><td className="num">{money(sum('over90'), cur)}</td><td className="num">{money(sum('total'), cur)}</td></tr></tfoot>}
+                    {rows.length > 0 && <tfoot><tr><td>{tr('Total')}</td><td className="num">{money(sum('current'), cur)}</td><td className="num">{money(sum('d30'), cur)}</td><td className="num">{money(sum('d60'), cur)}</td><td className="num">{money(sum('d90'), cur)}</td><td className="num">{money(sum('over90'), cur)}</td><td className="num">{money(sum('total'), cur)}</td></tr></tfoot>}
                   </table>
                 </div>
               </div>
@@ -99,7 +100,7 @@ export default function Accounting() {
         <div className="stack">
           {ws.data.journal.slice(0, 60).map((j) => (
             <div className="card" key={j.id} style={{ padding: 12 }}>
-              <div className="row between"><b className="mono">{j.ref}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {j.memo} {j.doc && <Link to={`/app/r/${j.doc}`}>open</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
+              <div className="row between"><b className="mono">{j.ref}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
               <table className="lines" style={{ marginTop: 6 }}>
                 <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
               </table>
@@ -117,8 +118,8 @@ export default function Accounting() {
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>Ref</th><th>Date</th><th>Direction</th><th>Method</th><th className="num">Amount</th></tr></thead>
-            <tbody>{ws.data.payments.map((p) => <tr key={p.id}><td><Link className="mono" to={`/app/r/${p.doc}`}>{p.ref}</Link></td><td>{p.date}</td><td>{p.direction === 'in' ? <span className="pill green">received</span> : <span className="pill amber">paid out</span>}</td><td>{p.method}</td><td className="num">{money(p.amount, cur)}</td></tr>)}</tbody>
+            <thead><tr><th>{tr('Ref')}</th><th>{tr('Date')}</th><th>{tr('Direction')}</th><th>{tr('Method')}</th><th className="num">{tr('Amount')}</th></tr></thead>
+            <tbody>{ws.data.payments.map((p) => <tr key={p.id}><td><Link className="mono" to={`/app/r/${p.doc}`}>{p.ref}</Link></td><td>{p.date}</td><td>{p.direction === 'in' ? <span className="pill green">{tr('received')}</span> : <span className="pill amber">{tr('paid out')}</span>}</td><td>{methodLabel(p.method)}</td><td className="num">{money(p.amount, cur)}</td></tr>)}</tbody>
           </table>
         </div>
       )}

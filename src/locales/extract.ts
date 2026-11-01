@@ -41,7 +41,7 @@ export function rawText(src: string): string[] {
   for (const m of src.matchAll(/>([^<>{}\n]*[A-Za-z]{2,}[^<>{}\n]*)</g)) {
     const t = m[1].trim()
     // TypeScript generics and comparisons can look like tags; real JSX text has no arrows, operators or statements.
-    if (t && !/=>|&&|\|\||;|\s=\s|^\)|\($/.test(t)) found.push(t)
+    if (t && !/=>|&&|\|\||===|!==|\breturn\b|\s=\s|^\)|\($|^[=:?]|\s[?:]\s|^[\w.]+\.\w+$|^[a-z]+[A-Z]\w*$/.test(t)) found.push(t)
   }
   for (const m of src.matchAll(/\b(?:placeholder|title|aria-label|alt)="([^"]*[A-Za-z]{2,}[^"]*)"/g)) {
     // E-mail addresses and web addresses are the same in every language.
