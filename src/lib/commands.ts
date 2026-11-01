@@ -9,8 +9,10 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  type Ctx,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock,
+  type Ctx, type Adjustment, type VoucherLine,
 } from './engine'
+import type { AccountType } from './accounts'
 import { validate } from './validate'
 import { seedSampleData } from './seed'
 
@@ -44,6 +46,13 @@ export interface CommandArgs {
   'team.addUser': { id: string; name: string; email: string; roleId: string }
   'team.setRole': { userId: string; roleId: string }
   'team.removeUser': { userId: string }
+  'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType }
+  'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
+  'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
+  'journal.reverse': { id: string; date?: string }
+  'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
+  'stock.adjust': Adjustment
+  'stock.count': { date: string; counts: { product: string; counted: number }[]; note?: string }
   'security.setTwoFactor': { required: boolean }
 }
 
@@ -188,6 +197,13 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       target.roleId = a.roleId
     },
   },
+  'accounts.add': { run: (ws, u, a) => addAccount(ctx(ws, u), a) },
+  'accounts.update': { run: (ws, u, a) => updateAccount(ctx(ws, u), a.code, a) },
+  'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), a) },
+  'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
+  'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
+  'stock.adjust': { run: (ws, u, a) => adjustStock(ctx(ws, u), a) },
+  'stock.count': { run: (ws, u, a) => countStock(ctx(ws, u), a) },
   'security.setTwoFactor': {
     admin: true,
     run: (ws, _u, a) => {

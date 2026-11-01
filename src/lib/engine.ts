@@ -4,6 +4,7 @@ import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, Permissio
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
 import type { AccountCode, Approval, JournalEntry, Line, Rec, User, Workspace } from './types'
+import { account as findAccount, chartOf, type AccountType } from './accounts'
 
 export class EngineError extends Error {}
 
@@ -733,6 +734,216 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
 }
 
 /* ---------------- accounting views ---------------- */
+
+/* ---------------- ledger: chart of accounts, journal vouchers, opening balances, stock adjustments ---------------- */
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const TYPES: AccountType[] = ['asset', 'liability', 'equity', 'income', 'expense']
+
+function needFinance(ctx: Ctx, what: string) {
+  if (!canPost(ctx)) throw new EngineError(`Only Admin and finance roles can ${what}`)
+}
+
+function noRealPostingOverSamples(ctx: Ctx) {
+  if (!ctx.sample && ctx.ws.data.journal.some((j) => j.sample)) {
+    throw new EngineError('Remove the sample data before entering real figures, so your books start clean (use “Remove sample data” at the top of the app).')
+  }
+}
+
+/** Balance of one account (debits minus credits). */
+export function accountBalance(ws: Workspace, code: string) {
+  let b = 0
+  for (const j of ws.data.journal) for (const l of j.lines) if (l.account === code) b += l.debit - l.credit
+  return round2(b)
+}
+
+export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: string; type: AccountType }) {
+  needFinance(ctx, 'change the chart of accounts')
+  const code = String(a.code ?? '').trim()
+  const name = String(a.name ?? '').trim()
+  if (!/^\d{4,6}$/.test(code)) throw new EngineError('An account code is 4 to 6 digits, e.g. 5250')
+  if (name.length < 2) throw new EngineError('Give the account a name')
+  if (!TYPES.includes(a.type)) throw new EngineError('Choose the account type')
+  if (findAccount(ctx.ws, code)) throw new EngineError(`Account ${code} already exists`)
+  ctx.ws.chart = [...chartOf(ctx.ws), { code, name, nameAr: a.nameAr?.trim() || undefined, type: a.type, active: true }].sort((x, y) => x.code.localeCompare(y.code))
+}
+
+export function updateAccount(ctx: Ctx, code: string, change: { name?: string; nameAr?: string; active?: boolean }) {
+  needFinance(ctx, 'change the chart of accounts')
+  const a = findAccount(ctx.ws, code)
+  if (!a) throw new EngineError('That account no longer exists')
+  if (change.active === false && a.system) throw new EngineError('This account is used by posting and can’t be turned off')
+  if (change.active === false && accountBalance(ctx.ws, code) !== 0) throw new EngineError('This account has a balance. Move it to another account with a journal entry first.')
+  const name = change.name === undefined ? a.name : change.name.trim()
+  if (name.length < 2) throw new EngineError('Give the account a name')
+  ctx.ws.chart = chartOf(ctx.ws).map((x) => (x.code === code ? { ...x, name, nameAr: change.nameAr === undefined ? x.nameAr : change.nameAr.trim() || undefined, active: change.active ?? x.active } : x))
+}
+
+/** An account a journal line may use: it exists, is active, and (for manual entries) isn't a control account. */
+function postable(ctx: Ctx, code: string, manual: boolean) {
+  const a = findAccount(ctx.ws, code)
+  if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
+  if (!a.active) throw new EngineError(`Account ${code} ${a.name} is turned off`)
+  if (manual && a.control) {
+    throw new EngineError(`${a.code} ${a.name} is kept by documents only, so it always matches the ${a.code === '1300' ? 'stock list (use a stock adjustment)' : a.code === '1200' ? 'customer balances (use an invoice or an opening balance)' : 'supplier balances (use a bill or an opening balance)'}`)
+  }
+  return a
+}
+
+export interface VoucherLine {
+  account: string
+  debit: number
+  credit: number
+  note?: string
+}
+
+/** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
+export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[] }) {
+  needFinance(ctx, 'enter journal vouchers')
+  noRealPostingOverSamples(ctx)
+  const date = String(v.date ?? '')
+  const memo = String(v.memo ?? '').trim()
+  if (!ISO_DATE.test(date)) throw new EngineError('Choose the date of the entry')
+  if (memo.length < 3) throw new EngineError('Describe the entry (what it is for)')
+  const lines = (v.lines ?? []).map((l) => ({ account: String(l.account), debit: round2(Number(l.debit) || 0), credit: round2(Number(l.credit) || 0), note: l.note?.trim() || undefined }))
+    .filter((l) => l.debit !== 0 || l.credit !== 0)
+  if (lines.length < 2) throw new EngineError('A journal entry needs at least two lines')
+  for (const l of lines) {
+    postable(ctx, l.account, true)
+    if (l.debit < 0 || l.credit < 0) throw new EngineError('Amounts can’t be negative: use the other column')
+    if (l.debit && l.credit) throw new EngineError('Each line is either a debit or a credit, not both')
+  }
+  const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
+  const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
+  if (dr !== cr) throw new EngineError(`The entry doesn’t balance: debits ${money(dr, ctx.schema.company.currency)}, credits ${money(cr, ctx.schema.company.currency)}`)
+  const ref = nextNumber(ctx, 'JV', date)
+  journal(ctx, { date, ref, memo, lines, manual: true })
+  logLedger(ctx, `entered journal voucher ${ref}: ${memo}`)
+  return { ref }
+}
+
+/** Cancels a journal voucher with the opposite entry (the original stays, as the books require). */
+export function reverseJournal(ctx: Ctx, id: string, date = todayISO()) {
+  needFinance(ctx, 'reverse journal vouchers')
+  const je = ctx.ws.data.journal.find((j) => j.id === id)
+  if (!je) throw new EngineError('That journal entry doesn’t exist')
+  if (!je.manual) throw new EngineError('Only journal vouchers are reversed here. A document’s entries are reversed by voiding the document.')
+  if (je.reverses) throw new EngineError('This entry is itself a reversal')
+  if (ctx.ws.data.journal.some((j) => j.reverses === id)) throw new EngineError('This entry was already reversed')
+  if (!ISO_DATE.test(date) || date < je.date) throw new EngineError('The reversal can’t be dated before the entry')
+  journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Reversal of ${je.ref}: ${je.memo}`, manual: true, reverses: id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit, note: l.note })) }, je)
+  logLedger(ctx, `reversed journal voucher ${je.ref}`)
+}
+
+/**
+ * What a customer owed you, or you owed a supplier, on the day you start with Bonyan. It becomes a posted opening
+ * document, so it shows on their balance and ageing and can be paid like any invoice or bill.
+ */
+export function openingBalance(ctx: Ctx, o: { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }) {
+  needFinance(ctx, 'enter opening balances')
+  noRealPostingOverSamples(ctx)
+  const amount = round2(Number(o.amount))
+  if (!(amount > 0)) throw new EngineError('The opening balance must be more than 0')
+  if (!ISO_DATE.test(String(o.date))) throw new EngineError('Choose the opening date')
+  const mod = moduleByRole(ctx.schema, o.kind === 'customer' ? 'invoices' : 'purchases')
+  if (!mod) throw new EngineError(o.kind === 'customer' ? 'This system has no sales invoices' : 'This system has no purchase bills')
+  const field = o.kind === 'customer' ? 'customer' : 'supplier'
+  const party = findRecord(ctx.ws, o.party)
+  if (!party) throw new EngineError(`Choose the ${o.kind}`)
+  const rec = createRecord(ctx, mod.id, { [field]: party.id, date: o.date, due_date: o.date }, {
+    silent: true,
+    lines: [{ id: uid('l'), description: o.ref?.trim() ? `Opening balance (${o.ref.trim()})` : 'Opening balance', qty: 1, price: amount, discount: 0, vat: 0 }],
+  })
+  const number = nextNumber(ctx, 'OB', o.date, Boolean(ctx.sample))
+  journal(ctx, {
+    date: o.date, ref: number, memo: `Opening balance: ${recordTitle(ctx.ws, ctx.schema, party)}`, doc: rec.id,
+    lines: o.kind === 'customer'
+      ? [{ account: '1200', debit: amount, credit: 0 }, { account: '3900', debit: 0, credit: amount }]
+      : [{ account: '3900', debit: amount, credit: 0 }, { account: '2100', debit: 0, credit: amount }],
+  }, rec)
+  rec.values.opening = true
+  rec.number = number
+  rec.status = 'posted'
+  rec.postedAt = nowISO()
+  rec.values.paid = 0
+  rec.values.balance = amount
+  log(ctx, `entered an opening balance of ${money(amount, ctx.schema.company.currency)}`, rec)
+  return rec
+}
+
+export interface Adjustment {
+  product: string
+  /** + adds to stock, − takes away */
+  qty: number
+  /** cost per unit for additions; defaults to the current average cost */
+  unitCost?: number
+  reason: string
+  date: string
+  /** stock you had on the day you started with Bonyan (credited to opening balance equity) */
+  opening?: boolean
+}
+
+/** Changes the stock of one product outside a document (damage, loss, found, opening stock), with its accounting. */
+export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
+  needFinance(ctx, 'adjust stock')
+  noRealPostingOverSamples(ctx)
+  const p = productRec(ctx, a.product)
+  if (!p) throw new EngineError('Choose the product')
+  if (!p.values.track_stock) throw new EngineError(`${p.values.name} doesn’t track stock`)
+  const qty = round4(Number(a.qty))
+  if (!qty) throw new EngineError('Enter how many units to add or take away')
+  const date = String(a.date ?? '')
+  if (!ISO_DATE.test(date)) throw new EngineError('Choose the date')
+  const reason = String(a.reason ?? '').trim()
+  if (reason.length < 3) throw new EngineError('Give the reason for the adjustment')
+  const number = ref ?? nextNumber(ctx, 'ADJ', date, Boolean(ctx.sample))
+  const oldQty = onHand(ctx.ws, p.id)
+  const oldValue = stockValue(ctx.ws, p)
+  const cost = Number(p.values.cost ?? 0)
+  const other = a.opening ? '3900' : '5900'
+  if (qty > 0) {
+    const unit = a.unitCost === undefined || a.unitCost === null || (a.unitCost as unknown) === '' ? cost : Number(a.unitCost)
+    if (!(unit >= 0)) throw new EngineError('The cost per unit can’t be negative')
+    const target = oldQty < 0 ? round2((oldQty + qty) * unit) : round2(oldValue + qty * unit)
+    const value = round2(target - oldValue)
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unit), value, doc: '', ref: number, date }))
+    journal(ctx, { date, ref: number, memo: `${a.opening ? 'Opening stock' : 'Stock adjustment'}: ${p.values.name} +${qty} (${reason})`, lines: [side('1300', value), side(other, -value)] })
+    setValuation(ctx.ws, p, target)
+  } else {
+    const q = -qty
+    if (!ctx.schema.company.allowNegativeStock && oldQty < q) throw new EngineError(`Not enough stock of ${p.values.name}: ${oldQty} on hand`)
+    const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost, value: -issue, doc: '', ref: number, date }))
+    journal(ctx, { date, ref: number, memo: `Stock adjustment: ${p.values.name} −${q} (${reason})`, lines: [side(other, issue), side('1300', -issue)] })
+    setValuation(ctx.ws, p, oldValue - issue)
+    reorderAlert(ctx, p)
+  }
+  log(ctx, `adjusted stock by ${qty > 0 ? '+' : ''}${qty} (${reason})`, p)
+  return number
+}
+
+/** A stock count: for every product counted, the difference to the system's quantity is adjusted. */
+export function countStock(ctx: Ctx, c: { date: string; counts: { product: string; counted: number }[]; note?: string }) {
+  needFinance(ctx, 'record stock counts')
+  if (!ISO_DATE.test(String(c.date))) throw new EngineError('Choose the date of the count')
+  const counts = (c.counts ?? []).filter((x) => x.counted !== undefined && x.counted !== null && String(x.counted) !== '')
+  if (!counts.length) throw new EngineError('Enter at least one counted quantity')
+  const ref = nextNumber(ctx, 'CNT', c.date, Boolean(ctx.sample))
+  let adjusted = 0
+  for (const x of counts) {
+    const counted = Number(x.counted)
+    if (!(counted >= 0)) throw new EngineError('Counted quantities can’t be negative')
+    const diff = round4(counted - onHand(ctx.ws, x.product))
+    if (!diff) continue
+    adjustStock(ctx, { product: x.product, qty: diff, reason: c.note?.trim() ? `Stock count: ${c.note.trim()}` : 'Stock count', date: c.date }, ref)
+    adjusted++
+  }
+  return { ref, adjusted }
+}
+
+function logLedger(ctx: Ctx, text: string) {
+  ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: ctx.user.name, text }))
+}
 
 export function trialBalance(ws: Workspace) {
   const rows = new Map<AccountCode, { debit: number; credit: number }>()

@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Boxes } from 'lucide-react'
 import { useApp } from './useApp'
-import { can, canSeeCosts, list, money, onHand, round2, stockValue } from '../lib/engine'
+import { can, canPost, canSeeCosts, list, money, onHand, round2, stockValue } from '../lib/engine'
+import { StockTools } from './Ledger'
 import { moduleByRole } from '../lib/schema'
 
 export default function Inventory() {
@@ -24,7 +25,8 @@ export default function Inventory() {
         <div className="card"><h2>At or below reorder level</h2><div className="kpi-value" style={{ color: low.length ? 'var(--danger)' : 'var(--success)' }}>{low.length}</div></div>
         <div className="card"><h2>Movements</h2><div className="kpi-value">{ws.data.stock.length}</div></div>
       </div>
-      <div className="info" style={{ marginBottom: 14 }}>Quantities and costs come only from posted purchase bills and invoices, so they always match your documents. To correct stock, post a bill or invoice — never type it in.</div>
+      <div className="info" style={{ marginBottom: 14 }}>Quantities and costs come only from posted bills and invoices, stock adjustments and counts, so they always match the books. Quantities can't be typed in directly.</div>
+      {canPost({ schema, user }) && <StockTools />}
       <div className="table-wrap" style={{ marginBottom: 18 }}>
         <table className="data">
           <thead><tr><th>Item</th><th>SKU</th><th className="num">On hand</th><th className="num">Reorder at</th>{costs && <th className="num">Avg cost</th>}<th className="num">Price</th>{costs && <th className="num">Margin</th>}{costs && <th className="num">Value</th>}</tr></thead>
@@ -58,7 +60,7 @@ export default function Inventory() {
             {moves.map((m) => (
               <tr key={m.id}>
                 <td>{m.date}</td>
-                <td><Link to={`/app/r/${m.doc}`} className="mono">{m.ref}</Link></td>
+                <td>{m.doc ? <Link to={`/app/r/${m.doc}`} className="mono">{m.ref}</Link> : <span className="mono">{m.ref}</span>}</td>
                 <td>{String(list(ws, products.id).find((p) => p.id === m.product)?.values.name ?? '')}</td>
                 <td className="num" style={{ color: m.qty < 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>{m.qty > 0 ? '+' : ''}{m.qty}</td>
                 <td className="num">{money(m.cost, cur)}</td>

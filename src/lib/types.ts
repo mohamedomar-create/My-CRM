@@ -45,19 +45,8 @@ export interface StockMove {
   sample?: boolean
 }
 
-export type AccountCode = '1100' | '1200' | '1300' | '1400' | '2100' | '2200' | '4000' | '5000' | '5100'
-
-export const CHART: Record<AccountCode, { name: string; type: 'asset' | 'liability' | 'income' | 'expense' }> = {
-  '1100': { name: 'Cash & bank', type: 'asset' },
-  '1200': { name: 'Accounts receivable', type: 'asset' },
-  '1300': { name: 'Inventory', type: 'asset' },
-  '1400': { name: 'VAT input (recoverable)', type: 'asset' },
-  '2100': { name: 'Accounts payable', type: 'liability' },
-  '2200': { name: 'VAT output (payable)', type: 'liability' },
-  '4000': { name: 'Sales revenue', type: 'income' },
-  '5000': { name: 'Cost of goods sold', type: 'expense' },
-  '5100': { name: 'Purchased services & expenses', type: 'expense' },
-}
+/** An account of the chart of accounts (see accounts.ts), e.g. '1100' or one the company added. */
+export type AccountCode = string
 
 export interface JournalEntry {
   id: string
@@ -65,8 +54,12 @@ export interface JournalEntry {
   ref: string
   memo: string
   doc?: string
-  lines: { account: AccountCode; debit: number; credit: number }[]
+  lines: { account: AccountCode; debit: number; credit: number; note?: string }[]
   sample?: boolean
+  /** entered by hand (a journal voucher), not by a document */
+  manual?: boolean
+  /** this entry cancels the manual entry with this id */
+  reverses?: string
 }
 
 export interface Payment {
@@ -160,6 +153,8 @@ export interface Workspace {
   published: AppSchema | null
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
+  /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
+  chart?: import('./accounts').Account[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData
