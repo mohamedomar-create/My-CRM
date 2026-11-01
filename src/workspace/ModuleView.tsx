@@ -50,7 +50,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const cols = mod.fields.filter((f) => f.inList && !hidden(f.key)).slice(0, 7)
   const all = list(ws, mod.id)
   const rows = all
-    .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())))
+    .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())) || [r.legacy?.id, r.legacy?.number].some((x) => x?.toLowerCase().includes(q.toLowerCase())))
     .filter((r) => !stage || r.stage === stage || r.status === stage)
     // each sort value is worked out once per record, not once per comparison
     .map((r) => {

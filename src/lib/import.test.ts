@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
-import { createRecord, importRows, importStatus, list, normalPhone, previewImport, undoImport, updateRecord, type Ctx } from './engine'
+import { createRecord, importKey, importRows, importStatus, list, normalPhone, previewImport, undoImport, updateRecord, type Ctx } from './engine'
 import { applyCommand } from './commands'
 import { handleCommands, type ServerDeps } from './commandServer'
 import { applyChanges } from './split'
@@ -32,7 +32,7 @@ const customerMap = { 'Old id': '__legacy_id', Name: 'name', Phone: 'phone', Gov
 describe('importing a company’s data', () => {
   it('a second import of the same file updates the records instead of duplicating them', () => {
     const { ctx, ws, accounts } = setup()
-    const first = importRows(ctx, accounts, customers, customerMap, { match: 'phone', values: { governorate: { 'القاهرة': 'cairo' } } })
+    const first = importRows(ctx, accounts, customers, customerMap, { match: 'phone', values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     expect(first).toMatchObject({ created: 2, updated: 0, errors: [] })
     expect(list(ws, accounts).find((r) => r.values.name === 'Nile Foods')!.values.governorate).toBe('cairo')
     // The same customers, phones written another way, one new detail.
@@ -46,6 +46,8 @@ describe('importing a company’s data', () => {
     const nile = list(ws, accounts).find((r) => r.legacy?.id === 'C-1')!
     expect(nile.values).toMatchObject({ name: 'Nile Foods SAE', email: 'buy@nile.eg', governorate: 'cairo' })
     expect(normalPhone('0100 123 4567')).toBe(normalPhone('+20 100 123 4567'))
+    expect(importKey('الأقصر')).toBe(importKey('الاقصر'))
+    expect(importKey('مكتبة القاهرة')).toBe(importKey('مكتبه القاهره'))
     // One line in the activity log per import, not one per row.
     expect(ws.data.activity.filter((a) => a.text.startsWith('imported'))).toHaveLength(2)
     expect(ws.data.activity).toHaveLength(2)
@@ -53,7 +55,7 @@ describe('importing a company’s data', () => {
 
   it('links find their record by the old system’s id, and say so when a name is ambiguous', () => {
     const { ctx, ws, accounts, contacts } = setup()
-    importRows(ctx, accounts, [...customers, { 'Old id': 'C-3', Name: 'Delta Market', Phone: '01000000003', Governorate: 'Giza' }], customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    importRows(ctx, accounts, [...customers, { 'Old id': 'C-3', Name: 'Delta Market', Phone: '01000000003', Governorate: 'Giza' }], customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     const res = importRows(ctx, contacts, [
       { Name: 'Ahmed', Company: 'C-3' },
       { Name: 'Hoda', Company: 'Nile Foods' },
@@ -88,7 +90,7 @@ describe('importing a company’s data', () => {
 
   it('deals come in at their stage, with the old dates and owner, and run no automations', () => {
     const { ctx, ws, accounts, deals, leads } = setup()
-    importRows(ctx, accounts, customers, customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    importRows(ctx, accounts, customers, customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     const res = importRows(ctx, deals, [
       { Deal: 'Ramadan order', Customer: 'C-1', Amount: '١٢٬٥٠٠', Close: '30/03/2026', Stage: 'Negotiation', Opened: '2026-01-10', Rep: 'Sara Nabil' },
       { Deal: 'Summer order', Customer: 'C-2', Amount: '8000', Close: '2025-07-01', Stage: 'won', Opened: '2025-05-02', Reached: '2025-06-20', Rep: 'Mona Adel' },
@@ -114,12 +116,12 @@ describe('importing a company’s data', () => {
 
   it('the preview shows what would happen and changes nothing; parts of one file are one import', () => {
     const { ctx, ws, accounts } = setup()
-    const preview = previewImport(ctx, accounts, customers, customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    const preview = previewImport(ctx, accounts, customers, customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     expect(preview.rows.map((r) => r.action)).toEqual(['create', 'create'])
     expect(list(ws, accounts)).toHaveLength(0)
     expect(ws.data.imports ?? []).toHaveLength(0)
     const batch = { id: 'imp_file1', file: 'customers.xlsx' }
-    importRows(ctx, accounts, customers.slice(0, 1), customerMap, { batch, values: { governorate: { 'القاهرة': 'cairo' } } })
+    importRows(ctx, accounts, customers.slice(0, 1), customerMap, { batch, values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     importRows(ctx, accounts, customers.slice(1), customerMap, { batch })
     expect(ws.data.imports).toEqual([expect.objectContaining({ id: 'imp_file1', file: 'customers.xlsx', created: 2, parts: 2, by: 'u_admin' })])
     // A likely duplicate is pointed out before it is created.
@@ -131,7 +133,7 @@ describe('importing a company’s data', () => {
 
   it('a whole import can be undone: added records go, changed records get their old values back', () => {
     const { ctx, ws, accounts } = setup()
-    const first = importRows(ctx, accounts, customers, customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    const first = importRows(ctx, accounts, customers, customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     const second = importRows(ctx, accounts, [{ 'Old id': 'C-1', Name: 'Nile Foods SAE' }, { 'Old id': 'C-9', Name: 'New one' }], { 'Old id': '__legacy_id', Name: 'name' }, { match: '__legacy_id' })
     expect(second).toMatchObject({ created: 1, updated: 1 })
     // The first import can't be undone while the second still changes one of its records.
@@ -148,12 +150,12 @@ describe('importing a company’s data', () => {
 
   it('an import can’t be undone once its records are edited or used, or by someone else', () => {
     const { ctx, ws, accounts, contacts } = setup()
-    const imp = importRows(ctx, accounts, customers, customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    const imp = importRows(ctx, accounts, customers, customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     const nile = list(ws, accounts).find((r) => r.legacy?.id === 'C-1')!
     createRecord(ctx, contacts, { name: 'Hoda', account: nile.id })
     expect(importStatus(ctx, imp.batch).blockers).toEqual(['Contact “Hoda” links to a record of this import'])
     const other = setup()
-    const imp2 = importRows(other.ctx, other.accounts, customers, customerMap, { values: { governorate: { 'القاهرة': 'cairo' } } })
+    const imp2 = importRows(other.ctx, other.accounts, customers, customerMap, { values: { governorate: { [importKey('القاهرة')]: 'cairo' } } })
     updateRecord(other.ctx, list(other.ws, other.accounts)[0], { ...list(other.ws, other.accounts)[0].values, name: 'Edited' })
     expect(importStatus(other.ctx, imp2.batch).blockers).toEqual(['“Edited” was changed after the import'])
     const sales = other.schema.roles.find((r) => !r.admin)!
@@ -178,7 +180,7 @@ describe('importing a company’s data', () => {
       view: async () => structuredClone(row.doc),
       audit: async () => undefined,
     }
-    const args = { module: accounts, rows: customers, mapping: customerMap, batch: { id: 'imp_server1', file: 'c.csv' }, values: { governorate: { 'القاهرة': 'cairo' } } }
+    const args = { module: accounts, rows: customers, mapping: customerMap, batch: { id: 'imp_server1', file: 'c.csv' }, values: { governorate: { [importKey('القاهرة')]: 'cairo' } } }
     const local = applyCommand(ws, { userId: admin.id, isAdmin: true }, { name: 'import.rows', args } as never)
     const out = await handleCommands(deps, { workspace: 'ws', commands: [{ name: 'import.rows', args, ids: local.ids }] })
     expect(out.results[0].ok).toBe(true)

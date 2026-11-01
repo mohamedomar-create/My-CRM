@@ -2093,6 +2093,8 @@ export interface ImportOptions {
    * an option value, a team member's id, a record's id or a stage id. '' leaves the field empty.
    */
   values?: Record<string, Record<string, string>>
+  /** the file's row number of the first row sent (a file sent in parts keeps its own row numbers); 2 by default */
+  firstRow?: number
 }
 
 export interface ImportRowResult {
@@ -2112,9 +2114,14 @@ export interface ImportResult {
   rows: ImportRowResult[]
 }
 
-/** A value as imports compare it: Western digits, no diacritics or tatweel, lower case, single spaces. */
+/**
+ * A value as imports compare it: Western digits, no diacritics or tatweel, the Arabic letters people write either way
+ * made one (alef with or without hamza, alef maqsura and ya, ta marbuta and ha), lower case, single spaces.
+ */
 export function importKey(raw: string) {
-  return asciiDigits(String(raw)).normalize('NFKC').replace(/[ً-ٰٟـ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+  return asciiDigits(String(raw)).normalize('NFKC').replace(/[ً-ٰٟـ]/g, '')
+    .replace(/[آأإٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+    .toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
 /** A phone number in one international form (digits only): 0100 123 4567, +20 100 123 4567 and 00201001234567 match. */
@@ -2270,7 +2277,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
   const link = linker(ctx)
   const result: ImportResult = { batch: batchId, created: 0, updated: 0, skipped: 0, errors: [], rows: [] }
   rows.forEach((row, i) => {
-    const rowNo = i + 2
+    const rowNo = (opts.firstRow ?? 2) + i
     let column: string | undefined
     try {
       const values: Record<string, unknown> = {}

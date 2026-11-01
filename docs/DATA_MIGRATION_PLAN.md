@@ -369,11 +369,24 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 **Fixes:** the BUIL-13 gaps (stages on import, Excel), SALE-09's update-on-import, SECU-12's progress.
 
 **Done when**
-- [ ] A 12,000-row customer file in Excel imports in parts with progress.
-- [ ] Importing it a second time updates instead of duplicating.
-- [ ] Undoing the batch removes it exactly.
-- [ ] Deals import into their stages with their owners and created dates.
-- [ ] No automation runs on imported rows.
+- [x] A 12,000-row customer file in Excel imports in parts with progress. (24 parts of 500 rows; one part takes about 0.2 s on the server with 12,000 customers already in.)
+- [x] Importing it a second time updates instead of duplicating.
+- [x] Undoing the batch removes it exactly.
+- [x] Deals import into their stages with their owners and created dates.
+- [x] No automation runs on imported rows.
+
+> **Progress (H1 done).**
+> - **Files:** the import screen reads Excel workbooks (.xlsx, any sheet) and CSV, including CSV saved by Arabic Excel in the old Arabic code page. A file of up to 50,000 rows is sent in parts of 500, each saved before the next, with a progress bar.
+> - **Before saving:** "Check the rows" runs every check on a copy and shows what will be added, updated or skipped, the problems by row and column (downloadable to fix), and rows that look like records already in Bonyan.
+> - **Updating instead of adding:** an import can update the record with the same old system id, phone (one international form), e-mail or other field.
+> - **Matching:**
+>   - links find their record by old id, then number, then name, and say when a name is ambiguous;
+>   - values that aren't options (and people, and stages) are matched in one screen;
+>   - Arabic letters people write either way (أ/ا, ى/ي, ة/ه) and Arabic digits match.
+> - **What comes in:** the stage, the created date and the date each record reached its stage; the old id, number and notes, shown on the record and searchable.
+> - **No side effects:** imports run no automations and write one activity line per part.
+> - **Undo:** every import is listed with Undo. It removes what the import added and gives changed records their earlier values, and is refused (with the reason) once a record was edited, used or changed by a later import.
+> - **Not built yet:** the switch to run automations on fresh leads (imports never run them for now); Merge for likely duplicates (SALE-09, Phase 3); AI mapping (H7).
 
 ### H2. Opening books (L)
 
