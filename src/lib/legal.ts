@@ -3,7 +3,7 @@
 export const LEGAL = {
   draft: true,
   /** the legal name of the company that operates Bonyan */
-  company: '',
+  company: 'Nasq360',
   /** its registered address in Egypt */
   address: '',
   /** where people write about privacy and their data */
