@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, Bell, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
@@ -69,6 +69,7 @@ export default function Shell() {
         {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> {tr('Approvals')} {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> {tr('Team')}</NavLink>}
         {role?.admin && <NavLink to="/app/audit"><ShieldCheck size={18} /> {tr('Audit trail')}</NavLink>}
+        {(role?.admin || canPost({ schema, user })) && <NavLink to="/app/migrate"><FileSpreadsheet size={18} /> {tr('Bring your data in')}</NavLink>}
         {role?.admin && <NavLink to="/builder"><Wand2 size={18} /> {tr('Customise system')}</NavLink>}
         <NavLink to="/security"><ShieldCheck size={18} /> {tr('Security')}</NavLink>
       </aside>

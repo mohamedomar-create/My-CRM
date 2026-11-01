@@ -13,10 +13,10 @@ import { moduleByRole } from '../lib/schema'
 import type { OpeningStep } from '../lib/types'
 import { readXlsx } from '../lib/xlsx'
 import { parseCsv } from './ImportModal'
-import { dateLocale, getLang, msg, N_, tr, translate } from '../lib/i18n'
+import { columnOf, SHEETS, TITLES } from '../lib/openingSheets'
+import { dateLocale, getLang, msg, tr, translate } from '../lib/i18n'
 
 type Row = Record<string, string>
-interface Column { key: string; label: string; required?: boolean; aliases?: string[] }
 
 const norm = (s: string) => importKey(s).replace(/[^a-z0-9؀-ۿ]/g, '')
 const csv = (rows: string[][]) => '﻿' + rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\r\n')
@@ -36,68 +36,25 @@ async function readSheet(file: File): Promise<string[][]> {
   return parseCsv(utf8.includes('�') ? new TextDecoder('windows-1256').decode(bytes) : utf8)
 }
 
-/* ---------------- the columns of each sheet ---------------- */
-
-const PARTY_DOC = (party: string, partyAr: string[]): Column[] => [
-  { key: 'party', label: party, required: true, aliases: partyAr },
-  { key: 'number', label: N_('Old number'), aliases: ['invoice no', 'رقم الفاتورة', 'رقم المستند', 'bill no'] },
-  { key: 'date', label: N_('Date'), aliases: ['invoice date', 'تاريخ الفاتورة'] },
-  { key: 'due', label: N_('Due date'), aliases: ['تاريخ الاستحقاق', 'due'] },
-  { key: 'total', label: N_('Invoice total'), aliases: ['total', 'الإجمالي', 'قيمة الفاتورة'] },
-  { key: 'subtotal', label: N_('Amount before VAT'), aliases: ['net', 'قبل الضريبة'] },
-  { key: 'open', label: N_('Amount still owed'), required: true, aliases: ['balance', 'outstanding', 'remaining', 'المتبقي', 'الرصيد', 'الباقي'] },
-  { key: 'einvoice', label: N_('E-invoice number'), aliases: ['eta', 'uuid', 'رقم الفاتورة الإلكترونية'] },
-]
-
-const SHEETS: Record<string, Column[]> = {
-  tb: [
-    { key: 'account', label: N_('Account code'), required: true, aliases: ['account', 'code', 'كود الحساب', 'رقم الحساب'] },
-    { key: 'name', label: N_('Account name'), aliases: ['اسم الحساب', 'الحساب'] },
-    { key: 'debit', label: N_('Debit'), aliases: ['مدين', 'dr'] },
-    { key: 'credit', label: N_('Credit'), aliases: ['دائن', 'cr'] },
-  ],
-  customers: PARTY_DOC(N_('Customer'), ['customer name', 'العميل', 'اسم العميل']),
-  suppliers: PARTY_DOC(N_('Supplier'), ['supplier name', 'المورد', 'اسم المورد']),
-  cheques: [
-    { key: 'direction', label: N_('Received or issued'), required: true, aliases: ['direction', 'type', 'النوع', 'وارد/صادر'] },
-    { key: 'party', label: N_('Customer or supplier'), required: true, aliases: ['party', 'name', 'الاسم', 'العميل', 'المورد'] },
-    { key: 'no', label: N_('Cheque number'), required: true, aliases: ['cheque no', 'رقم الشيك'] },
-    { key: 'bank', label: N_('Bank'), aliases: ['drawer bank', 'البنك'] },
-    { key: 'due', label: N_('Due date'), required: true, aliases: ['تاريخ الاستحقاق'] },
-    { key: 'amount', label: N_('Amount'), required: true, aliases: ['المبلغ', 'القيمة'] },
-    { key: 'state', label: N_('In the safe or under collection'), aliases: ['state', 'status', 'الحالة'] },
-    { key: 'account', label: N_('Bank account it was deposited into'), aliases: ['deposited into', 'حساب الإيداع'] },
-  ],
-  stock: [
-    { key: 'product', label: N_('Product code or name'), required: true, aliases: ['sku', 'code', 'product', 'item', 'الصنف', 'كود الصنف', 'المنتج'] },
-    { key: 'qty', label: N_('Quantity'), required: true, aliases: ['qty', 'الكمية', 'الرصيد'] },
-    { key: 'cost', label: N_('Cost per unit'), required: true, aliases: ['unit cost', 'cost', 'التكلفة', 'سعر التكلفة', 'متوسط التكلفة'] },
-  ],
-  wht: [
-    { key: 'direction', label: N_('Withheld by us (out) or by the customer (in)'), required: true, aliases: ['direction', 'النوع'] },
-    { key: 'party', label: N_('Supplier or customer'), required: true, aliases: ['name', 'الاسم', 'المورد'] },
-    { key: 'taxId', label: N_('Tax registration no.'), aliases: ['tax id', 'الرقم الضريبي', 'رقم التسجيل الضريبي'] },
-    { key: 'date', label: N_('Date'), required: true, aliases: ['التاريخ'] },
-    { key: 'base', label: N_('Amount before VAT'), required: true, aliases: ['base', 'المبلغ'] },
-    { key: 'rate', label: N_('Rate %'), required: true, aliases: ['rate', 'النسبة'] },
-    { key: 'amount', label: N_('Tax withheld'), aliases: ['tax', 'الضريبة'] },
-    { key: 'ref', label: N_('Reference'), aliases: ['ref', 'المرجع'] },
-  ],
-}
-
-const TITLES: Record<string, { title: string; help: string }> = {
-  tb: { title: N_('Trial balance'), help: N_('The old system’s trial balance at the end of the opening date: account code, name, debit and credit. Accounts that a later step fills from its detail (customers, suppliers, stock, cheques, cash and bank) are kept to compare with; every other account is posted as it is.') },
-  customers: { title: N_('What customers owe'), help: N_('One row per invoice not fully paid, with its old number, date, due date, total and the amount still owed, so ageing and collection work invoice by invoice. A customer’s advance or unused credit is a row with a negative amount.') },
-  suppliers: { title: N_('What you owe suppliers'), help: N_('One row per bill not fully paid. An advance you paid a supplier is a row with a negative amount.') },
-  cheques: { title: N_('Cheques not yet cashed'), help: N_('Cheques received and still in the safe or under collection, and cheques you issued that the bank hasn’t paid yet. After going live they are deposited, cleared or bounced like any cheque; a bounced one is owed again.') },
-  stock: { title: N_('Stock on hand'), help: N_('One row per product: the quantity on the opening date and what one unit cost.') },
-  wht: { title: N_('Withholding tax earlier this quarter'), help: N_('Withholding from the months of the go-live quarter before going live, so Form 41 for this quarter is complete. It is not posted again: the tax itself is in the trial balance.') },
-}
-
 /* ---------------- one sheet ---------------- */
 
-function SheetCard({ step, run, send, mapRows, extra, disabled }: {
+/** A sheet handed over by the migration wizard: the file it came from and its rows (header first). */
+export interface SheetPreset { file: string; rows: string[][] }
+
+/** Each column matched to the file's header with that name (in either language, a few common others, * ignored). */
+function matchColumns(cols: typeof SHEETS[string], header: string[]) {
+  const m: Record<string, string> = {}
+  for (const c of cols) {
+    const names = [c.label, translate('ar', c.label), c.key, ...(c.aliases ?? [])].map(norm)
+    const h = header.find((x) => names.includes(norm(x))) ?? header.find((x) => names.some((n) => n.length > 2 && norm(x).includes(n)))
+    if (h && !Object.values(m).includes(h)) m[c.key] = h
+  }
+  return m
+}
+
+function SheetCard({ step, run, send, mapRows, extra, disabled, preset }: {
   step: string
+  preset?: SheetPreset
   /** the same step on a copy of the company's data, to check the rows */
   run: (ctx: Ctx, rows: Row[]) => unknown
   send: (rows: Row[]) => unknown
@@ -109,9 +66,9 @@ function SheetCard({ step, run, send, mapRows, extra, disabled }: {
   const saved = ws.published as AppSchema
   const cols = SHEETS[step]
   const done = ws.books?.opening?.steps[step] as OpeningStep | undefined
-  const [table, setTable] = useState<string[][] | null>(null)
-  const [file, setFile] = useState('')
-  const [map, setMap] = useState<Record<string, string>>({})
+  const [table, setTable] = useState<string[][] | null>(preset && preset.rows.length > 1 ? preset.rows : null)
+  const [file, setFile] = useState(preset?.file ?? '')
+  const [map, setMap] = useState<Record<string, string>>(() => (preset ? matchColumns(cols, preset.rows[0] ?? []) : {}))
   const [errors, setErrors] = useState<{ row: number; message: string }[] | null>(null)
   const [problem, setProblem] = useState('')
   const [ok, setOk] = useState(false)
@@ -130,13 +87,7 @@ function SheetCard({ step, run, send, mapRows, extra, disabled }: {
       if (t.length < 2) throw new Error(tr('This file has no rows'))
       setFile(f.name)
       setTable(t)
-      const m: Record<string, string> = {}
-      for (const c of cols) {
-        const names = [c.label, translate('ar', c.label), c.key, ...(c.aliases ?? [])].map(norm)
-        const h = t[0].find((x) => names.includes(norm(x))) ?? t[0].find((x) => names.some((n) => n.length > 2 && norm(x).includes(n)))
-        if (h && !Object.values(m).includes(h)) m[c.key] = h
-      }
-      setMap(m)
+      setMap(matchColumns(cols, t[0]))
     } catch (e) {
       setProblem(msg((e as Error).message))
     }
@@ -199,7 +150,12 @@ function SheetCard({ step, run, send, mapRows, extra, disabled }: {
           {errors && (
             <div className="error-box" style={{ maxHeight: 220, overflowY: 'auto' }}>
               <b>{tr('{n} rows have problems:', { n: errors.length })}</b>
-              <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>{errors.slice(0, 100).map((e) => <li key={e.row}>{tr('Row {n}', { n: e.row })}: {msg(e.message)}</li>)}</ul>
+              <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>{errors.slice(0, 100).map((e) => {
+                // The cell to fix: the row, and the file's own column header for what the problem is about.
+                const col = columnOf(cols, e.message)
+                const cell = col && map[col.key] ? ` · ${map[col.key]}` : ''
+                return <li key={e.row}>{tr('Row {n}', { n: e.row })}{cell}: {msg(e.message)}</li>
+              })}</ul>
             </div>
           )}
           {ok && <div className="ok-box row"><CheckCircle2 size={16} /> {tr('All {n} rows are ready.', { n: ready.length })}</div>}
@@ -309,7 +265,7 @@ function MoneyCard({ code, disabled }: { code: string; disabled: boolean }) {
 
 /* ---------------- the page ---------------- */
 
-export default function GoLive() {
+export default function GoLive({ presets }: { presets?: Record<string, SheetPreset> }) {
   const { ws, user, act } = useApp()
   const saved = ws.published as AppSchema
   const cur = saved.company.currency
@@ -353,17 +309,17 @@ export default function GoLive() {
 
       {o && (
         <>
-          <SheetCard step="tb" disabled={final} mapRows={(r) => r.map((x) => ({ ...x, account: autoAccount(ws, x.account, x.name) ?? x.account }))} run={(c, r) => openingTrialBalance(c, r)} send={(r) => act('opening.trialBalance', { rows: r.map(({ account, debit, credit }) => ({ account, debit, credit })) }, tr('Trial balance saved'))} extra={(r, set) => <AccountMapping rows={r} set={set} />} />
-          {has('invoices') && <SheetCard step="customers" disabled={final} run={(c, r) => openingDocuments(c, 'customers', r)} send={(r) => act('opening.documents', { kind: 'customers', rows: r }, tr('Saved'))} />}
-          {has('purchases') && <SheetCard step="suppliers" disabled={final} run={(c, r) => openingDocuments(c, 'suppliers', r)} send={(r) => act('opening.documents', { kind: 'suppliers', rows: r }, tr('Saved'))} />}
-          {(has('invoices') || has('purchases')) && <SheetCard step="cheques" disabled={final} run={(c, r) => openingCheques(c, r)} send={(r) => act('opening.cheques', { rows: r }, tr('Saved'))} />}
+          <SheetCard key={`tb:${presets?.tb?.file ?? ""}`} preset={presets?.tb} step="tb" disabled={final} mapRows={(r) => r.map((x) => ({ ...x, account: autoAccount(ws, x.account, x.name) ?? x.account }))} run={(c, r) => openingTrialBalance(c, r)} send={(r) => act('opening.trialBalance', { rows: r.map(({ account, debit, credit }) => ({ account, debit, credit })) }, tr('Trial balance saved'))} extra={(r, set) => <AccountMapping rows={r} set={set} />} />
+          {has('invoices') && <SheetCard key={`customers:${presets?.customers?.file ?? ""}`} preset={presets?.customers} step="customers" disabled={final} run={(c, r) => openingDocuments(c, 'customers', r)} send={(r) => act('opening.documents', { kind: 'customers', rows: r }, tr('Saved'))} />}
+          {has('purchases') && <SheetCard key={`suppliers:${presets?.suppliers?.file ?? ""}`} preset={presets?.suppliers} step="suppliers" disabled={final} run={(c, r) => openingDocuments(c, 'suppliers', r)} send={(r) => act('opening.documents', { kind: 'suppliers', rows: r }, tr('Saved'))} />}
+          {(has('invoices') || has('purchases')) && <SheetCard key={`cheques:${presets?.cheques?.file ?? ""}`} preset={presets?.cheques} step="cheques" disabled={final} run={(c, r) => openingCheques(c, r)} send={(r) => act('opening.cheques', { rows: r }, tr('Saved'))} />}
           <div className="card stack">
             <h2 style={{ margin: 0 }}>{tr('Cash and bank')}</h2>
             <p className="small muted" style={{ margin: 0 }}>{tr('Each cash box’s count and each bank account’s statement balance on the opening date.')}</p>
             {moneyAccounts(ws).map((a) => <MoneyCard key={a.code} code={a.code} disabled={final} />)}
           </div>
-          {has('products') && <SheetCard step="stock" disabled={final} run={(c, r) => openingStock(c, r)} send={(r) => act('opening.stock', { rows: r }, tr('Saved'))} />}
-          {!quarterStart && <SheetCard step="wht" disabled={final} run={(c, r) => openingWht(c, r)} send={(r) => act('opening.wht', { rows: r }, tr('Saved'))} />}
+          {has('products') && <SheetCard key={`stock:${presets?.stock?.file ?? ""}`} preset={presets?.stock} step="stock" disabled={final} run={(c, r) => openingStock(c, r)} send={(r) => act('opening.stock', { rows: r }, tr('Saved'))} />}
+          {!quarterStart && <SheetCard key={`wht:${presets?.wht?.file ?? ""}`} preset={presets?.wht} step="wht" disabled={final} run={(c, r) => openingWht(c, r)} send={(r) => act('opening.wht', { rows: r }, tr('Saved'))} />}
 
           {st && (
             <div className="card stack">

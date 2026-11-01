@@ -442,8 +442,24 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 **What it adds:** the checklist page, generated workbook, mapping screens, preview, reconcile panel and summary, in Arabic and English.
 
 **Done when**
-- [ ] A company with no help completes the CRM and opening-books steps from the generated workbook.
-- [ ] Every error message points to the row and cell to fix.
+- [ ] A company with no help completes the CRM and opening-books steps from the generated workbook. (Done end to end in the browser with a filled workbook; still to do with a real company.)
+- [x] Every error message points to the row and cell to fix.
+
+> **Progress (H3 done).** A new page, **Bring your data in**, is in the menu for admins and finance, and the dashboard points to it until the company goes live.
+> - **The workbook.** It is made from the company's own system, in the chosen language:
+>   - an instructions sheet;
+>   - one sheet per step, its columns named as the import screens recognise them, required columns marked *;
+>   - drop-down lists of the options, stages, team members and Yes/No;
+>   - right-to-left sheets in Arabic.
+>   It is written by Bonyan itself, with no library.
+> - **The steps, in order:** every list comes after the lists it links to (customers before contacts and deals, a custom module after what it links to), then the opening books.
+> - **Uploading the filled workbook.** Each list shows how many rows its sheet holds and opens the import screen with that sheet already matched, then checked and saved as in H1. The opening-books cards open with their sheets too.
+> - **A summary:** lists with data, opening steps done, 3900, live or not.
+> - **Problems in the opening sheets** now name the row and the file's own column header, as the import screen already did.
+> - **Not built yet:**
+>   - the test copy of the workspace (with BUIL-12);
+>   - partner-run migrations (H7);
+>   - AI mapping (H7).
 
 ### H4. CRM and activity history (M)
 
