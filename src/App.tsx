@@ -16,6 +16,7 @@ const Accounting = lazy(() => import('./workspace/Accounting'))
 const Team = lazy(() => import('./workspace/Team'))
 const Approvals = lazy(() => import('./workspace/Approvals'))
 const Migrate = lazy(() => import('./workspace/Migrate'))
+const SalesAnalysis = lazy(() => import('./workspace/SalesAnalysis'))
 const Audit = lazy(() => import('./workspace/Audit'))
 import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signOut, signOutIdle, useStore } from './lib/store'
 import { Invitations } from './components/Invitations'
@@ -172,6 +173,7 @@ export default function App() {
         <Route path="approvals" element={<Approvals />} />
         <Route path="audit" element={<Audit />} />
         <Route path="migrate" element={<Migrate />} />
+        <Route path="sales" element={<SalesAnalysis />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

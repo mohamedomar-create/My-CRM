@@ -23,8 +23,13 @@ export interface Ctx {
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 /** Business dates follow Egypt's clock (UTC+2/+3), not UTC, so an invoice keyed at 1 a.m. in Cairo gets today's date. */
 export const BUSINESS_TZ = 'Africa/Cairo'
-export const todayISO = (at = new Date(), tz = BUSINESS_TZ) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+// One formatter per time zone: making one is slow (imports ask for today once per row).
+const DAY_FORMAT = new Map<string, Intl.DateTimeFormat>()
+export const todayISO = (at = new Date(), tz = BUSINESS_TZ) => {
+  let f = DAY_FORMAT.get(tz)
+  if (!f) DAY_FORMAT.set(tz, (f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })))
+  return f.format(at)
+}
 const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000
 
 /** Arabic-Indic and Persian digits and the Arabic decimal/thousands separators, as plain ASCII. */
@@ -2184,7 +2189,7 @@ function linker(ctx: Ctx) {
   }
 }
 
-function parseDate(label: string, raw: string) {
+export function parseDate(label: string, raw: string) {
   const s = asciiDigits(raw).trim()
   const dmy = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
   const ymd = s.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/)

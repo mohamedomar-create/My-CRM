@@ -15,6 +15,7 @@ import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 import { moneyAccounts } from '../lib/accounts'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { activityLabel } from './labels'
+import { PartyHistory } from './PartyHistory'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -223,6 +224,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               ))}
             </div>
           )}
+          {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && <PartyHistory rec={rec} mod={mod} />}
           {rec && <Comments rec={rec} />}
           {rec && (
             <div className="card">

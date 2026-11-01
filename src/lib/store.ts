@@ -840,3 +840,27 @@ export async function loadAudit(workspaceId: string, limit = 300): Promise<Audit
   if (error) throw new Error(friendly(error.message))
   return data as AuditEvent[]
 }
+
+/* ---------------- Phase H5: the history store (past invoices and bills, read from the server) ---------------- */
+
+export interface HistoryBatch { batch: string; file: string; added_by: string; added_at: string; docs: number; lines: number }
+export interface HistoryRow { id: string; side: 'sales' | 'purchases'; kind: 'invoice' | 'credit' | 'quote'; number: string; date: string; rep?: string | null; subtotal: number; tax: number; total: number; lines: { product?: string; sku?: string; description: string; qty: number; price: number; net: number }[]; openDoc?: string | null; file?: string }
+export interface HistoryStat { side: 'sales' | 'purchases'; year: number; docs: number; amount: number; last_date: string | null }
+export interface HistoryTotal { key: string; label: string; docs: number; qty: number; amount: number }
+
+async function call<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args)
+  if (error) throw new Error(friendly(error.message))
+  return data as T
+}
+
+/** Adds a part of a batch; returns how many documents were new. */
+export const historyAdd = (workspaceId: string, batch: string, file: string, docs: unknown[]) => call<number>('history_add', { p_id: workspaceId, p_batch: batch, p_file: file, p_docs: docs })
+export const historyUndo = (workspaceId: string, batch: string) => call<number>('history_undo', { p_id: workspaceId, p_batch: batch })
+export const historyBatches = async (workspaceId: string) => ((await call<HistoryBatch[]>('history_batches', { p_id: workspaceId })) ?? []).map((b) => ({ ...b, docs: Number(b.docs), lines: Number(b.lines) }))
+export const historyForParty = async (workspaceId: string, party: string, limit = 20, before?: { date: string; id: string }) =>
+  ((await call<HistoryRow[]>('history_for_party', { p_id: workspaceId, p_party: party, p_limit: limit, p_before_date: before?.date ?? null, p_before_id: before?.id ?? null })) ?? []).map((r) => ({ ...r, subtotal: Number(r.subtotal), tax: Number(r.tax), total: Number(r.total) }))
+export const historyPartyStats = async (workspaceId: string, party: string) =>
+  ((await call<HistoryStat[]>('history_party_stats', { p_id: workspaceId, p_party: party })) ?? []).map((s) => ({ ...s, year: Number(s.year), docs: Number(s.docs), amount: Number(s.amount) }))
+export const historySummary = async (workspaceId: string, side: 'sales' | 'purchases', from: string, to: string, by: 'month' | 'party' | 'product' | 'rep') =>
+  ((await call<HistoryTotal[]>('history_summary', { p_id: workspaceId, p_side: side, p_from: from, p_to: to, p_by: by })) ?? []).map((t) => ({ ...t, docs: Number(t.docs), qty: Number(t.qty), amount: Number(t.amount) }))
