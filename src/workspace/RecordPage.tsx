@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, creditNotesOf, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -33,7 +33,10 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const [baseLines, setBaseLines] = useState<Line[]>(() => rec?.lines ?? [])
   const sync = useStore((s) => s.sync)
   const [paying, setPaying] = useState(false)
+  const [crediting, setCrediting] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const isCredit = Boolean(rec?.values.credit_for)
+  const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
   const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
@@ -120,10 +123,16 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               ? <button className="success" onClick={saveAndPost} title="Save your changes and post in one step"><Lock size={15} /> Save & post</button>
               : <button className="success" onClick={() => act('doc.post', { id: rec.id }, 'Posted. Stock and accounts are updated.')}><Lock size={15} /> Post</button>
           )}
-          {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && (
+          {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && !isCredit && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Register payment</button>
           )}
-          {mod.lines && rec && rec.status === 'posted' && canPost({ schema, user }) && (
+          {isCredit && rec && Number(rec.values.balance) < 0 && canPost({ schema, user }) && (
+            <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> Refund</button>
+          )}
+          {mod.lines && rec && mod.role !== 'quotes' && !isCredit && ['posted', 'partial', 'paid'].includes(rec.status ?? '') && canPost({ schema, user }) && (
+            <button className="secondary" onClick={() => setCrediting(true)}><Undo2 size={15} /> {mod.role === 'invoices' ? 'Credit note' : 'Debit note'}</button>
+          )}
+          {mod.lines && rec && (rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) && canPost({ schema, user }) && (
             <button className="danger" onClick={() => confirm('Void this document? Stock and journal entries will be reversed. This can’t be undone.') && act('doc.void', { id: rec.id }, 'Voided and reversed')}><Ban size={15} /> Void</button>
           )}
           {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? 'Save first' : sync !== 'saved' ? 'Waiting for the save to be confirmed, so the printed number is final' : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> Print</button>}
@@ -132,6 +141,17 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       </div>
 
       {rec && <ApprovalBanner rec={rec} mod={mod} />}
+      {rec && isCredit && (
+        <div className="info" style={{ marginBottom: 14 }}>
+          {mod.role === 'invoices' ? 'Credit note' : 'Debit note'} for <Link to={`/app/r/${String(rec.values.credit_for)}`}>{findRecord(ws, String(rec.values.credit_for))?.number ?? 'the original document'}</Link>: {String(rec.values.reason ?? '')}.
+          {' '}{money(Number(rec.values.applied ?? 0), schema.company.currency)} reduced what was owed{Number(rec.values.balance) < 0 ? `; ${money(-Number(rec.values.balance), schema.company.currency)} is left as ${mod.role === 'invoices' ? 'the customer’s' : 'the supplier’s'} credit (refund it, or keep it for later).` : '.'}
+        </div>
+      )}
+      {rec && !isCredit && credits.length > 0 && (
+        <div className="info" style={{ marginBottom: 14 }}>
+          {mod.role === 'invoices' ? 'Credit notes' : 'Debit notes'}: {credits.map((c, i) => <span key={c.id}>{i > 0 && ', '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
+        </div>
+      )}
 
       {mod.stages && rec && (
         <div className="stage-path">
@@ -166,7 +186,15 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {payments.length > 0 && (
             <div className="card">
               <h2>Payments</h2>
-              <table className="data"><tbody>{payments.map((p) => <tr key={p.id}><td className="mono">{p.ref}</td><td>{p.date}</td><td>{p.method}</td><td className="num">{money(p.amount, schema.company.currency)}</td></tr>)}</tbody></table>
+              <table className="data"><tbody>{payments.map((p) => {
+                const reversed = payments.some((x) => x.reverses === p.id)
+                return (
+                  <tr key={p.id} style={{ cursor: 'default', opacity: reversed ? 0.55 : 1 }}>
+                    <td className="mono">{p.ref}</td><td>{p.date}</td><td>{p.method}</td><td className="num">{money(p.amount, schema.company.currency)}</td>
+                    <td>{reversed ? <span className="pill gray tiny">reversed</span> : !p.reverses && rec?.status !== 'void' && canPost({ schema, user }) && <button className="ghost small" onClick={() => { const why = prompt('Why reverse this payment? (e.g. entered on the wrong invoice)'); if (why) act('payment.reverse', { id: p.id, reason: why }, 'Payment reversed', `Reversed payment ${p.ref}`) }}><Undo2 size={13} /> Reverse</button>}</td>
+                  </tr>
+                )
+              })}</tbody></table>
             </div>
           )}
         </div>
@@ -196,7 +224,10 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
         </div>
       </div>
-      {paying && rec && <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.pay', { id: rec.id, amount, date, method }, 'Payment registered')) setPaying(false) }} />}
+      {paying && rec && (isCredit
+        ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, 'Refund registered')) setPaying(false) }} />
+        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.pay', { id: rec.id, amount, date, method }, 'Payment registered')) setPaying(false) }} />)}
+      {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
   )
 }
@@ -333,8 +364,8 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   )
 }
 
-function PaymentModal({ rec, currency, onClose, onPay }: { rec: Rec; currency: string; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') => void }) {
-  const [amount, setAmount] = useState(Number(rec.values.balance))
+function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card') => void }) {
+  const [amount, setAmount] = useState(Math.abs(Number(rec.values.balance)))
   const [date, setDate] = useState(todayISO())
   const [method, setMethod] = useState<'cash' | 'bank' | 'cheque' | 'instapay' | 'card'>('bank')
   return (
@@ -342,13 +373,67 @@ function PaymentModal({ rec, currency, onClose, onPay }: { rec: Rec; currency: s
       <div className="overlay" onClick={onClose} />
       <div className="modal">
         <div className="card stack">
-          <h2><Banknote size={18} /> Register payment for {rec.number}</h2>
-          <p className="muted small" style={{ margin: 0 }}>Balance due: <b>{money(Number(rec.values.balance), currency)}</b></p>
+          <h2><Banknote size={18} /> {refund ? 'Refund' : 'Register payment for'} {rec.number}</h2>
+          <p className="muted small" style={{ margin: 0 }}>{refund ? 'Credit left' : 'Balance due'}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
           <label className="field">Amount<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
           <label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? 'InstaPay' : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
           <div className="row"><button className="secondary" onClick={onClose}>Cancel</button><button className="success" onClick={() => onPay(amount, date, method)}><CheckCircle2 size={16} /> Register</button></div>
         </div>
+      </div>
+    </>
+  )
+}
+
+/** Credit note (sales) or debit note (purchases): which lines and how many come back, at what price, and why. */
+function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleDef; onClose: () => void; onDone: (id: string) => void }) {
+  const { ws, schema, act } = useApp()
+  const cur = schema.company.currency
+  const sales = mod.role === 'invoices'
+  const done = (lineId: string) => creditNotesOf(ws, rec).reduce((s, c) => s + (c.lines ?? []).filter((l) => l.from === lineId).reduce((t, l) => t + l.qty, 0), 0)
+  const [rows, setRows] = useState<Record<string, { qty: string; price: string }>>({})
+  const [reason, setReason] = useState('')
+  const [date, setDate] = useState(todayISO())
+  const [restock, setRestock] = useState(true)
+  const tracked = (rec.lines ?? []).some((l) => l.product && findRecord(ws, l.product)?.values.track_stock)
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const lines = Object.entries(rows).filter(([, r]) => Number(r.qty) > 0).map(([line, r]) => ({ line, qty: Number(r.qty), price: r.price === '' ? undefined : Number(r.price) }))
+    const id = act<string>('doc.creditNote', { id: rec.id, lines, date, reason, restock }, `${sales ? 'Credit' : 'Debit'} note issued`, `${sales ? 'Credit' : 'Debit'} note for ${rec.number}`)
+    if (typeof id === 'string') onDone(id)
+  }
+  return (
+    <>
+      <div className="overlay" onClick={onClose} />
+      <div className="modal">
+        <form className="card stack" onSubmit={submit} style={{ maxWidth: 720 }}>
+          <h2><Undo2 size={18} /> {sales ? 'Credit note' : 'Debit note'} for {rec.number}</h2>
+          <p className="small muted" style={{ margin: 0 }}>{sales ? 'For goods the customer returned or a price you agreed to lower.' : 'For goods you send back to the supplier or a price they agreed to lower.'} The VAT is corrected, and the credit first reduces what is still owed on {rec.number}.</p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead><tr><th>Item</th><th className="num">On the document</th><th className="num">Already credited</th><th className="num">Credit now</th><th className="num">Price</th></tr></thead>
+              <tbody>{(rec.lines ?? []).map((l) => {
+                const left = Math.round((l.qty - done(l.id)) * 10000) / 10000
+                const r = rows[l.id] ?? { qty: '', price: '' }
+                return (
+                  <tr key={l.id} style={{ cursor: 'default' }}>
+                    <td>{l.description}</td>
+                    <td className="num">{l.qty} × {money(l.price, cur)}</td>
+                    <td className="num">{done(l.id) || ''}</td>
+                    <td style={{ width: 110 }}><input type="number" min={0} max={left} step="any" disabled={left <= 0} value={r.qty} onChange={(e) => setRows({ ...rows, [l.id]: { ...r, qty: e.target.value } })} style={{ textAlign: 'end' }} /></td>
+                    <td style={{ width: 130 }}><input type="number" min={0} max={l.price} step="0.01" placeholder={String(l.price)} value={r.price} onChange={(e) => setRows({ ...rows, [l.id]: { ...r, price: e.target.value } })} style={{ textAlign: 'end' }} /></td>
+                  </tr>
+                )
+              })}</tbody>
+            </table>
+          </div>
+          {tracked && <label className="row" style={{ gap: 8 }}><input type="checkbox" style={{ width: 'auto' }} checked={restock} onChange={(e) => setRestock(e.target.checked)} /> {sales ? 'The goods came back into stock' : 'The goods are sent back to the supplier'}</label>}
+          <div className="row" style={{ gap: 8 }}>
+            <label className="field" style={{ width: 170 }}>Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+            <label className="field grow">Reason<input required value={reason} onChange={(e) => setReason(e.target.value)} placeholder={sales ? 'e.g. 2 bags damaged, returned' : 'e.g. wrong grade sent back'} /></label>
+          </div>
+          <div className="row"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>Issue {sales ? 'credit' : 'debit'} note</button></div>
+        </form>
       </div>
     </>
   )
@@ -361,7 +446,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const cur = schema.company.currency
   const draft = rec.status === 'draft' && mod.role !== 'quotes'
   // A draft is not a tax document: it says so in the title and across the page.
-  const title = draft ? (mod.role === 'invoices' ? 'Proforma / draft – not a tax invoice' : 'Draft – not posted') : mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
+  const title = draft ? (mod.role === 'invoices' ? 'Proforma / draft – not a tax invoice' : 'Draft – not posted') : rec.values.credit_for ? (mod.role === 'invoices' ? 'Tax credit note' : 'Debit note') : mod.role === 'invoices' ? 'Tax invoice' : mod.role === 'quotes' ? 'Quotation' : 'Purchase bill'
   return (
     <div className="page">
       <div className="row no-print" style={{ marginBottom: 12 }}>
