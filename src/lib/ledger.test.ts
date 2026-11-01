@@ -6,8 +6,8 @@ import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type Rec, type User, type Workspace } from './types'
 import {
-  accountBalance, addAccount, adjustStock, countStock, createRecord, creditNote, list, manualJournal, onHand, openingBalance, postDocument, refundCredit, registerPayment, reversePayment,
-  reverseJournal, stockValue, trialBalance, updateAccount, voidDocument, type Ctx,
+  accountBalance, addAccount, adjustStock, booksHealth, closeMonth, closeYear, countStock, createRecord, creditNote, list, manualJournal, onHand, openingBalance, postDocument,
+  profitAndLoss, refundCredit, registerPayment, reopenBooks, reversePayment, reverseJournal, stockValue, trialBalance, updateAccount, vatForPeriod, voidDocument, type Ctx,
 } from './engine'
 import { chartOf } from './accounts'
 import { moduleByRole, uid } from './schema'
@@ -266,6 +266,86 @@ describe('credit notes, debit notes, refunds and payment reversals', () => {
     expect(() => reversePayment(ctx, pay.id, 'Again')).toThrow(/already reversed/)
     expect(() => reversePayment(ctx, ws.data.payments[0].id, 'Undo the undo')).toThrow(/itself a reversal/)
     voidDocument(ctx, inv)
+    healthy(ws, schema)
+  })
+})
+
+describe('closing the books', () => {
+  /** A year of trading: a bill and an invoice in 2025, and the rent paid. */
+  function traded() {
+    const s = setup()
+    const { ctx, mod, product, customer, supplier } = s
+    ctx.today = '2026-02-15'
+    const line = (qty: number, price: number) => [{ id: uid('l'), product: product.id, description: 'Rice', qty, price, discount: 0, vat: 14 }]
+    postDocument(ctx, createRecord(ctx, mod('purchases'), { supplier: supplier.id, date: '2025-11-02' }, { lines: line(10, 30) }))
+    postDocument(ctx, createRecord(ctx, mod('invoices'), { customer: customer.id, date: '2025-11-20' }, { lines: line(4, 100) }))
+    manualJournal(ctx, { date: '2025-11-30', memo: 'November rent', lines: [{ account: '5200', debit: 50, credit: 0 }, { account: '1110', debit: 0, credit: 50 }] })
+    return s
+  }
+
+  it('reports the profit and the VAT of a period', () => {
+    const { ws } = traded()
+    expect(profitAndLoss(ws, '2025-01-01', '2025-12-31')).toMatchObject({ totalIncome: 400, totalExpenses: 170, profit: 230 })
+    expect(vatForPeriod(ws, '2025-11-01', '2025-11-30')).toEqual({ output: 56, input: 42, due: 14 })
+    expect(profitAndLoss(ws, '2026-01-01', '2026-12-31').profit).toBe(0)
+  })
+
+  it('a closed month takes no more postings dated in it, but later dates are fine', () => {
+    const { ws, schema, ctx, mod, customer, product } = traded()
+    expect(booksHealth(ws, schema, '2025-11').filter((c) => c.blocking && !c.ok)).toEqual([])
+    expect(closeMonth(ctx, '2025-11')).toBe('2025-11-30')
+    expect(ws.books?.lockDate).toBe('2025-11-30')
+    expect(() => manualJournal(ctx, { date: '2025-11-30', memo: 'Late rent', lines: [{ account: '5200', debit: 10, credit: 0 }, { account: '1110', debit: 0, credit: 10 }] })).toThrow(/closed up to 2025-11-30/)
+    const late = createRecord(ctx, mod('invoices'), { customer: customer.id, date: '2025-11-28' }, { lines: [{ id: uid('l'), product: product.id, description: 'Rice', qty: 1, price: 100, discount: 0, vat: 14 }] })
+    expect(() => postDocument(ctx, late)).toThrow(/closed up to/)
+    late.values.date = '2025-12-01'
+    postDocument(ctx, late)
+    expect(() => closeMonth(ctx, '2025-10')).toThrow(/already closed/)
+    healthy(ws, schema)
+  })
+
+  it('a month can’t be closed before it ends, by a sales rep, or with sample data in the books', () => {
+    const { ws, schema, ctx } = traded()
+    expect(() => closeMonth(ctx, '2026-02')).toThrow(/after it has ended/)
+    const rep: User = { id: 'u_rep', name: 'Rep', email: 'r@x.com', roleId: schema.roles.find((r) => r.name === 'Sales')!.id }
+    ws.users.push(rep)
+    expect(() => closeMonth({ ws, schema, user: rep, today: ctx.today }, '2025-11')).toThrow(/finance/)
+    const fresh = setup()
+    fresh.ctx.today = '2026-02-15'
+    seedSampleData(fresh.ws, fresh.schema, admin)
+    expect(booksHealth(fresh.ws, fresh.schema, '2026-01').find((c) => c.id === 'sample')!.ok).toBe(false)
+    expect(() => closeMonth(fresh.ctx, '2026-01')).toThrow(/sample data/)
+  })
+
+  it('the year-end close moves the year’s profit to retained earnings and locks the year', () => {
+    const { ws, schema, ctx } = traded()
+    expect(() => closeYear(ctx, 2026)).toThrow(/after it has ended/)
+    expect(closeYear(ctx, 2025).profit).toBe(230)
+    for (const code of ['4000', '5000', '5200']) expect(accountBalance(ws, code)).toBe(0)
+    expect(accountBalance(ws, '3100')).toBe(-230)
+    expect(ws.data.journal[0].ref).toBe('CLOSE 2025')
+    expect(ws.books).toMatchObject({ lockDate: '2025-12-31', closedYears: [{ year: 2025, entry: ws.data.journal[0].id }] })
+    expect(profitAndLoss(ws, '2025-01-01', '2025-12-31').profit).toBe(230)
+    expect(() => closeYear(ctx, 2025)).toThrow(/already closed/)
+    healthy(ws, schema)
+  })
+
+  it('only an admin reopens, with a reason; reopening a closed year reverses its closing entry', () => {
+    const { ws, schema, ctx } = traded()
+    closeYear(ctx, 2025)
+    const fin: User = { id: 'u_fin', name: 'Fin', email: 'f@x.com', roleId: schema.roles.find((r) => r.finance && !r.admin)!.id }
+    ws.users.push(fin)
+    expect(() => reopenBooks({ ws, schema, user: fin }, '2025-10-31', 'Missed a supplier bill')).toThrow(/Only an admin/)
+    expect(() => reopenBooks(ctx, '2025-10-31', 'oops')).toThrow(/at least 10/)
+    expect(() => reopenBooks(ctx, '2026-01-31', 'Missed a supplier bill')).toThrow(/before the current lock/)
+    reopenBooks(ctx, '2025-10-31', 'Missed a supplier bill')
+    expect(ws.books).toEqual({ lockDate: '2025-10-31', closedYears: [] })
+    expect(ws.data.journal[0].ref).toBe('REOPEN 2025')
+    expect(accountBalance(ws, '3100')).toBe(0)
+    expect(accountBalance(ws, '4000')).toBe(-400)
+    manualJournal(ctx, { date: '2025-12-15', memo: 'December rent', lines: [{ account: '5200', debit: 50, credit: 0 }, { account: '1110', debit: 0, credit: 50 }] })
+    expect(closeYear(ctx, 2025).profit).toBe(180)
+    expect(accountBalance(ws, '3100')).toBe(-180)
     healthy(ws, schema)
   })
 })

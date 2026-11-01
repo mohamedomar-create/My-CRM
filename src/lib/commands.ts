@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -56,6 +56,9 @@ export interface CommandArgs {
   'doc.creditNote': { id: string; lines: CreditLine[]; date: string; reason: string; restock?: boolean }
   'doc.refund': { id: string; amount: number; date: string; method: Method }
   'payment.reverse': { id: string; reason: string; date?: string }
+  'books.closeMonth': { month: string }
+  'books.closeYear': { year: number }
+  'books.reopen': { date: string; reason: string }
   'security.setTwoFactor': { required: boolean }
 }
 
@@ -210,6 +213,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'doc.creditNote': { run: (ws, u, a) => creditNote(ctx(ws, u), a.id, a).id },
   'doc.refund': { run: (ws, u, a) => refundCredit(ctx(ws, u), a.id, Number(a.amount), String(a.date), a.method) },
   'payment.reverse': { run: (ws, u, a) => reversePayment(ctx(ws, u), a.id, String(a.reason ?? ''), a.date) },
+  'books.closeMonth': { run: (ws, u, a) => closeMonth(ctx(ws, u), String(a.month)) },
+  'books.closeYear': { run: (ws, u, a) => closeYear(ctx(ws, u), Number(a.year)).profit },
+  'books.reopen': { admin: true, run: (ws, u, a) => reopenBooks(ctx(ws, u), String(a.date), String(a.reason ?? '')) },
   'security.setTwoFactor': {
     admin: true,
     run: (ws, _u, a) => {
