@@ -43,4 +43,12 @@ describe('accounting screens', () => {
     expect(html).toContain('Withholding tax (Form 41)')
     expect(html).toContain('closed up to <b>2026-01-31</b>')
   })
+
+  it('the financial statements render, with gross profit from the cost of goods sold', async () => {
+    const { default: Statements } = await import('./Statements')
+    const html = renderToString(<MemoryRouter><Statements /></MemoryRouter>)
+    expect(html).toContain('Profit and loss')
+    expect(html).toContain('Gross profit')
+    expect(html).toContain('Sales revenue')
+  })
 })
