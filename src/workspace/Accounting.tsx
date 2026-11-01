@@ -7,6 +7,7 @@ import { account, accountName, debitNormal } from '../lib/accounts'
 import { msg, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
+import GoLive from './GoLive'
 import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
@@ -110,7 +111,15 @@ export default function Accounting() {
       )}
       {tab === 'voucher' && <JournalVoucher />}
       {tab === 'chart' && <ChartOfAccounts />}
-      {tab === 'opening' && <OpeningBalances />}
+      {tab === 'opening' && (
+        <div className="stack">
+          <GoLive />
+          <details className="card">
+            <summary><b>{tr('One at a time, without a file')}</b></summary>
+            <div style={{ marginTop: 12 }}><OpeningBalances /></div>
+          </details>
+        </div>
+      )}
       {tab === 'close' && <CloseBooks />}
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}

@@ -403,13 +403,39 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 - Go live, with lock and re-open.
 
 **Done when**
-- [ ] An accountant migrates a test company from a real trial balance and ageing report. Ageing in Bonyan then matches the old report bucket by bucket.
-- [ ] The cheque register matches the safe.
-- [ ] The first bank reconciliation closes.
-- [ ] Stock value equals 1300.
-- [ ] 3900 is zero and the opening balance sheet equals the trial balance.
-- [ ] Form 41 for the go-live quarter includes the months before go-live.
-- [ ] A payment, a credit note and a bounced cheque on opening items all post correctly.
+- [ ] An accountant migrates a test company from a real trial balance and ageing report. Ageing in Bonyan then matches the old report bucket by bucket. (Done in the tests with a realistic company; still to do with an accountant and real files.)
+- [x] The cheque register matches the safe.
+- [x] The first bank reconciliation closes.
+- [x] Stock value equals 1300.
+- [x] 3900 is zero and the opening balance sheet equals the trial balance.
+- [x] Form 41 for the go-live quarter includes the months before go-live.
+- [x] A payment, a credit note and a bounced cheque on opening items all post correctly.
+
+> **Progress (H2 done).** Accounting → Opening balances is now a checklist.
+> - **Go-live date:** the opening balances are those of the day before.
+> - **Trial balance:** from Excel or CSV, its old accounts matched to the chart by code, by name in either language, or by hand.
+> - **What customers owe and what you owe suppliers:**
+>   - one row per open invoice or bill with its old number, its own date and due date, total and amount before VAT, so ageing, collection, withholding and credit notes work invoice by invoice;
+>   - negative rows are credits and advances that can be refunded.
+> - **Cheques:** cheques in the safe, under collection or issued come in as real cheques, so one that bounces after going live is owed again.
+> - **Cash and bank:** the cash count, and the bank statement balance plus the items not yet on it; the first reconciliation starts from the statement.
+> - **Stock:** opening stock by code or name.
+> - **Withholding tax:** the quarter's withholding from before going live is included in Form 41.
+> - **Corrections:**
+>   - each step is checked on a copy first, refused whole with every problem listed by row;
+>   - a step can be entered again (or cleared) until going live.
+> - **Go live:**
+>   - "Does everything add up?" shows the old trial balance against the books, account by account, and opening balance equity (3900);
+>   - Go live needs 3900 at zero and a written reason when accounts offset each other;
+>   - going live closes the books up to the opening date and makes earlier imports final;
+>   - an admin can reopen while no later month is closed.
+> - **Fixed on the way:** opening documents (including the old one-line opening balance) were being counted in the VAT return of their month.
+> - **Faster:** record lookups are now kept up to date instead of rebuilt after every new record. 3,000 opening invoices take about 0.15 s on the server (was 3 s), and bulk imports gain too.
+> - **Not built yet:**
+>   - 1450 listed per customer (it comes in as one figure from the trial balance);
+>   - goods coming back to stock on a credit note against an opening invoice (it has no product lines);
+>   - lots, serials and warehouses on opening stock (Phase 2B);
+>   - the generated workbook and guided order (H3).
 
 ### H3. The migration wizard (M)
 

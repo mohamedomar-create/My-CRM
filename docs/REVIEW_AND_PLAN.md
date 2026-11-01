@@ -564,7 +564,9 @@ A smaller team stretches the timeline roughly in proportion.
 
 **Goal.** A company that joins with years of history brings it in once, correctly, across every module, and works in Bonyan as if it had always been there. The full plan is in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md).
 
-> **Phase H1 done (import engine).** Excel and CSV, large files in parts with progress, a check before saving, update by old id, phone or e-mail instead of duplicating, links by old id, value and stage mapping, original dates, old-system fields on the record, no automations, and Undo per import. Details in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md#h1-import-engine-ml). Next: H2, opening books.
+> **Phase H1 done (import engine).** Excel and CSV, large files in parts with progress, a check before saving, update by old id, phone or e-mail instead of duplicating, links by old id, value and stage mapping, original dates, old-system fields on the record, no automations, and Undo per import. Details in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md#h1-import-engine-ml).
+>
+> **Phase H2 done (opening books).** Go-live date; trial balance with account matching; open invoices and bills with their own numbers and due dates, credits and advances; cheques in the safe, under collection and issued; cash counts and bank statement balances with items in transit (the first reconciliation starts there); opening stock; the quarter's earlier withholding in Form 41. Each step is checked first and can be entered again; Go live needs 3900 at zero, closes the books up to the opening date and can be reopened by an admin. Opening documents no longer count in the VAT return. Next: H3, the migration wizard.
 
 **Work items**
 - **H1:** import engine (Excel, large files, dry run, update by key, links by old id, value mapping, original dates and owners, batches with undo, no side effects).
