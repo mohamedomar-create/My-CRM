@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, ShieldCheck, LogOut, Search, Trash2, Users, Wand2 } from 'lucide-react'
+import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, Users, Wand2, X } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
@@ -8,6 +8,7 @@ import { can, canApprove, canPost, hasSampleData, list, recordTitle } from '../l
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
 import { useLang } from '../lib/i18n'
+import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
 
 export default function Shell() {
   const { ws, user, schema, act } = useApp()
@@ -17,6 +18,7 @@ export default function Shell() {
   const toast = useToast()
   const { lang, setLang, tr, msg } = useLang()
   const [bell, setBell] = useState(false)
+  const [theme, setThemeState] = useState<Theme>(getTheme)
   const [q, setQ] = useState('')
   const ran = useRef(false)
   const role = schema.roles.find((r) => r.id === user.roleId)
@@ -47,7 +49,8 @@ export default function Shell() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus() }}>{tr('Skip to the content')}</a>
+      <aside className="sidebar" aria-label={tr('Menu')}>
         <Link to="/app"><Logo /></Link>
         {companies.length > 1 && (
           <select aria-label={tr('Switch company')} value={ws.id} onChange={(e) => void switchWorkspace(e.target.value).then(() => nav('/app')).catch((err: Error) => showToast({ kind: 'error', text: err.message }))} style={{ margin: '4px 0 8px' }}>
@@ -76,10 +79,10 @@ export default function Shell() {
         <NavLink to="/security"><ShieldCheck size={18} /> {tr('Security')}</NavLink>
       </aside>
       <div className="main">
-        <div className="topbar no-print">
+        <header className="topbar no-print">
           <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
             <Search size={16} style={{ position: 'absolute', insetInlineStart: 12, top: 12, color: 'var(--muted)' }} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr('Search customers, deals, invoices…')} style={{ paddingInlineStart: 36 }} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr('Search customers, deals, invoices…')} aria-label={tr('Search')} style={{ paddingInlineStart: 36 }} />
             {results.length > 0 && (
               <div className="card notif" style={{ insetInlineStart: 0, width: '100%' }}>
                 {results.map(({ r, m }) => (
@@ -110,9 +113,12 @@ export default function Shell() {
               {ws.users.filter((u) => !u.former).map((u) => <option key={u.id} value={u.id}>{u.name} · {schema.roles.find((r) => r.id === u.roleId)?.name ?? tr('No role')}</option>)}
             </select>
           ) : <span className="small">{user.name}</span>}
+          <button className="ghost icon" onClick={() => { const t = nextTheme(theme); setTheme(t); setThemeState(t) }} aria-label={tr('Theme: {name}', { name: tr(theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Like the device') })} title={tr('Theme: {name}', { name: tr(theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Like the device') })}>
+            {theme === 'dark' ? <Moon size={17} /> : theme === 'light' ? <Sun size={17} /> : <Monitor size={17} />}
+          </button>
           <button className="ghost small" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title={lang === 'ar' ? 'English' : 'العربية'}>{lang === 'ar' ? 'EN' : 'ع'}</button>
           <button className="ghost" onClick={() => { void signOut().then(() => nav('/')) }} aria-label={tr('Sign out')}><LogOut size={18} /></button>
-        </div>
+        </header>
         {self && self.id !== user.id && (
           <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
             <Eye size={16} />
@@ -135,11 +141,14 @@ export default function Shell() {
           <Invitations />
           {(role?.admin || role?.finance) && !twoFactor && <div className="info row" style={{ gap: 8 }}><ShieldCheck size={15} /><span className="grow">{tr('You can see the company’s books: protect your login with two-factor (a code from your phone).')}</span><Link className="btn small" to="/security">{tr('Set it up')}</Link></div>}
         </div>
-        <Outlet />
+        <main id="main" tabIndex={-1} style={{ outline: 'none' }}>
+          <Outlet />
+        </main>
       </div>
       {toast && (
-        <div className={`toast row ${toast.kind === 'ok' ? 'ok-box' : 'error-box'}`} onClick={() => showToast(null)}>
-          {toast.kind === 'ok' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />} <span className="grow">{msg(toast.text)}</span>
+        <div className={`toast row ${toast.kind === 'ok' ? 'ok-box' : 'error-box'}`} role={toast.kind === 'ok' ? 'status' : 'alert'} aria-live={toast.kind === 'ok' ? 'polite' : 'assertive'}>
+          {toast.kind === 'ok' ? <CheckCircle2 size={18} aria-hidden /> : <AlertTriangle size={18} aria-hidden />} <span className="grow">{msg(toast.text)}</span>
+          <button className="ghost icon" onClick={() => showToast(null)} aria-label={tr('Close')} style={{ color: 'inherit' }}><X size={15} /></button>
         </div>
       )}
     </div>

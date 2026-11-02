@@ -117,7 +117,7 @@ function SheetCard({ step, run, send, mapRows, extra, disabled, preset }: {
   return (
     <div className="card stack">
       <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h2 style={{ margin: 0 }}>{done ? <CheckCircle2 size={18} color="#10b981" /> : null} {tr(TITLES[step].title)}</h2>
+        <h2 style={{ margin: 0 }}>{done ? <CheckCircle2 size={18} color="var(--success)" /> : null} {tr(TITLES[step].title)}</h2>
         {done && (
           <span className="small muted">
             {tr('Entered {date}: {n} lines, {total}', { date: new Date(done.at).toLocaleDateString(dateLocale()), n: done.count, total: money(done.total, saved.company.currency) })}
@@ -233,7 +233,7 @@ function MoneyCard({ code, disabled }: { code: string; disabled: boolean }) {
   return (
     <form className="card stack" onSubmit={save} style={{ padding: 12 }}>
       <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <b>{done ? <CheckCircle2 size={16} color="#10b981" /> : null} {a.code} · {accountName(ws, a.code, getLang())}</b>
+        <b>{done ? <CheckCircle2 size={16} color="var(--success)" /> : null} {a.code} · {accountName(ws, a.code, getLang())}</b>
         {done && <span className="small muted">{money(done.total, schema.company.currency)} {!disabled && <button type="button" className="ghost small" onClick={() => act('opening.clear', { step: `money:${code}` }, tr('Step cleared'))}><Trash2 size={14} /> {tr('Clear')}</button>}</span>}
       </div>
       {!disabled && (
@@ -326,7 +326,7 @@ export default function GoLive({ presets }: { presets?: Record<string, SheetPres
             <div className="card stack">
               <h2 style={{ margin: 0 }}>{tr('Does everything add up?')}</h2>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <span className="pill" style={st.equity === 0 ? { background: '#dcfce7', color: '#166534' } : { background: '#fee2e2', color: '#991b1b' }}>{tr('Opening balance equity (3900): {amount}', { amount: money(st.equity, cur) })}</span>
+                <span className="pill" style={st.equity === 0 ? { background: 'var(--success-bg)', color: 'var(--success-text)' } : { background: 'var(--danger-bg)', color: 'var(--danger-text)' }}>{tr('Opening balance equity (3900): {amount}', { amount: money(st.equity, cur) })}</span>
                 {!st.hasTb && <span className="pill">{tr('No trial balance yet')}</span>}
               </div>
               {st.lines.length > 0 && (
@@ -339,7 +339,7 @@ export default function GoLive({ presets }: { presets?: Record<string, SheetPres
                           <td><span className="mono">{l.code}</span> {l.name}{l.step && l.diff !== 0 ? <div className="tiny muted">{tr('Filled by the step “{step}”', { step: l.step.startsWith('money:') ? tr('Cash and bank') : tr(TITLES[l.step]?.title ?? l.step) })}</div> : null}</td>
                           <td className="mono" style={{ textAlign: 'end' }}>{money(l.tb, cur)}</td>
                           <td className="mono" style={{ textAlign: 'end' }}>{money(l.books, cur)}</td>
-                          <td className="mono" style={{ textAlign: 'end', color: l.diff ? '#b91c1c' : undefined, fontWeight: l.diff ? 700 : undefined }}>{l.diff ? money(l.diff, cur) : '✓'}</td>
+                          <td className="mono" style={{ textAlign: 'end', color: l.diff ? 'var(--danger)' : undefined, fontWeight: l.diff ? 700 : undefined }}>{l.diff ? money(l.diff, cur) : '✓'}</td>
                         </tr>
                       ))}
                     </tbody>

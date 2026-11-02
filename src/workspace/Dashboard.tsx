@@ -42,7 +42,7 @@ export default function Dashboard() {
 
       {reports.length === 0 && (
         <div className="card empty">
-          <div className="big-ic" style={{ background: 'linear-gradient(135deg,#6366f1,#ec4899)' }}><Sparkles size={30} /></div>
+          <div className="big-ic" style={{ background: 'var(--ink)' }}><Sparkles size={30} /></div>
           <b>{tr('No reports for your role yet.')}</b>
         </div>
       )}

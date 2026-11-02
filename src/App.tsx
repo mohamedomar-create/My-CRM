@@ -1,5 +1,7 @@
+import { Modal } from './components/Dialog'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Suspense, lazy, useEffect } from 'react'
-import { Link, Navigate, Route, Routes } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Landing from './pages/Landing'
 import Auth from './pages/Auth'
 import Password from './pages/Password'
@@ -129,25 +131,24 @@ function NoticeDialog() {
   const notice = useStore((s) => s.notice)
   if (!notice) return null
   return (
-    <>
-      <div className="overlay" />
-      <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="notice-title">
+    <Modal alert>
         <div className="card stack">
-          <h2 id="notice-title">{notice.title}</h2>
+          <h2>{notice.title}</h2>
           <p>{notice.text}</p>
           {notice.items && notice.items.length > 0 && <ul>{notice.items.map((t, i) => <li key={i}>{t}</li>)}</ul>}
           <div className="row"><button autoFocus onClick={dismissNotice}>{notice.signOut ? tr('Sign out') : tr('OK')}</button></div>
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }
 
 export default function App() {
   useIdleLock()
+  const location = useLocation()
   return (
     <Suspense fallback={<div className="empty">{tr('Loading…')}</div>}>
     <NoticeDialog />
+    <ErrorBoundary resetKey={location.pathname}>
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/welcome" element={<Landing />} />
@@ -179,6 +180,7 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ErrorBoundary>
     </Suspense>
   )
 }

@@ -2,6 +2,7 @@
 // other imports: columns matched by name, people matched (or kept as former members), checked on a copy, sent in
 // parts, and undone as a whole.
 import { useMemo, useState } from 'react'
+import { Modal } from '../components/Dialog'
 import { CheckCircle2, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { FORMER, importActivities, importKey, type ImportResult } from '../lib/engine'
@@ -85,8 +86,7 @@ export function ActivityImport({ preset, onClose }: { preset?: { fileName: strin
 
   return (
     <>
-      <div className="overlay" onClick={progress ? undefined : onClose} />
-      <div className="modal">
+      <Modal onClose={onClose} busy={Boolean(progress)}>
         <div className="card stack" style={{ width: 'min(820px, 100%)' }}>
           <div className="row between">
             <h2 style={{ margin: 0 }}>{tr('Calls, visits and notes')}</h2>
@@ -158,7 +158,7 @@ export function ActivityImport({ preset, onClose }: { preset?: { fileName: strin
             </>
           )}
         </div>
-      </div>
+      </Modal>
     </>
   )
 }

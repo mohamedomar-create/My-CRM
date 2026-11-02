@@ -156,7 +156,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             </thead>
             <tbody>
               {rows.slice(0, limit).map((r) => (
-                <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)}>
+                <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') nav(`/app/r/${r.id}`) }} aria-label={recordTitle(ws, schema, r)}>
                   <td><b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b></td>
                   {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : null })()}</td>}
                   {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{statusLabel(r.status)}</span></td>}
@@ -255,7 +255,7 @@ function Card({ rec, color, mod, ws, schema, amountField }: { rec: Rec; color: s
   const owner = mod.fields.find((f) => f.type === 'user')
   const rel = mod.fields.find((f) => f.type === 'relation')
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes} className={`kcard ${isDragging ? 'dragging' : ''} ${rot.rotting ? 'rotting' : ''}`} style={{ ['--c' as string]: rot.rotting ? '#ef4444' : color, transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined }} onClick={() => nav(`/app/r/${rec.id}`)}>
+    <div ref={setNodeRef} {...listeners} {...attributes} className={`kcard ${isDragging ? 'dragging' : ''} ${rot.rotting ? 'rotting' : ''}`} style={{ ['--c' as string]: rot.rotting ? 'var(--danger)' : color, transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined }} onClick={() => nav(`/app/r/${rec.id}`)}>
       <b>{recordTitle(ws, schema, rec)}</b>
       {(rot.rotting || (mod.scoring?.length ?? 0) > 0) && (
         <div className="row" style={{ gap: 4, margin: '2px 0 4px' }}>

@@ -260,7 +260,7 @@ export function BudgetVsActual({ budget }: { budget: Budget }) {
   const [cc, setCc] = useState('')
   const v = budgetVsActual(ws, budget, month, cc || undefined, lg)
   const cell = (n: number) => <td className="num">{n ? money(n, cur) : '—'}</td>
-  const variance = (n: number) => <td className="num" style={{ color: n < 0 ? 'var(--danger)' : n > 0 ? '#047857' : undefined, fontWeight: 600 }}>{n ? `${n > 0 ? '+' : '−'}${money(Math.abs(n), cur)}` : '—'}</td>
+  const variance = (n: number) => <td className="num" style={{ color: n < 0 ? 'var(--danger)' : n > 0 ? 'var(--success)' : undefined, fontWeight: 600 }}>{n ? `${n > 0 ? '+' : '−'}${money(Math.abs(n), cur)}` : '—'}</td>
   const part = (t: 'income' | 'expense') => {
     const rows = v.rows.filter((r) => r.type === t)
     return (
@@ -268,7 +268,7 @@ export function BudgetVsActual({ budget }: { budget: Budget }) {
         <tr className="section-row"><td colSpan={8}><b>{t === 'income' ? tr('Income') : tr('Expenses')}</b></td></tr>
         {rows.length === 0 && <tr><td colSpan={8} className="muted small">{tr('None')}</td></tr>}
         {rows.map((r) => (
-          <tr key={r.account} style={{ cursor: 'default', background: r.varianceYtd < 0 && r.budgetYtd && Math.abs(r.varianceYtd) > r.budgetYtd * 0.1 ? 'var(--danger-soft, #fef2f2)' : undefined }}>
+          <tr key={r.account} style={{ cursor: 'default', background: r.varianceYtd < 0 && r.budgetYtd && Math.abs(r.varianceYtd) > r.budgetYtd * 0.1 ? 'var(--danger-bg)' : undefined }}>
             <td><span className="mono muted">{r.account} </span>{r.name}</td>
             {cell(r.budget)}{cell(r.actual)}{cell(r.budgetYtd)}{cell(r.actualYtd)}{variance(r.varianceYtd)}
             <td className="num small">{r.budgetYtd ? `${r.used}%` : '—'}</td>

@@ -39,12 +39,12 @@ export default function Accounting() {
   const vatDue = round2(bal('2200') - bal('1400') + bal('2210'))
   return (
     <div className="page">
-      <div className="page-head no-print"><h1><span className="badge" style={{ background: '#0ea5e9' }}><Calculator size={20} /></span>{tr('Accounting')}</h1></div>
+      <div className="page-head no-print"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Calculator size={20} /></span>{tr('Accounting')}</h1></div>
       <div className="dash no-print" style={{ marginBottom: 14 }}>
         <div className="card"><h2>{tr('Revenue this year')}</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
         <div className="card"><h2>{tr('Gross profit this year')}</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{tr('{n}% margin', { n: revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0 })}</div></div>
         <div className="card"><h2>{tr('Customers owe you')}</h2><div className="kpi-value">{money(bal('1200'), cur)}</div></div>
-        <div className="card"><h2>{vatDue >= 0 ? tr('VAT payable (output − input)') : tr('VAT credit (input more than output)')}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success, #047857)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
+        <div className="card"><h2>{vatDue >= 0 ? tr('VAT payable (output − input)') : tr('VAT credit (input more than output)')}</h2><div className="kpi-value" style={vatDue < 0 ? { color: 'var(--success)' } : undefined}>{money(Math.abs(vatDue), cur)}</div></div>
       </div>
       <div className={`${dr === cr ? 'ok-box row' : 'error-box row'} no-print`} style={{ marginBottom: 14 }}>
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}

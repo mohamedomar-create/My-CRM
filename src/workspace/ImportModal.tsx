@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Modal } from '../components/Dialog'
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { FORMER, STAGE_AT, importKey, importStatus, parentsFirst, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
@@ -282,8 +283,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
   const step = result ? 'done' : progress ? 'sending' : sheets.length ? 'map' : 'file'
   return (
     <>
-      <div className="overlay" onClick={step === 'sending' ? undefined : onClose} />
-      <div className="modal">
+      <Modal onClose={onClose} busy={step === 'sending'}>
         <div className="card stack" style={{ width: 'min(880px, 100%)' }}>
           <div className="row between">
             <h2 style={{ margin: 0 }}><FileSpreadsheet size={18} /> {tr('Import {what}', { what: mod.name.toLowerCase() })}</h2>
@@ -408,7 +408,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
                     <span className="pill">{tr('{n} new', { n: preview.created })}</span>
                     {preview.updated > 0 && <span className="pill">{tr('{n} updated', { n: preview.updated })}</span>}
                     {preview.skipped - preview.errors.length > 0 && <span className="pill">{tr('{n} not found, skipped', { n: preview.skipped - preview.errors.length })}</span>}
-                    {preview.errors.length > 0 && <span className="pill" style={{ background: '#fee2e2', color: '#991b1b' }}>{tr('{n} with problems', { n: new Set(preview.errors.map((e) => e.row)).size })}</span>}
+                    {preview.errors.length > 0 && <span className="pill" style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)' }}>{tr('{n} with problems', { n: new Set(preview.errors.map((e) => e.row)).size })}</span>}
                   </div>
                   {preview.errors.length > 0 && errorList(preview.errors)}
                   {preview.rows.some((r) => r.similar) && (
@@ -451,7 +451,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
             </>
           )}
         </div>
-      </div>
+      </Modal>
     </>
   )
 }
