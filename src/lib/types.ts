@@ -193,6 +193,15 @@ export interface User {
   costCenter?: string
 }
 
+/** A year's sales target, by month, for a rep (a team member), a product or a customer (with those under it). */
+export interface SalesTarget {
+  id: string
+  year: number
+  kind: 'rep' | 'product' | 'customer'
+  key: string
+  months: number[]
+}
+
 /** One budget line: an income or expense account, optionally for one cost center, and its amount per month. */
 export interface BudgetLine {
   account: string
@@ -273,6 +282,8 @@ export interface Workspace {
   costCenters?: CostCenter[]
   /** budgets, every version of every year (P2) */
   budgets?: Budget[]
+  /** sales targets per rep, product or customer (P2) */
+  targets?: SalesTarget[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData

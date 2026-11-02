@@ -11,6 +11,7 @@ import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
+import { overBudgetWarnings } from '../lib/budget'
 
 
 
@@ -74,6 +75,11 @@ export function JournalVoucher() {
           <tfoot><tr><td><button type="button" className="ghost small" onClick={() => setRows([...rows, emptyRow()])}><Plus size={14} /> {tr('Line')}</button></td><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td colSpan={withCc ? 3 : 2} className={dr === cr ? 'tiny muted' : 'tiny'} style={dr === cr ? undefined : { color: 'var(--danger)' }}>{dr === cr ? (dr ? tr('Balanced') : '') : tr('Difference {amount}', { amount: money(Math.abs(round2(dr - cr)), cur) })}</td></tr></tfoot>
         </table>
       </div>
+      {(() => {
+        // Expenses that would take their budget line over (P2): a warning, not a block.
+        const warn = overBudgetWarnings(ws, rows.filter((r) => r.account && num(r.debit) > 0).map((r) => ({ account: r.account, cc: r.cc, amount: num(r.debit), date })), getLang())
+        return warn.length > 0 && <div className="note small">{warn.map((w) => <div key={w.account + (w.cc ?? '')}>{tr('Over budget: {account}{cc} would reach {after} this year, against {budget} budgeted so far.', { account: w.name, cc: w.cc ? ` (${w.cc})` : '', after: money(w.after, cur), budget: money(w.budget, cur) })}</div>)}</div>
+      })()}
       <button disabled={!dr || dr !== cr}>{tr('Post journal voucher')}</button>
     </form>
   )

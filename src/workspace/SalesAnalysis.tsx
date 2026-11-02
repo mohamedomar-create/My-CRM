@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { useApp } from './useApp'
+import { SalesTargets } from './Targets'
 import { can, canPost, list, money, parentField, recordTitle, todayISO } from '../lib/engine'
 import { topOf } from '../lib/hierarchy'
 import { moduleByRole } from '../lib/schema'
@@ -112,6 +113,7 @@ export default function SalesAnalysis() {
           </table>
         )}
       </div>
+      {side === 'sales' && <SalesTargets year={year} />}
     </div>
   )
 }

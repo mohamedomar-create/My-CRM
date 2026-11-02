@@ -3,8 +3,10 @@
 // approved one is what the books are measured against: budget against actual, month by month and for the year so far.
 import type { Budget, BudgetLine, Workspace } from './types'
 import type { Ctx } from './engine'
-import { costCenter, costCenterCodes, EngineError, isAdmin, isClosingEntry, logLedger, needFinance, nowISO, round2 } from './engine'
-import { account as findAccount, accountName, chartOf, type Account } from './accounts'
+import { cheques, costCenter, costCenterCodes, EngineError, isAdmin, isClosingEntry, logLedger, needFinance, nowISO, round2 } from './engine'
+import { moduleByRole as moduleRole } from './schema'
+import { account as findAccount, accountName, chartOf, moneyKind, type Account } from './accounts'
+import type { AppSchema } from './schema'
 import { uid } from './schema'
 
 export const MONTHS = 12
@@ -238,4 +240,164 @@ export function offBudget(ws: Workspace, b: Budget, month: number, pct = 10) {
   return budgetVsActual(ws, b, month).rows
     .filter((r) => r.budgetYtd > 0 && r.varianceYtd < 0 && Math.abs(r.varianceYtd) > (r.budgetYtd * pct) / 100)
     .sort((a, b) => a.varianceYtd - b.varianceYtd)
+}
+
+/* ---------------- warnings, the weekly notice ---------------- */
+
+/**
+ * What an entry would do to the approved budget: per expense account (and its cost center when the budget is per
+ * cost center), the year to date with the entry against the budget to that month. Nothing when it stays within it.
+ */
+export function overBudgetWarnings(ws: Workspace, items: { account: string; cc?: string; amount: number; date: string }[], lang: 'en' | 'ar' = 'en') {
+  const out: { account: string; name: string; cc?: string; after: number; budget: number }[] = []
+  const grouped = new Map<string, { account: string; cc?: string; amount: number; date: string }>()
+  for (const it of items) {
+    if (findAccount(ws, it.account)?.type !== 'expense' || !(it.amount > 0)) continue
+    const k = `${it.account}|${it.cc ?? ''}|${it.date.slice(0, 7)}`
+    const had = grouped.get(k)
+    grouped.set(k, had ? { ...had, amount: round2(had.amount + it.amount) } : { ...it })
+  }
+  for (const it of grouped.values()) {
+    const year = Number(it.date.slice(0, 4))
+    const b = activeBudget(ws, year)
+    if (!b) continue
+    const lines = b.lines.filter((l) => l.account === it.account)
+    if (!lines.length) continue
+    // A budget per cost center is checked for that cost center; a company-wide one for the company.
+    const perCc = lines.some((l) => l.cc)
+    const cc = perCc ? it.cc ?? '__none' : undefined
+    const v = budgetVsActual(ws, b, Number(it.date.slice(5, 7)), cc, lang).rows.find((r) => r.account === it.account)
+    if (!v || !v.budgetYtd) continue
+    const after = round2(v.actualYtd + it.amount)
+    if (after > v.budgetYtd) out.push({ account: it.account, name: v.name, ...(cc && cc !== '__none' ? { cc } : {}), after, budget: v.budgetYtd })
+  }
+  return out
+}
+
+/**
+ * The weekly notice (Sundays, from the nightly run): admins and finance hear which lines of the year's budget are more
+ * than 10% off so far. Once a week; nothing when every line is within budget.
+ */
+export function budgetDigest(ctx: Ctx, today: string) {
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() !== 0) return 0
+  const key = `budget-digest:${today}`
+  if (ctx.ws.data.workflowRuns[key]) return 0
+  const b = activeBudget(ctx.ws, Number(today.slice(0, 4)))
+  if (!b) return 0
+  const off = offBudget(ctx.ws, b, Number(today.slice(5, 7)))
+  if (!off.length) return 0
+  ctx.ws.data.workflowRuns[key] = today
+  const names = off.slice(0, 3).map((r) => r.name).join(', ')
+  for (const r of ctx.schema.roles.filter((x) => x.admin || x.finance)) {
+    ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `Budget: ${off.length} lines are more than 10% off for the year so far (${names}${off.length > 3 ? '…' : ''})`, read: false, role: r.id })
+  }
+  return 1
+}
+
+/* ---------------- the cash budget ---------------- */
+
+export interface CashMonth {
+  month: string
+  /** before the month: the cash boxes' and bank accounts' balance */
+  opening: number
+  /** a month gone: what moved */
+  actualIn: number
+  actualOut: number
+  /** a month to come: what is due */
+  fromCustomers: number
+  chequesIn: number
+  plannedIn: number
+  toSuppliers: number
+  chequesOut: number
+  plannedOut: number
+  closing: number
+  past: boolean
+}
+
+/**
+ * Cash month by month for a year: months gone with what moved through the cash boxes and bank accounts; the current
+ * month and those to come with what is due (open invoices and bills by due date, overdue ones now; cheques not yet
+ * cleared by their date) and what the budget plans beyond what is already invoiced (income, and expenses other than
+ * the cost of goods, which bills pay). Transfers between cash and bank cancel out.
+ */
+export function cashBudget(ws: Workspace, schema: AppSchema, year: number, today: string, b?: Budget): CashMonth[] {
+  // Every cash box and bank account, turned off or not (what moved through them still counts).
+  const money = new Set(chartOf(ws).filter((a) => a.type === 'asset' && moneyKind(a)).map((a) => a.code))
+  const start = `${year}-01-01`
+  const nowMonth = today.slice(0, 7)
+  let balance = 0
+  const moved = Array.from({ length: MONTHS }, () => ({ in: 0, out: 0 }))
+  for (const j of ws.data.journal) {
+    const own = j.lines.filter((l) => money.has(l.account))
+    if (!own.length) continue
+    const m = round2(own.reduce((s, l) => s + l.debit - l.credit, 0))
+    if (j.date < start) { balance = round2(balance + m); continue }
+    if (!j.date.startsWith(`${year}-`)) continue
+    if (own.length === j.lines.length) continue
+    const i = Number(j.date.slice(5, 7)) - 1
+    if (m > 0) moved[i].in = round2(moved[i].in + m)
+    else moved[i].out = round2(moved[i].out - m)
+  }
+  const due = Array.from({ length: MONTHS }, () => ({ fromCustomers: 0, toSuppliers: 0, chequesIn: 0, chequesOut: 0 }))
+  const slot = (date: string) => {
+    const m = (date || today).slice(0, 7) < nowMonth ? nowMonth : (date || today).slice(0, 7)
+    return m.startsWith(`${year}-`) ? Number(m.slice(5, 7)) - 1 : -1
+  }
+  for (const role of ['invoices', 'purchases'] as const) {
+    const mod = moduleRole(schema, role)
+    if (!mod) continue
+    for (const r of ws.data.records[mod.id] ?? []) {
+      if (r.status !== 'posted' && r.status !== 'partial') continue
+      const open = Number(r.values.balance ?? 0)
+      if (!(open > 0)) continue
+      const i = slot(String(r.values.due_date ?? r.values.date ?? ''))
+      if (i < 0) continue
+      if (role === 'invoices') due[i].fromCustomers = round2(due[i].fromCustomers + open)
+      else due[i].toSuppliers = round2(due[i].toSuppliers + open)
+    }
+  }
+  for (const c of cheques(ws)) {
+    if (c.state === 'cleared' || c.state === 'bounced') continue
+    const i = slot(c.due)
+    if (i < 0) continue
+    if (c.direction === 'in') due[i].chequesIn = round2(due[i].chequesIn + c.amount)
+    else due[i].chequesOut = round2(due[i].chequesOut + c.amount)
+  }
+  // What the budget plans beyond what the books already have, month by month (the cost of goods is paid by bills).
+  const planned = Array.from({ length: MONTHS }, () => ({ in: 0, out: 0 }))
+  if (b) {
+    const act = actualsByMonth(ws, year)
+    const sumBy = (src: Map<string, number[]> | BudgetLine[], t: 'income' | 'expense', i: number) => {
+      let s = 0
+      const rows = Array.isArray(src) ? src.map((l) => [l.account, l.months] as const) : [...src].map(([k, v]) => [k.split('|')[0], v] as const)
+      for (const [code, months] of rows) {
+        const a = findAccount(ws, code)
+        if (a?.type !== t || (t === 'expense' && (code === '5000' || code === '5900'))) continue
+        s += months[i]
+      }
+      return s
+    }
+    for (let i = 0; i < MONTHS; i++) {
+      planned[i].in = round2(Math.max(0, sumBy(b.lines, 'income', i) - sumBy(act, 'income', i)))
+      planned[i].out = round2(Math.max(0, sumBy(b.lines, 'expense', i) - sumBy(act, 'expense', i)))
+    }
+  }
+  const out: CashMonth[] = []
+  for (let i = 0; i < MONTHS; i++) {
+    const month = `${year}-${String(i + 1).padStart(2, '0')}`
+    const past = month < nowMonth
+    const row: CashMonth = {
+      month, opening: balance, actualIn: moved[i].in, actualOut: moved[i].out,
+      fromCustomers: past ? 0 : due[i].fromCustomers, chequesIn: past ? 0 : due[i].chequesIn, plannedIn: past ? 0 : planned[i].in,
+      toSuppliers: past ? 0 : due[i].toSuppliers, chequesOut: past ? 0 : due[i].chequesOut, plannedOut: past ? 0 : planned[i].out,
+      closing: 0, past,
+    }
+    // The current month: what already moved, and what is still due.
+    const ins = past ? row.actualIn : (month === nowMonth ? row.actualIn : 0) + row.fromCustomers + row.chequesIn + row.plannedIn
+    const outs = past ? row.actualOut : (month === nowMonth ? row.actualOut : 0) + row.toSuppliers + row.chequesOut + row.plannedOut
+    row.closing = round2(balance + ins - outs)
+    balance = row.closing
+    out.push(row)
+  }
+  return out
 }

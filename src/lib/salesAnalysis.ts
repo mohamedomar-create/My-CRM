@@ -7,6 +7,21 @@ import type { Rec, Workspace } from './types'
 import { lineNet, list, recordTitle, round2 } from './engine'
 
 export type AnalysisBy = 'month' | 'party' | 'product' | 'rep'
+
+/** Whose sale an invoice is: its own owner, else the customer's owner (their account manager), else who entered it. */
+export function repOf(r: Rec, owners?: Map<string, string>) {
+  const own = r.values.owner
+  if (typeof own === 'string' && own) return own
+  const party = String(r.values.customer ?? r.values.supplier ?? '')
+  const viaParty = owners ? owners.get(party) : undefined
+  return viaParty || r.createdBy || ''
+}
+
+/** Each customer's (or supplier's) owner, for repOf. */
+export function ownersOf(ws: Workspace, schema: AppSchema, side: 'sales' | 'purchases' = 'sales') {
+  const mod = moduleByRole(schema, side === 'sales' ? 'accounts' : 'suppliers')
+  return new Map((mod ? list(ws, mod.id) : []).filter((r) => typeof r.values.owner === 'string' && r.values.owner).map((r) => [r.id, String(r.values.owner)]))
+}
 export interface AnalysisRow { key: string; label: string; docs: number; qty: number; amount: number }
 
 /** The invoices (or bills) posted here from…to, grouped. */
@@ -28,6 +43,7 @@ export function liveSummary(ws: Workspace, schema: AppSchema, side: 'sales' | 'p
   const products = moduleByRole(schema, 'products')
   const productName = new Map(products ? list(ws, products.id).map((x) => [x.id, String(x.values.name ?? '')]) : [])
   const partyName = new Map(partyMod ? list(ws, partyMod.id).map((x) => [x.id, recordTitle(ws, schema, x)]) : [])
+  const owners = ownersOf(ws, schema, side)
   for (const r of list(ws, mod.id)) {
     const date = String(r.values.date ?? '')
     if (r.status === 'draft' || r.status === 'void' || r.values.opening || date < from || date > to) continue
@@ -43,7 +59,7 @@ export function liveSummary(ws: Workspace, schema: AppSchema, side: 'sales' | 'p
     else if (by === 'party') {
       const party = String(r.values[key] ?? '')
       add(party, partyName.get(party) ?? '', r.id, 0, amount)
-    } else add(String(r.values.owner ?? r.createdBy ?? ''), '', r.id, 0, amount)
+    } else add(repOf(r, owners), '', r.id, 0, amount)
   }
   return [...out.values()].map(({ ids: _ids, ...r }) => r)
 }

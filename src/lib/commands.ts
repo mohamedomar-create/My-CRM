@@ -6,10 +6,11 @@ import type { Answers } from './recommend'
 import type { AppSchema } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
 import type { BudgetLine, Line, User, Workspace } from './types'
-import { approveBudget, createBudget, deleteBudget, rejectBudget, reviseBudget, setBudgetLines, submitBudget } from './budget'
+import { approveBudget, budgetDigest, createBudget, deleteBudget, rejectBudget, reviseBudget, setBudgetLines, submitBudget } from './budget'
+import { removeTarget, setTarget } from './targets'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
-  quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
+  quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
@@ -69,6 +70,8 @@ export interface CommandArgs {
   'budget.reject': { id: string; note: string }
   'budget.revise': { id: string }
   'budget.delete': { id: string }
+  'target.set': { year: number; kind: 'rep' | 'product' | 'customer'; key: string; months?: number[]; total?: number }
+  'target.remove': { id: string }
   'journal.reverse': { id: string; date?: string }
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'opening.setGoLive': { date: string }
@@ -203,7 +206,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
     },
   },
   'sample.remove': { admin: true, run: (ws, u) => removeSampleData(ctx(ws, u)) },
-  'automation.runScheduled': { run: (ws, u) => runScheduled(ctx(ws, u)) },
+  // The nightly run: date-based automations, and on Sundays the budget notice for admins and finance.
+  'automation.runScheduled': { run: (ws, u) => { const c = ctx(ws, u); return runScheduled(c) + budgetDigest(c, c.today ?? todayISO()) } },
 
   'setup.setAnswers': {
     admin: true,
@@ -297,6 +301,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'budget.reject': { run: (ws, u, a) => void rejectBudget(ctx(ws, u), String(a.id ?? ''), String(a.note ?? '')) },
   'budget.revise': { run: (ws, u, a) => reviseBudget(ctx(ws, u), String(a.id ?? '')) },
   'budget.delete': { run: (ws, u, a) => void deleteBudget(ctx(ws, u), String(a.id ?? '')) },
+  'target.set': { run: (ws, u, a) => setTarget(ctx(ws, u), { year: Number(a.year), kind: a.kind, key: String(a.key ?? ''), months: Array.isArray(a.months) ? a.months.map(Number) : undefined, total: a.total === undefined ? undefined : Number(a.total) }) },
+  'target.remove': { run: (ws, u, a) => void removeTarget(ctx(ws, u), String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
