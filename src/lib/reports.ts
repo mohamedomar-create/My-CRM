@@ -35,6 +35,8 @@ export function isPeriodic(schema: AppSchema, r: ReportDef) {
   const mod = moduleById(schema, r.module)
   if (!mod || mod.role === 'products' || mod.role === 'contacts') return false
   if (r.measure.field === 'balance' || r.filters.some((f) => f.field === 'balance' || (f.field === '__stagetype' && f.value === 'open'))) return false
+  // Where things stand by stage is a picture of now.
+  if (r.groupBy === '__stage') return false
   return true
 }
 

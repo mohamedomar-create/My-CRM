@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Check, Minus, Plus, Trash2, Wand2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Minus, Plus, Trash2, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { TEMPLATES } from '../lib/templates'
@@ -26,14 +26,7 @@ export default function Onboarding() {
   const ws = useStore((s) => currentWorkspace(s))
   const { lang, setLang } = useLang()
   const [step, setStep] = useState(0)
-  const [analysing, setAnalysing] = useState(false)
   const a = ws?.answers
-
-  useEffect(() => {
-    if (!analysing) return
-    const t = setTimeout(() => nav('/suggest'), 2600)
-    return () => clearTimeout(t)
-  }, [analysing, nav])
 
   if (!ws || !a) return null
   const set = (patch: Partial<Answers>) => run('setup.setAnswers', { patch }, 'Onboarding answers')
@@ -42,31 +35,6 @@ export default function Onboarding() {
     set({ [key]: cur.includes(v) ? cur.filter((x) => x !== v) : cur.length >= max ? cur : [...cur, v] } as Partial<Answers>)
   }
   const canNext = step === 0 ? Boolean(a.industry) && (a.industry !== 'other' || a.industryText.trim().length > 1) : step === 3 ? a.teams.length > 0 : true
-
-  if (analysing) {
-    const lines = [
-      tr('Reading {company}’s profile', { company: a.companyName }),
-      tr('Matching {n} industry templates', { n: TEMPLATES.length }),
-      a.inventory ? tr('Setting up stock and purchasing') : tr('Setting up services billing'),
-      tr('Creating roles for {n} teams', { n: a.teams.length }),
-      tr('Adding fixes for {n} challenges', { n: a.challenges.length }),
-    ]
-    return (
-      <div className="wizard">
-        <div className="analyse">
-          <div>
-            <div className="orb" />
-            <h1>{tr('Designing your system…')}</h1>
-            <ul style={{ padding: 0 }}>
-              {lines.map((l, i) => (
-                <li key={l} style={{ animationDelay: `${i * 0.45}s` }}><Check size={16} color="#10b981" /> {l}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="wizard">
@@ -220,7 +188,7 @@ export default function Onboarding() {
         {step < STEPS.length - 1 ? (
           <button disabled={!canNext} onClick={() => setStep(step + 1)}>{tr('Continue')} <ArrowRight size={16} /></button>
         ) : (
-          <button className="glow" onClick={() => setAnalysing(true)}><Wand2 size={16} /> {tr('Suggest my system')}</button>
+          <button className="glow" onClick={() => nav('/suggest')}><Wand2 size={16} /> {tr('Suggest my system')}</button>
         )}
       </div>
     </div>

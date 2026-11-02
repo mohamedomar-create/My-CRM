@@ -52,6 +52,7 @@ const DONE = [
   'src/workspace/Paper.tsx',
   'src/workspace/Cockpit.tsx',
   'src/workspace/CommandPalette.tsx',
+  'src/workspace/Home.tsx',
   'src/components/RecordPicker.tsx',
   'src/components/Chart.tsx',
   'src/workspace/GroupCard.tsx',
