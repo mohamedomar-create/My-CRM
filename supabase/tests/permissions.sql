@@ -453,4 +453,45 @@ update public.subscriptions set paid_until = now() - interval '8 days' where wor
 select pg_temp.check('after the grace days: read-only, unpaid', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'unpaid' from (select private.billing_state('ws_bill00000001') b) x));
 select pg_temp.check('and nothing was deleted', (select count(*) = 3 from public.workspace_members where workspace_id = 'ws_bill00000001') and exists (select 1 from public.workspaces where id = 'ws_bill00000001'));
 
+
+-- Phase 6.1b: paying online. The server works out the amount; only a settled notice extends the subscription, once.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.blocked('a member prepares a payment from the browser', $q$select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 3, 'owner@test.dev')$q$);
+select pg_temp.blocked('a member marks a payment paid', $q$select public.billing_payment_settle('bp_0123456789', true, 't', 'o')$q$);
+select pg_temp.blocked('a member reads the payments table directly', $q$select * from public.billing_payments$q$);
+reset role;
+set role service_role;
+select pg_temp.blocked('someone who isn''t an admin pays', $q$select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 3, 'two@test.dev')$q$);
+select pg_temp.blocked('fewer seats than the team', $q$select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 2, 'owner@test.dev')$q$);
+select pg_temp.blocked('paying for the Free plan', $q$select public.billing_prepare_payment('ws_bill00000001', 'free', 'month', 3, 'owner@test.dev')$q$);
+create temp table p1 as select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 3, 'Owner@Test.dev') as j;
+select pg_temp.check('Growth, 3 people, a month: EGP 1,368 with VAT, worked out by the server', (select j ->> 'kind' = 'period' and (j ->> 'amount_cents')::int = 136800 from p1));
+select public.billing_payment_set_order((select j ->> 'id' from p1), '217503754');
+select pg_temp.check('the notice finds the payment by Paymob''s order', (select public.billing_payment_find(null, '217503754') ->> 'id' = (select j ->> 'id' from p1)));
+select pg_temp.check('Paymob''s notice settles it', (select public.billing_payment_settle((select j ->> 'id' from p1), true, 'tx1', '217503754') = 'paid'));
+select pg_temp.check('paid: the company is active for a month', (select b ->> 'state' = 'active' and (b ->> 'seat_limit')::int = 3 from (select public.billing_status_for('ws_bill00000001') b) x)
+  and (select paid_until between now() + interval '27 days' and now() + interval '32 days' from public.subscriptions where workspace_id = 'ws_bill00000001'));
+select pg_temp.check('the same notice again changes nothing', (select public.billing_payment_settle((select j ->> 'id' from p1), true, 'tx1', '217503754') = 'already paid'));
+select pg_temp.check('and the period isn''t extended twice', (select paid_until < now() + interval '32 days' from public.subscriptions where workspace_id = 'ws_bill00000001'));
+create temp table p2 as select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 5, 'owner@test.dev') as j;
+select pg_temp.check('2 more seats during the month cost only the days left', (select j ->> 'kind' = 'seats' and (j ->> 'amount_cents')::int between 1000 and 91200 from p2));
+create temp table until_before as select paid_until from public.subscriptions where workspace_id = 'ws_bill00000001';
+select pg_temp.check('the seats payment settles', (select public.billing_payment_settle((select j ->> 'id' from p2), true, 'tx2', null) = 'paid'));
+select pg_temp.check('the seats are added, the period stays', (select seats = 5 and paid_until = (select paid_until from until_before) from public.subscriptions where workspace_id = 'ws_bill00000001'));
+select pg_temp.blocked('another plan while the month runs', $q$select public.billing_prepare_payment('ws_bill00000001', 'pro', 'month', 5, 'owner@test.dev')$q$);
+create temp table p3 as select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 5, 'owner@test.dev') as j;
+select pg_temp.check('a renewal of the same plan', (select j ->> 'kind' = 'period' and (j ->> 'amount_cents')::int = 228000 from p3));
+select pg_temp.check('a declined payment is recorded', (select public.billing_payment_settle((select j ->> 'id' from p3), false, 'tx3', null, 'declined') = 'failed'));
+select pg_temp.check('and changes nothing', (select seats = 5 and paid_until = (select paid_until from until_before) from public.subscriptions where workspace_id = 'ws_bill00000001'));
+grant select on p1 to authenticated;
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('an admin sees the payments, newest first', (select array_agg(status order by created_at desc) = array['failed', 'paid', 'paid'] from public.billing_payments_list('ws_bill00000001')));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"two@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a member who isn''t an admin sees the payments', $q$select * from public.billing_payments_list('ws_bill00000001')$q$);
+reset role;
+select pg_temp.check('the payment is in the audit trail', (select count(*) = 2 from public.audit_events where workspace_id = 'ws_bill00000001' and command = 'billing.paid'));
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

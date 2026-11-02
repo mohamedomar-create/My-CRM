@@ -878,7 +878,31 @@ The main flows were clicked through and checked in the saved data: budget, busin
 > - **Setting a plan by hand** (bank transfer, pilot customer), in the Supabase SQL editor:
 >   `select public.billing_grant('ws_…', 'growth', 5, now() + interval '1 month', 'bank transfer');`
 >
-> Next: 6.1b, paying online with Paymob.
+> **Phase 6.1b done (paying online with Paymob).**
+> - **Choosing:** on the Billing page an admin chooses a plan, monthly or yearly, and the number of people. The server works out the amount from the `plans` table (never from the browser), records the payment as pending and opens Paymob's checkout (card, mobile wallets, Fawry).
+> - **Crediting:** a payment is credited only from Paymob's server-to-server notice, and only after its HMAC-SHA512 signature and the exact amount are checked. A notice sent twice changes nothing. The page the customer returns to only waits for that notice.
+> - **What a payment does:**
+>   - a renewal of the same plan continues from the end of the paid period;
+>   - extra seats during a period cost only the days left;
+>   - a different plan or period starts when the current one ends.
+> - **Records:** payments are listed on the Billing page and written to the audit trail.
+>
+> **To switch it on, the owner:**
+> 1. Opens a Paymob merchant account (Egypt) and, in the Paymob dashboard, creates the payment integrations (card, wallet, Fawry). Test mode first.
+> 2. In Supabase → Edge Functions → Secrets, adds:
+>    - `PAYMOB_SECRET_KEY` (Settings → Account info → Secret key);
+>    - `PAYMOB_PUBLIC_KEY` (the Public key);
+>    - `PAYMOB_HMAC_SECRET` (the HMAC secret);
+>    - `PAYMOB_INTEGRATION_IDS` (the integration ids, comma-separated);
+>    - optionally `APP_URL` (default https://mu-crm0.vercel.app).
+>
+>    Never paste them into chat or code.
+> 3. In each Paymob integration, sets the transaction processed callback to `https://npnhoywlxidojqoijqdu.supabase.co/functions/v1/billing?event=paymob`. The checkout also sends this address with each payment.
+> 4. Pays once in test mode and checks that the payment shows as Paid on the Billing page. The signature check follows Paymob's published field list, and this test confirms it against the live account. Then switches to the live keys.
+>
+> Until the secrets are set, Pay says online payment isn't switched on yet, and `billing_grant()` sets plans by hand.
+>
+> Still to do: automatic renewal (saved cards), a tax invoice for each payment from the operator, and e-mail reminders before a period ends.
 
 **What the owner will see**
 - Pricing page.

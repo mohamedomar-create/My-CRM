@@ -12,3 +12,7 @@ verify_jwt = false
 [functions.scheduler]
 # Called by the nightly database job, which has no login; the function checks the database-held key itself.
 verify_jwt = false
+
+[functions.billing]
+# Paymob's payment notices have no login; the function checks their HMAC signature. Checkout checks the login itself.
+verify_jwt = false

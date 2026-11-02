@@ -452,6 +452,35 @@ export async function chooseFreePlan(id: string) {
   publish((s) => { s.billing = data as BillingStatus })
 }
 
+/** Opens Paymob's checkout for a plan, period and number of people; the amount is worked out on the server. */
+export async function startCheckout(workspaceId: string, plan: string, cycle: 'month' | 'year', seats: number): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ url: string; payment: string }>('billing', { body: { action: 'checkout', workspace: workspaceId, plan, cycle, seats } })
+  if (error) throw new Error(friendly(await serverMessage(error)))
+  if (!data?.url) throw new Error('Paymob didn’t open the payment. Try again in a moment.')
+  return data.url
+}
+
+export interface BillingPayment {
+  id: string
+  kind: 'period' | 'seats'
+  plan: string
+  cycle: 'month' | 'year'
+  seats: number
+  total: number
+  status: 'pending' | 'paid' | 'failed'
+  created_at: string
+  paid_at: string | null
+  period_to: string | null
+  created_by_email: string
+}
+
+/** The company's payments, newest first (admins). */
+export async function listPayments(workspaceId: string): Promise<BillingPayment[]> {
+  const { data, error } = await supabase.rpc('billing_payments_list', { p_id: workspaceId })
+  if (error) throw new Error(friendly(error.message))
+  return ((data ?? []) as BillingPayment[]).map((p) => ({ ...p, total: Number(p.total) }))
+}
+
 /** The plans and prices, for the pricing and billing pages (public; the built-in list if the server can't be reached). */
 export async function loadPlans(): Promise<{ plans: Plan[]; vatRate: number }> {
   const [p, cfg] = await Promise.all([supabase.from('plans').select('*').order('sort'), supabase.from('billing_settings').select('vat_rate').maybeSingle()])
