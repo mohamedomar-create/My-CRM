@@ -37,5 +37,6 @@ jobs:
             # "join" (people not signed in yet) and "scheduler" (the nightly job) check their callers themselves; the rest need a login.
             flags=""
             if [ "$name" = join ] || [ "$name" = scheduler ]; then flags="--no-verify-jwt"; fi
-            supabase functions deploy "$name" --project-ref "$PROJECT_REF" --use-api $flags
+            # --yes: newer versions of the tool ask for confirmation, which a run here can't give (it then deploys nothing).
+            supabase functions deploy "$name" --project-ref "$PROJECT_REF" --use-api --yes $flags
           done
