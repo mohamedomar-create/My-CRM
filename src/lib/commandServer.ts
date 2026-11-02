@@ -3,6 +3,7 @@
 import type { Workspace } from './types'
 import { applyCommand, type Command } from './commands'
 import { diff, setupPart, type Changes } from './split'
+import { billingProblem, type BillingStatus } from './billing'
 
 export interface CommandRequest {
   workspace: string
@@ -46,6 +47,8 @@ export interface ServerDeps {
   secondFactor?: (workspace: string, email: string) => Promise<string | null>
   /** how many changes this person sent in the last minute */
   recentCommands?: () => Promise<number>
+  /** the company's subscription now (read-only after the trial or when unpaid; the Free plan has no books) */
+  billing?: (workspace: string) => Promise<BillingStatus | null>
 }
 
 export class HttpError extends Error {
@@ -78,6 +81,8 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
     throw new HttpError(429, 'Too many changes in one minute. They will be sent again in a moment.')
   }
 
+  const billing = (await deps.billing?.(req.workspace)) ?? null
+
   for (let attempt = 0; attempt < 5; attempt++) {
     const loaded = await deps.load(req.workspace)
     if (!loaded) throw new HttpError(404, 'Workspace not found')
@@ -97,6 +102,9 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         if (c.name === 'security.setTwoFactor' && (c.args as { required?: boolean })?.required && deps.user.aal !== 'aal2') {
           throw new Error('Turn on two-factor login for yourself first (Security page), then require it for others')
         }
+        // The subscription decides first: read-only after the trial or when unpaid, no books on the Free plan.
+        const unpaid = billingProblem(billing, doc, c.name, c.args)
+        if (unpaid) throw new Error(unpaid)
         const out = applyCommand(doc, actor, { name: c.name, args: c.args } as Command, ids)
         doc = out.ws
         results.push({ ok: true, result: out.result })

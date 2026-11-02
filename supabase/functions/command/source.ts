@@ -4,6 +4,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { handleCommands, HttpError, type CommandRequest } from '../../../src/lib/commandServer'
 import type { Workspace } from '../../../src/lib/types'
+import type { BillingStatus } from '../../../src/lib/billing'
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Promise<Response>): void }
 
@@ -69,6 +70,12 @@ Deno.serve(async (req) => {
           const { count, error } = await db.from('audit_events').select('id', { count: 'exact', head: true }).eq('actor', user.id).gte('at', new Date(Date.now() - 60_000).toISOString())
           if (error) throw error
           return count ?? 0
+        },
+        billing: async (workspace) => {
+          // If the check can't be read, saves still go through the database, which refuses them while read-only.
+          const { data, error } = await db.rpc('billing_status_for', { p_id: workspace })
+          if (error) console.error('billing check failed', error.message)
+          return error ? null : ((data as BillingStatus | null) ?? null)
         },
         audit: async (rows) => {
           const { error } = await db.from('audit_events').insert(rows)

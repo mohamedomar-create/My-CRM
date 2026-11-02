@@ -8,6 +8,7 @@ import { emptyData } from './types'
 import { emptyAnswers } from './recommend'
 import { uid } from './schema'
 import { applyCommand, type Actor, type Command, type CommandArgs, type CommandName } from './commands'
+import { billingProblem, PLANS, VAT_RATE, type BillingStatus, type Plan } from './billing'
 import { supabase } from './supabase'
 
 const LAST_WS = 'bonyan.workspace'
@@ -49,6 +50,8 @@ interface State {
   twoFactor: boolean
   /** when the screen last caught up with a colleague's save (live updates) */
   liveAt: number
+  /** the company's subscription: trial, plan, seats, read-only (Phase 6) */
+  billing: BillingStatus | null
 }
 
 export interface Company {
@@ -72,7 +75,7 @@ interface Change {
   ids: string[]
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false, liveAt: 0 }
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false, liveAt: 0, billing: null }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -238,6 +241,9 @@ export function run<N extends CommandName>(name: N, args: CommandArgs[N], label 
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   assertSelf()
+  // Read-only after the trial or when unpaid, and no books on the Free plan: said now, not after the server refuses.
+  const unpaid = billingProblem(state.billing, ws, name, args)
+  if (unpaid) throw new Error(unpaid)
   const cmd = { name, args } as Command
   const out = applyCommand(ws, actorFor(state, ws), cmd)
   if (JSON.stringify(out.ws) === JSON.stringify(ws)) return out.result
@@ -415,9 +421,42 @@ function open(ws: Workspace, user: User) {
     s.sync = 'saved'
     s.loadError = null
     s.prefs = {}
+    s.billing = null
   })
   void loadPrefs(ws.id, user.email)
+  void refreshBilling(ws.id)
   listen(ws.id)
+}
+
+/* ---------------- subscription ---------------- */
+
+let billingTimer: ReturnType<typeof setInterval> | undefined
+
+/** Reads the company's subscription again (on opening, every 10 minutes, and after a payment or a plan change). */
+export async function refreshBilling(id = state.session?.workspaceId): Promise<BillingStatus | null> {
+  if (!id) return null
+  clearInterval(billingTimer)
+  billingTimer = setInterval(() => void refreshBilling(), 10 * 60_000)
+  const { data, error } = await supabase.rpc('billing_status', { p_id: id })
+  const b = data as BillingStatus | null
+  // Only a real answer counts: anything else leaves the checks to the server rather than locking the screen.
+  if (error || state.session?.workspaceId !== id || typeof b?.state !== 'string' || typeof b.writable !== 'boolean') return state.billing
+  publish((s) => { s.billing = b })
+  return b
+}
+
+/** The owner moves the company to the Free plan (2 people, the CRM only). */
+export async function chooseFreePlan(id: string) {
+  const { data, error } = await supabase.rpc('billing_choose_free', { p_id: id })
+  if (error) throw new Error(friendly(error.message))
+  publish((s) => { s.billing = data as BillingStatus })
+}
+
+/** The plans and prices, for the pricing and billing pages (public; the built-in list if the server can't be reached). */
+export async function loadPlans(): Promise<{ plans: Plan[]; vatRate: number }> {
+  const [p, cfg] = await Promise.all([supabase.from('plans').select('*').order('sort'), supabase.from('billing_settings').select('vat_rate').maybeSingle()])
+  const plans = !p.error && p.data?.length ? (p.data as Plan[]).map((x) => ({ ...x, price_month: Number(x.price_month), price_year: Number(x.price_year) })) : PLANS
+  return { plans, vatRate: cfg.data ? Number(cfg.data.vat_rate) : VAT_RATE }
 }
 
 /** Opens the workspace this account belongs to (the last one used, or a given one), or creates the one it registered for. */

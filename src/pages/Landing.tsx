@@ -30,7 +30,7 @@ const GUARDS = [
 ]
 
 export default function Landing() {
-  const { t, lang, setLang } = useLang()
+  const { t, tr, lang, setLang } = useLang()
   return (
     <div className="landing">
       <nav className="nav">
@@ -39,6 +39,7 @@ export default function Landing() {
           <button className="ghost" style={{ color: '#c7caf0' }} onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}>
             <Languages size={16} /> {lang === 'en' ? 'العربية' : 'English'}
           </button>
+          <Link to="/pricing" className="btn ghost" style={{ color: '#c7caf0' }}>{tr('Pricing')}</Link>
           <Link to="/signin" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}>{t('signin')}</Link>
           <Link to="/register" className="btn glow">{t('start')}</Link>
         </div>
