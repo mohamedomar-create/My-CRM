@@ -223,7 +223,6 @@ const ALL: Template[] = [
     modules: [
       core.accounts('Customers', 'Customer', [
         f('Channel', 'select', { options: opts('Retailer', 'Wholesaler', 'Pharmacy', 'Supermarket', 'Online', 'End user'), inList: true }),
-        f('Credit limit', 'currency', { key: 'credit_limit' }),
         f('Route', 'select', { options: opts('Route A', 'Route B', 'Route C') }),
       ]),
       core.contacts(),
@@ -520,7 +519,6 @@ const ALL: Template[] = [
     modules: [
       core.accounts('Customers', 'Customer', [
         f('Type', 'select', { options: opts('Contractor', 'Developer', 'Retailer', 'Engineer / consultant', 'Individual'), inList: true }),
-        f('Credit limit', 'currency', { key: 'credit_limit' }),
       ]),
       core.contacts(),
       core.leads(),

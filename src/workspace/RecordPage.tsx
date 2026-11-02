@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, statusLabel, useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, costCenters, creditNotesOf, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -13,7 +13,11 @@ import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
 import { moneyAccounts } from '../lib/accounts'
-import { dateLocale, getLang, msg, tr } from '../lib/i18n'
+import { dateLocale, getLang, msg, N_, tr } from '../lib/i18n'
+import { Bi } from './printing'
+import { usePrintBoth } from './usePrintBoth'
+import { StatementView } from './Statement'
+import { creditStanding } from '../lib/partyStatement'
 import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
 import { GroupCard } from './GroupCard'
@@ -38,7 +42,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   // "Add a customer under it" opens a new record already under that one.
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     if (rec) return { ...rec.values }
-    const start = defaultValues({ schema, user }, mod)
+    const start = defaultValues({ schema, user, ws }, mod)
     const pf = parentField(mod)
     const under = params.get('under')
     return pf && under && findRecord(ws, under)?.module === mod.id ? { ...start, [pf.key]: under } : start
@@ -51,12 +55,20 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const [paying, setPaying] = useState(false)
   const [crediting, setCrediting] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [statement, setStatement] = useState(false)
   const isCredit = Boolean(rec?.values.credit_for)
   const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
   const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
-  const set = (k: string, v: unknown) => setValues((s) => ({ ...s, [k]: v }))
+  // On a new document the due date follows the date and the customer's or supplier's payment terms, until changed by hand.
+  const partyKey = mod.role === 'purchases' ? 'supplier' : 'customer'
+  const autoDue = (v: Record<string, unknown>) => dueDateFor(ws, schema, mod, String(v.date ?? todayISO()), v)
+  const set = (k: string, v: unknown) => setValues((s) => {
+    const next = { ...s, [k]: v }
+    if (isNew && mod.lines && mod.role !== 'quotes' && (k === partyKey || k === 'date') && s.due_date === autoDue(s)) next.due_date = autoDue(next)
+    return next
+  })
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
   const changedKeys = Object.keys({ ...values, ...base }).filter((k) => !same(values[k], base[k]))
   const linesChanged = !same(lines, baseLines)
@@ -103,12 +115,16 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     if (ok) settle()
   }
 
+  const docsMod = moduleByRole(schema, mod.role === 'suppliers' ? 'purchases' : 'invoices')
+  const seesStatement = canPost({ schema, user }) || Boolean(docsMod && can({ schema, user }, docsMod.id, 'view'))
+  const standing = rec && mod.role === 'accounts' && seesStatement ? creditStanding(ws, schema, rec.id) : undefined
   const related = rec ? relatedRecords(ws, schema, rec).filter(({ m }) => can({ schema, user }, m.id, 'view')) : []
   const costs = canSeeCosts({ schema, user })
   const secret = costs ? [] : costKeys(schema)
   const history = rec ? ws.data.activity.filter((a) => a.record === rec.id).slice(0, 15) : []
   const payments = rec ? ws.data.payments.filter((p) => p.doc === rec.id) : []
 
+  if (statement && rec) return <StatementView rec={rec} onClose={() => setStatement(false)} />
   if (printing && rec) return <PrintView rec={rec} mod={mod} ws={ws} schema={schema} onClose={() => setPrinting(false)} />
 
   return (
@@ -120,6 +136,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {isNew ? tr('New {what}', { what: mod.singular.toLowerCase() }) : recordTitle(ws, schema, rec)}
           {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title={tr('Score from the scoring rules')}><Flame size={13} /> {score(ws, schema, rec)}</span>}
           {rec && rotting(schema, rec).rotting && <span className="pill red" title={tr('No progress for a while')}><Clock size={13} /> {tr('idle {n} days', { n: rotting(schema, rec).days })}</span>}
+          {standing && <span className={`pill ${standing.left < 0 ? 'red' : standing.left < standing.limit * 0.1 ? 'amber' : 'green'}`} title={tr('Owed {owed}, cheques not yet cleared {cheques}, limit {limit}', { owed: money(standing.owed, schema.company.currency), cheques: money(standing.cheques, schema.company.currency), limit: money(standing.limit, schema.company.currency) })}>{standing.left < 0 ? tr('{amount} over the credit limit', { amount: money(-standing.left, schema.company.currency) }) : tr('{amount} of credit left', { amount: money(standing.left, schema.company.currency) })}</span>}
           {rec?.status && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{statusLabel(rec.status)}</span>}
         </h1>
         <div className="row">
@@ -151,6 +168,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.lines && rec && (rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) && canPost({ schema, user }) && (
             <button className="danger" onClick={() => confirm(tr('Void this document? Stock and journal entries will be reversed. This can’t be undone.')) && act('doc.void', { id: rec.id }, tr('Voided and reversed'))}><Ban size={15} /> {tr('Void')}</button>
           )}
+          {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && seesStatement && <button className="secondary" onClick={() => setStatement(true)}><FileText size={15} /> {tr('Statement of account')}</button>}
           {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? tr('Save first') : sync !== 'saved' ? tr('Waiting for the save to be confirmed, so the printed number is final') : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> {tr('Print')}</button>}
           {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? tr('Create') : tr('Save')}</button>}
         </div>
@@ -208,6 +226,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               ))}
             </div>
           </div>
+          {mod.role === 'invoices' && (isNew || rec?.status === 'draft') && !isCredit && <CreditWarning customer={String(values.customer ?? '')} lines={lines} />}
           {mod.lines && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
           {payments.length > 0 && (
             <div className="card">
@@ -423,6 +442,24 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
   )
 }
 
+/** A draft invoice that would take the customer (or a group above it) over its credit limit (2A, ACCO-16). */
+function CreditWarning({ customer, lines }: { customer: string; lines: Line[] }) {
+  const { ws, schema, ctx } = useApp()
+  if (!customer) return null
+  const over = creditProblems(ws, schema, customer, totals(lines).total)
+  if (!over.length) return null
+  const cur = schema.company.currency
+  const admin = isAdmin(ctx)
+  return (
+    <div className="warn-box small" style={{ marginBottom: 14 }}>
+      {over.map((o) => <div key={o.party}><ShieldAlert size={14} /> {o.cheques > 0
+        ? tr('Over the credit limit: {name} would owe {after} (with {cheques} in cheques not yet cleared), against a limit of {limit}.', { name: o.name, after: money(o.owed + o.cheques + o.adding, cur), cheques: money(o.cheques, cur), limit: money(o.limit, cur) })
+        : tr('Over the credit limit: {name} would owe {after}, against a limit of {limit}.', { name: o.name, after: money(o.owed + o.adding, cur), limit: money(o.limit, cur) })}</div>)}
+      <div className="tiny muted">{admin ? tr('You are an admin: you can post it, and that is logged.') : tr('Only an admin can post it.')}</div>
+    </div>
+  )
+}
+
 /** A bill's services against the approved budget (P2): a warning, not a block, when a line would go over it. */
 function BudgetWarnings({ lines, date }: { lines: Line[]; date?: string }) {
   const { ws, schema, user } = useApp()
@@ -562,14 +599,18 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const party = findRecord(ws, partyId)
   const t = totals(rec.lines ?? [])
   const cur = schema.company.currency
+  const [both, setBoth] = usePrintBoth()
+  const B = (en: string, vars?: Record<string, string | number>) => <Bi en={en} vars={vars} both={both} />
   const draft = rec.status === 'draft' && mod.role !== 'quotes'
   // A draft is not a tax document: it says so in the title and across the page.
-  const title = draft ? (mod.role === 'invoices' ? tr('Proforma / draft – not a tax invoice') : tr('Draft – not posted')) : rec.values.credit_for ? (mod.role === 'invoices' ? tr('Tax credit note') : tr('Debit note')) : mod.role === 'invoices' ? tr('Tax invoice') : mod.role === 'quotes' ? tr('Quotation') : tr('Purchase bill')
+  const title = draft ? (mod.role === 'invoices' ? N_('Proforma / draft – not a tax invoice') : N_('Draft – not posted')) : rec.values.credit_for ? (mod.role === 'invoices' ? N_('Tax credit note') : N_('Debit note')) : mod.role === 'invoices' ? N_('Tax invoice') : mod.role === 'quotes' ? N_('Quotation') : N_('Purchase bill')
+  const codeNote = (l: Line) => (lineTaxCode(l) === 'Z0' ? N_('zero-rated') : lineTaxCode(l) === 'EX' ? N_('exempt') : lineTaxCode(l) === 'OS' ? N_('out of scope') : '')
   return (
     <div className="page">
-      <div className="row no-print" style={{ marginBottom: 12 }}>
+      <div className="row no-print" style={{ marginBottom: 12, gap: 10 }}>
         <button className="secondary" onClick={onClose}><ArrowLeft size={16} /> {tr('Back')}</button>
         <button onClick={() => window.print()}><Printer size={16} /> {tr('Print / save as PDF')}</button>
+        <label className="row small" style={{ gap: 6 }}><input type="checkbox" checked={both} onChange={(e) => setBoth(e.target.checked)} style={{ width: 'auto' }} /> {tr('Arabic and English')}</label>
       </div>
       <div className="print-doc" style={{ position: 'relative' }}>
         {draft && <div aria-hidden style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', fontSize: '5rem', fontWeight: 800, color: 'rgba(220, 38, 38, 0.12)', transform: 'rotate(-24deg)' }}>{tr('DRAFT')}</div>}
@@ -577,37 +618,37 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
           <div>
             <h1 style={{ marginBottom: 4 }}>{schema.company.name}</h1>
             <div className="muted small">{schema.company.city}, {schema.company.country}</div>
-            {schema.company.taxId && <div className="small">{tr('Tax registration no.:')} <b>{schema.company.taxId}</b></div>}
+            {schema.company.taxId && <div className="small"><Bi en={N_('Tax registration no.:')} both={both} inline /> <b>{schema.company.taxId}</b></div>}
           </div>
           <div style={{ textAlign: 'end' }}>
-            <h2 style={{ marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</h2>
-            <div className="mono">{rec.number ?? 'DRAFT'}</div>
-            {rec.values.eta_uuid ? <div className="small">{tr('E-invoice no.:')} <span className="mono">{String(rec.values.eta_uuid)}</span></div> : null}
-            <div className="small">Date: {String(rec.values.date ?? '')}</div>
-            {rec.values.due_date ? <div className="small">Due: {String(rec.values.due_date)}</div> : null}
-            {rec.values.valid_until ? <div className="small">{tr('Valid until: {date}', { date: String(rec.values.valid_until) })}</div> : null}
+            <h2 style={{ marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.08em' }}>{B(title)}</h2>
+            <div className="mono">{rec.number ?? tr('DRAFT')}</div>
+            {rec.values.eta_uuid ? <div className="small"><Bi en={N_('E-invoice no.:')} both={both} inline /> <span className="mono">{String(rec.values.eta_uuid)}</span></div> : null}
+            <div className="small"><Bi en={N_('Date: {date}')} vars={{ date: String(rec.values.date ?? '') }} both={both} inline /></div>
+            {rec.values.due_date ? <div className="small"><Bi en={N_('Due: {date}')} vars={{ date: String(rec.values.due_date) }} both={both} inline /></div> : null}
+            {rec.values.valid_until ? <div className="small"><Bi en={N_('Valid until: {date}')} vars={{ date: String(rec.values.valid_until) }} both={both} inline /></div> : null}
           </div>
         </div>
         <div style={{ margin: '24px 0', padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
-          <div className="tiny muted">{mod.role === 'purchases' ? tr('Supplier') : tr('Bill to')}</div>
+          <div className="tiny muted"><Bi en={mod.role === 'purchases' ? N_('Supplier') : N_('Bill to')} both={both} inline /></div>
           <b>{recordTitle(ws, schema, party)}</b>
-          {party?.values.tax_id ? <div className="small">Tax ID: {String(party.values.tax_id)}</div> : null}
+          {party?.values.tax_id ? <div className="small"><Bi en={N_('Tax registration no.:')} both={both} inline /> {String(party.values.tax_id)}</div> : null}
         </div>
         <table className="lines">
-          <thead><tr><th>#</th><th>{tr('Description')}</th><th className="num">{tr('Qty')}</th><th className="num">{tr('Unit price')}</th><th className="num">{tr('Disc.')}</th><th className="num">{tr('VAT')}</th><th className="num">{tr('Amount')}</th></tr></thead>
+          <thead><tr><th>#</th><th>{B(N_('Description'))}</th><th className="num">{B(N_('Qty'))}</th><th className="num">{B(N_('Unit price'))}</th><th className="num">{B(N_('Disc.'))}</th><th className="num">{B(N_('VAT'))}</th><th className="num">{B(N_('Amount'))}</th></tr></thead>
           <tbody>
             {(rec.lines ?? []).map((l, i) => (
-              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%{lineTaxCode(l) === 'Z0' ? ' (zero-rated)' : lineTaxCode(l) === 'EX' ? ' (exempt)' : lineTaxCode(l) === 'OS' ? ' (out of scope)' : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
+              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%{codeNote(l) ? <> ({tr(codeNote(l))})</> : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
             ))}
           </tbody>
         </table>
         <div className="totals">
-          <span>{tr('Subtotal')}</span><b className="num">{money(t.subtotal, cur)}</b>
-          <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
-          <span className="grand">{tr('Total')}</span><span className="grand num">{money(t.total, cur)}</span>
-          {mod.role !== 'quotes' && <><span>{tr('Paid')}</span><span className="num">{money(Number(rec.values.paid ?? 0), cur)}</span><span><b>{tr('Balance due')}</b></span><b className="num">{money(Number(rec.values.balance ?? t.total), cur)}</b></>}
+          <span>{B(N_('Subtotal'))}</span><b className="num">{money(t.subtotal, cur)}</b>
+          <span>{B(N_('VAT'))}</span><b className="num">{money(t.tax, cur)}</b>
+          <span className="grand">{B(N_('Total'))}</span><span className="grand num">{money(t.total, cur)}</span>
+          {mod.role !== 'quotes' && <><span>{B(N_('Paid'))}</span><span className="num">{money(Number(rec.values.paid ?? 0), cur)}</span><span><b>{B(N_('Balance due'))}</b></span><b className="num">{money(Number(rec.values.balance ?? t.total), cur)}</b></>}
         </div>
-        {rec.status === 'void' && <h2 style={{ color: 'var(--danger)', textAlign: 'center', marginTop: 30 }}>{tr('VOID')}</h2>}
+        {rec.status === 'void' && <h2 style={{ color: 'var(--danger)', textAlign: 'center', marginTop: 30 }}>{B(N_('VOID'))}</h2>}
       </div>
     </div>
   )
