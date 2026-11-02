@@ -4,11 +4,14 @@ import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCirc
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
-import { can, canApprove, canPost, hasSampleData, list, recordTitle } from '../lib/engine'
+import { can, canApprove, canPost, hasSampleData, list } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
+import { CommandPalette } from './CommandPalette'
 import { dateLocale, useLang } from '../lib/i18n'
 import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
+
+const SHORTCUT = 'Ctrl K'
 
 export default function Shell() {
   const { ws, user, schema, act } = useApp()
@@ -19,7 +22,7 @@ export default function Shell() {
   const { lang, setLang, tr, msg } = useLang()
   const [bell, setBell] = useState(false)
   const [theme, setThemeState] = useState<Theme>(getTheme)
-  const [q, setQ] = useState('')
+  const [palette, setPalette] = useState(false)
   const ran = useRef(false)
   const role = schema.roles.find((r) => r.id === user.roleId)
 
@@ -43,9 +46,12 @@ export default function Shell() {
   }, [liveAt, tr])
   const isRead = (n: { id: string; read?: boolean }) => Boolean(n.read) || Boolean(readNotes?.includes(n.id))
   const unread = notes.filter((n) => !isRead(n)).length
-  const results = q.trim().length > 1
-    ? visible.flatMap((m) => list(ws, m.id).filter((r) => recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase())).slice(0, 4).map((r) => ({ r, m }))).slice(0, 10)
-    : []
+  // Ctrl/⌘-K opens the search from anywhere (4.2d).
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((v) => !v) } }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [])
 
   return (
     <div className="app">
@@ -80,19 +86,9 @@ export default function Shell() {
       </aside>
       <div className="main">
         <header className="topbar no-print">
-          <div style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
-            <Search size={16} style={{ position: 'absolute', insetInlineStart: 12, top: 12, color: 'var(--muted)' }} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr('Search customers, deals, invoices…')} aria-label={tr('Search')} style={{ paddingInlineStart: 36 }} />
-            {results.length > 0 && (
-              <div className="card notif" style={{ insetInlineStart: 0, width: '100%' }}>
-                {results.map(({ r, m }) => (
-                  <div key={r.id} style={{ cursor: 'pointer' }} onClick={() => { setQ(''); nav(`/app/r/${r.id}`) }}>
-                    <Icon name={m.icon} size={14} style={{ color: m.color }} /> {recordTitle(ws, schema, r)} <span className="muted tiny">· {m.singular}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <button type="button" className="secondary search-btn" onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K">
+            <Search size={16} aria-hidden /> <span className="grow" style={{ textAlign: 'start' }}>{tr('Search customers, deals, invoices…')}</span> <kbd>{SHORTCUT}</kbd>
+          </button>
           <span className="grow" />
           <div style={{ position: 'relative' }}>
             <button className="ghost" onClick={() => { setBell(!bell); if (!bell) markNotesRead(notes.slice(0, 30).map((n) => n.id)) }} aria-label={tr('Notifications')}>
@@ -145,6 +141,7 @@ export default function Shell() {
           <Outlet />
         </main>
       </div>
+      {palette && <CommandPalette onClose={() => setPalette(false)} />}
       {toast && (
         <div className={`toast row ${toast.kind === 'ok' ? 'ok-box' : 'error-box'}`} role={toast.kind === 'ok' ? 'status' : 'alert'} aria-live={toast.kind === 'ok' ? 'polite' : 'assertive'}>
           {toast.kind === 'ok' ? <CheckCircle2 size={18} aria-hidden /> : <AlertTriangle size={18} aria-hidden />} <span className="grow">{msg(toast.text)}</span>

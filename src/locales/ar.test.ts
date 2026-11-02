@@ -51,6 +51,8 @@ const DONE = [
   'src/workspace/Credits.tsx',
   'src/workspace/Paper.tsx',
   'src/workspace/Cockpit.tsx',
+  'src/workspace/CommandPalette.tsx',
+  'src/components/RecordPicker.tsx',
   'src/components/Chart.tsx',
   'src/workspace/GroupCard.tsx',
   'src/builder/Builder.tsx',
