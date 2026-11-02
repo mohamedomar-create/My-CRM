@@ -55,7 +55,11 @@ export function useApp() {
 
 /** Document and approval statuses, shown in the chosen language. */
 const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
-export const statusLabel = (s?: string) => (s && (STATUS_WORDS as string[]).includes(s) ? tr(s) : s ?? '')
+export const statusLabel = (s?: string) => {
+  const t = s && (STATUS_WORDS as string[]).includes(s) ? tr(s) : s ?? ''
+  // Statuses read as words, not codes: "Posted", not "posted".
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
 
 /** How a payment was made, shown in the chosen language. */
 const METHODS: Record<string, string> = { bank: N_('Bank transfer'), cash: N_('Cash'), instapay: N_('InstaPay'), cheque: N_('Cheque'), card: N_('Card') }
