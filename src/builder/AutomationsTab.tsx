@@ -30,7 +30,7 @@ export default function AutomationsTab({ focus, setFocus }: { focus: Focus; setF
         <div className="row between"><h3 style={{ margin: 0 }}>{tr('Automations')}</h3><button className="ghost icon" onClick={add}><Plus size={16} /></button></div>
         {schema.workflows.map((w) => (
           <button key={w.id} className={`mod-item ${w.id === wf?.id ? 'on' : ''}`} onClick={() => setFocus({ itemId: w.id })}>
-            <span className="badge" style={{ background: w.enabled ? '#f59e0b' : '#94a3b8' }}><Zap size={14} /></span>
+            <span className="badge" style={{ background: w.enabled ? 'var(--warning)' : 'var(--muted)' }}><Zap size={14} /></span>
             <span className="grow small" style={{ textAlign: 'start' }}>{w.name}<br /><span className="tiny muted">{moduleById(schema, w.module)?.name} · {w.enabled ? 'on' : 'off'}</span></span>
             {issues.some((i) => i.itemId === w.id && i.level === 'error') && <span className="err" />}
           </button>
@@ -74,7 +74,7 @@ function Editor({ wf, onDeleted }: { wf: WorkflowDef; onDeleted: () => void }) {
         <button className="danger" onClick={() => { edit((s) => { s.workflows = s.workflows.filter((x) => x.id !== wf.id) }); onDeleted() }}><Trash2 size={15} /></button>
       </div>
       <div className="flow">
-        <div className="flow-node" style={{ ['--c' as string]: '#6366f1' }}>
+        <div className="flow-node" style={{ ['--c' as string]: 'var(--cat-1)' }}>
           <div className="tag">{tr('When')}</div>
           <div className="form-grid" style={{ marginTop: 8 }}>
             <label className="field">In
@@ -105,7 +105,7 @@ function Editor({ wf, onDeleted }: { wf: WorkflowDef; onDeleted: () => void }) {
           </div>
         </div>
         <div className="flow-line" />
-        <div className="flow-node" style={{ ['--c' as string]: '#a855f7' }}>
+        <div className="flow-node" style={{ ['--c' as string]: 'var(--cat-3)' }}>
           <div className="tag">{tr('Only if')}</div>
           <div style={{ marginTop: 8 }}>
             {wf.conditions.length === 0 && <p className="small muted" style={{ margin: '0 0 8px' }}>{tr('Always — for every record.')}</p>}
@@ -121,7 +121,7 @@ function Editor({ wf, onDeleted }: { wf: WorkflowDef; onDeleted: () => void }) {
         <div className="flow-line" />
         {wf.actions.map((a, i) => (
           <div key={i}>
-            <div className="flow-node" style={{ ['--c' as string]: a.type === 'notify' ? '#ec4899' : a.type === 'create_task' ? '#10b981' : '#f59e0b' }}>
+            <div className="flow-node" style={{ ['--c' as string]: a.type === 'notify' ? 'var(--cat-6)' : a.type === 'create_task' ? 'var(--success)' : 'var(--warning)' }}>
               <div className="row between">
                 <div className="tag">Then · {a.type === 'create_task' ? 'create a task' : a.type === 'notify' ? 'send a notification' : 'set a field'}</div>
                 <button className="ghost icon" onClick={() => set((w) => w.actions.splice(i, 1))}><Trash2 size={14} /></button>

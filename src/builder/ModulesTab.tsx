@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Modal } from '../components/Dialog'
 import {
   DndContext, DragOverlay, PointerSensor, KeyboardSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent,
@@ -486,8 +487,7 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
   }
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <div className="modal">
+      <Modal onClose={onClose}>
         <div className="card stack">
           <div className="row between"><h2 style={{ margin: 0 }}>{tr('Add a module')}</h2><button className="ghost icon" onClick={onClose}><X size={18} /></button></div>
           <div className="tiles" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', marginTop: 0 }}>
@@ -506,7 +506,7 @@ function AddModule({ onClose, onAdded }: { onClose: () => void; onAdded: (id: st
           {missing.length > 0 && <div className="note">{tr('{what} also needs: {list}. Add those too, or the health check will flag it.', { what: msgText(info.label), list: missing.map((n) => msgText(ROLES[n].label)).join('، ') })}</div>}
           <button className="glow" onClick={add} disabled={!name.trim()}><Plus size={16} /> {name ? tr('Add {name}', { name }) : tr('Add module')}</button>
         </div>
-      </div>
+      </Modal>
     </>
   )
 }

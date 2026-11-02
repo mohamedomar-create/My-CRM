@@ -38,7 +38,7 @@ export default function Audit() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1><span className="badge" style={{ background: '#0f766e' }}><ShieldCheck size={20} /></span>{tr('Audit trail')}</h1>
+        <h1><span className="badge" style={{ background: 'var(--ink)' }}><ShieldCheck size={20} /></span>{tr('Audit trail')}</h1>
         <div className="row">
           <select value={who} onChange={(e) => setWho(e.target.value)} style={{ width: 'auto' }}>
             <option value="">{tr('Everyone')}</option>

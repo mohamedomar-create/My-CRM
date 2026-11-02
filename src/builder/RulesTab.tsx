@@ -61,7 +61,7 @@ function ValidationRules({ mod }: { mod: ModuleDef }) {
       <p className="muted small">{tr('Stop bad data at the door, like validation rules in Salesforce and Zoho. A save is refused with your message when a rule fails.')}</p>
       {(mod.rules ?? []).length === 0 && <p className="small muted">{tr('No rules for {name} yet.', { name: mod.name })}</p>}
       {(mod.rules ?? []).map((r, i) => (
-        <div key={r.id} className="flow-node" style={{ ['--c' as string]: '#ef4444', marginBottom: 10 }}>
+        <div key={r.id} className="flow-node" style={{ ['--c' as string]: 'var(--danger)', marginBottom: 10 }}>
           <div className="row between"><span className="tag">{tr('Rule {n}', { n: i + 1 })}</span><button className="ghost icon" onClick={() => editMod((m) => { m.rules = m.rules!.filter((x) => x.id !== r.id) })}><Trash2 size={14} /></button></div>
           <p className="small" style={{ margin: '8px 0 4px' }}><b>{tr('Applies when')}</b> {r.when.length === 0 && <span className="muted">{tr('always')}</span>}</p>
           {r.when.map((w, j) => <FilterRow key={j} mod={mod} filter={w} label={label(w.field)} onChange={(nw) => editMod((m) => { m.rules!.find((x) => x.id === r.id)!.when[j] = nw })} onRemove={() => editMod((m) => { m.rules!.find((x) => x.id === r.id)!.when.splice(j, 1) })} />)}
@@ -126,7 +126,7 @@ function Approvals({ mod }: { mod: ModuleDef }) {
       <p className="muted small">{tr('Critical actions wait for a manager’s sign-off, like Odoo approvals. The approver gets a notification. An approval stops counting if the record changes afterwards, and people can’t approve their own requests.')}</p>
       {!canPost && !mod.stages && <p className="small muted">{tr('Approvals apply to posting invoices and bills, or to moving records into a pipeline stage. {name} has neither.', { name: mod.name })}</p>}
       {rules.map((a) => (
-        <div key={a.id} className="flow-node" style={{ ['--c' as string]: '#10b981', marginBottom: 10 }}>
+        <div key={a.id} className="flow-node" style={{ ['--c' as string]: 'var(--success)', marginBottom: 10 }}>
           <div className="row between">
             <input value={a.name} onChange={(e) => setRule(a.id, (x) => (x.name = e.target.value))} style={{ fontWeight: 700, maxWidth: 300 }} />
             <button className="ghost icon" onClick={() => edit((s) => { s.approvals = s.approvals!.filter((x) => x.id !== a.id) })}><Trash2 size={14} /></button>

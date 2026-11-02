@@ -123,7 +123,7 @@ export default function Team() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: '#6366f1' }}><Users size={20} /></span>{tr('Team')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Users size={20} /></span>{tr('Team')}</h1></div>
       <div className="record-grid">
         <div className="table-wrap">
           <table className="data">

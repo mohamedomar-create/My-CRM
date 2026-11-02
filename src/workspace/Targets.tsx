@@ -13,7 +13,7 @@ import { tr } from '../lib/i18n'
 const KIND: Record<TargetKind, string> = { rep: 'Sales rep', product: 'Product', customer: 'Customer' }
 
 function Bar({ pct }: { pct: number }) {
-  const color = pct >= 100 ? '#10b981' : pct >= 80 ? '#f59e0b' : '#ef4444'
+  const color = pct >= 100 ? 'var(--success)' : pct >= 80 ? 'var(--warning)' : 'var(--danger)'
   return <div style={{ height: 8, borderRadius: 4, background: 'var(--border)', minWidth: 80 }}><div style={{ height: 8, borderRadius: 4, width: `${Math.min(100, pct)}%`, background: color }} /></div>
 }
 

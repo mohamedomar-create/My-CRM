@@ -63,7 +63,7 @@ export default function Builder() {
     else setPublished(tr('Version {n} is live', { n: (ws.published?.version ?? 0) + 1 }))
   }
 
-  const ringColor = score >= 90 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444'
+  const ringColor = score >= 90 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--danger)'
   return (
     <div className="builder">
       <div className="btop">
@@ -76,7 +76,7 @@ export default function Builder() {
           ))}
         </div>
         <button className="health-btn" onClick={() => setHealth(true)} title={tr('System health check')}>
-          {errors.length ? <AlertTriangle size={16} color="#fca5a5" /> : <CheckCircle2 size={16} color="#6ee7b7" />} {tr('Health {n}%', { n: score })}
+          {errors.length ? <AlertTriangle size={16} color="var(--on-ink-danger)" /> : <CheckCircle2 size={16} color="var(--on-ink-ok)" />} {tr('Health {n}%', { n: score })}
         </button>
         {ws.published && <Link to="/app" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}><LayoutDashboard size={16} /> {tr('Open app')}</Link>}
         <button className="glow" onClick={publish}><Rocket size={16} /> {ws.published ? tr('Publish changes') : tr('Publish & go live')}</button>
@@ -108,14 +108,14 @@ export default function Builder() {
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {issues.length === 0 && (
                 <div className="empty">
-                  <div className="big-ic" style={{ background: 'linear-gradient(135deg,#10b981,#06b6d4)' }}><CheckCircle2 size={34} /></div>
+                  <div className="big-ic" style={{ background: 'var(--ink)' }}><CheckCircle2 size={34} /></div>
                   <b>{tr('All {m} modules, {r} reports and {w} automations pass every check.', { m: schema.modules.length, r: schema.reports.length, w: schema.workflows.length })}</b>
                   <p className="small">{tr('Data links, formulas, pipelines, stock and accounting rules are consistent.')}</p>
                 </div>
               )}
               {issues.map((i, n) => (
                 <button key={n} className="issue" onClick={() => go(i)}>
-                  {i.level === 'error' ? <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0 }} /> : <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0 }} />}
+                  {i.level === 'error' ? <AlertTriangle size={18} color="var(--danger)" style={{ flexShrink: 0 }} /> : <AlertTriangle size={18} color="var(--warning)" style={{ flexShrink: 0 }} />}
                   <span className="grow">
                     <span>{msg(i.message)}</span>
                     <br />

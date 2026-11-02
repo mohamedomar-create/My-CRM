@@ -1,6 +1,7 @@
 // 2A leftovers: advances from customers (and to suppliers), and using a credit (an advance, a credit note's credit left
 // over, an opening credit) on an invoice or bill of the same customer or supplier, and taking it back.
 import { useState } from 'react'
+import { Modal } from '../components/Dialog'
 import { Link } from 'react-router-dom'
 import { Wallet, X } from 'lucide-react'
 import { useApp } from './useApp'
@@ -30,8 +31,7 @@ export function AdvanceModal({ party, onClose }: { party: Rec; onClose: () => vo
   }
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <div className="modal">
+      <Modal onClose={onClose}>
       <form className="card stack" onSubmit={save}>
         <div className="row between"><h2 style={{ margin: 0 }}>{sales ? tr('Advance from the customer') : tr('Advance to the supplier')}</h2><button type="button" className="ghost icon" onClick={onClose} aria-label={tr('Close')}><X size={16} /></button></div>
         <p className="small muted" style={{ margin: 0 }}>{sales ? tr('Money received before the invoice. It waits on the customer’s account as a credit, to be used on their invoices or refunded.') : tr('Money paid before the bill. It waits on the supplier’s account as a credit, to be used on their bills or refunded.')}</p>
@@ -44,7 +44,7 @@ export function AdvanceModal({ party, onClose }: { party: Rec; onClose: () => vo
         <label className="field">{tr('Note (optional)')}<input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} /></label>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}><button type="button" className="secondary" onClick={onClose}>{tr('Cancel')}</button><button>{tr('Save')}</button></div>
       </form>
-      </div>
+      </Modal>
     </>
   )
 }

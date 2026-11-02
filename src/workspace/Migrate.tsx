@@ -88,8 +88,8 @@ export default function Migrate() {
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <span className="pill">{tr('Lists with data: {a} of {b}', { a: doneModules, b: modules.length })}</span>
           {finance && <span className="pill">{tr('Opening books steps done: {a}', { a: opening })}</span>}
-          {st && <span className="pill" style={st.equity === 0 && st.hasTb ? { background: '#dcfce7', color: '#166534' } : undefined}>{tr('Opening balance equity (3900): {amount}', { amount: money(st.equity, saved.company.currency) })}</span>}
-          {o?.done && <span className="pill" style={{ background: '#dcfce7', color: '#166534' }}><Lock size={12} /> {tr('Live since {date}', { date: o.goLive })}</span>}
+          {st && <span className="pill" style={st.equity === 0 && st.hasTb ? { background: 'var(--success-bg)', color: 'var(--success-text)' } : undefined}>{tr('Opening balance equity (3900): {amount}', { amount: money(st.equity, saved.company.currency) })}</span>}
+          {o?.done && <span className="pill" style={{ background: 'var(--success-bg)', color: 'var(--success-text)' }}><Lock size={12} /> {tr('Live since {date}', { date: o.goLive })}</span>}
         </div>
       </div>
 
@@ -105,7 +105,7 @@ export default function Migrate() {
               const allowed = can({ schema: saved, user }, s.id, 'create')
               return (
                 <tr key={s.id} style={{ cursor: 'default' }}>
-                  <td style={{ width: 28 }}>{count ? <CheckCircle2 size={18} color="#10b981" /> : <Circle size={18} color="#94a3b8" />}</td>
+                  <td style={{ width: 28 }}>{count ? <CheckCircle2 size={18} color="var(--success)" /> : <Circle size={18} color="var(--muted)" />}</td>
                   <td><b>{i + 1}. {s.module.name}</b><br /><span className="tiny muted">{count ? tr('{n} records', { n: count }) : tr('Nothing yet')}{batches.length ? ` · ${tr('last import {date}', { date: new Date(batches[0].at).toLocaleDateString(dateLocale()) })}` : ''}</span></td>
                   <td className="small">{sh ? tr('{n} rows in your workbook', { n: rowsIn(sh) }) : book ? <span className="muted">{tr('No rows in the workbook')}</span> : ''}</td>
                   <td style={{ textAlign: 'end' }}>{allowed && <button className={sh ? 'glow small' : 'ghost small'} onClick={() => setOpen(s.id)}><Upload size={14} /> {sh ? tr('Import these rows') : tr('Import')}</button>}</td>
@@ -118,7 +118,7 @@ export default function Migrate() {
               const count = (ws.data.comments ?? []).filter((c) => c.batch).length
               return (
                 <tr style={{ cursor: 'default' }}>
-                  <td style={{ width: 28 }}>{count ? <CheckCircle2 size={18} color="#10b981" /> : <Circle size={18} color="#94a3b8" />}</td>
+                  <td style={{ width: 28 }}>{count ? <CheckCircle2 size={18} color="var(--success)" /> : <Circle size={18} color="var(--muted)" />}</td>
                   <td><b>{modules.length + 1}. {tr('Calls, visits and notes')}</b><br /><span className="tiny muted">{count ? tr('{n} brought in', { n: count }) : tr('Nothing yet')}</span></td>
                   <td className="small">{sh ? tr('{n} rows in your workbook', { n: rowsIn(sh) }) : book ? <span className="muted">{tr('No rows in the workbook')}</span> : ''}</td>
                   <td style={{ textAlign: 'end' }}><button className={sh ? 'glow small' : 'ghost small'} onClick={() => setOpen('activities')}><Upload size={14} /> {sh ? tr('Import these rows') : tr('Import')}</button></td>

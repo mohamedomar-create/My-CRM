@@ -106,7 +106,7 @@ export default function SalesAnalysis() {
                   <td className="num small">{r.docs}</td>
                   {by === 'product' && <td className="num small">{r.qty}</td>}
                   <td className="num small">{money(r.amount, currency)}</td>
-                  <td><div style={{ height: 8, borderRadius: 4, background: r.amount < 0 ? '#f87171' : 'var(--primary, #6366f1)', width: `${Math.round((Math.abs(r.amount) / top) * 100)}%` }} /></td>
+                  <td><div style={{ height: 8, borderRadius: 4, background: r.amount < 0 ? 'var(--danger)' : 'var(--primary)', width: `${Math.round((Math.abs(r.amount) / top) * 100)}%` }} /></td>
                 </tr>
               ))}
             </tbody>

@@ -2,6 +2,7 @@
 // in the books). Like the other imports: columns matched by name, checked here row by row, sent in parts, and a whole
 // file can be taken out again.
 import { useEffect, useMemo, useState } from 'react'
+import { Modal } from '../components/Dialog'
 import { CheckCircle2, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { importKey } from '../lib/engine'
@@ -97,8 +98,7 @@ export function HistoryImport({ side, preset, onClose }: { side: HistorySide; pr
 
   return (
     <>
-      <div className="overlay" onClick={progress ? undefined : onClose} />
-      <div className="modal">
+      <Modal onClose={onClose} busy={Boolean(progress)}>
         <div className="card stack" style={{ width: 'min(820px, 100%)' }}>
           <div className="row between">
             <h2 style={{ margin: 0 }}>{title}</h2>
@@ -156,7 +156,7 @@ export function HistoryImport({ side, preset, onClose }: { side: HistorySide; pr
           )}
           {!progress && !result && <EarlierBatches onUndo={undo} />}
         </div>
-      </div>
+      </Modal>
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Modal } from '../components/Dialog'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp } from './useApp'
@@ -17,6 +18,7 @@ import { dateLocale, getLang, msg, N_, tr } from '../lib/i18n'
 import { Bi } from './printing'
 import { usePrintBoth } from './usePrintBoth'
 import { StatementView } from './Statement'
+import { readableOn } from '../lib/palette'
 import { AdvanceModal, CreditsPanel } from './Credits'
 import { creditStanding } from '../lib/partyStatement'
 import { activityLabel } from './labels'
@@ -212,7 +214,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.stages.map((s, i) => {
             const cur = mod.stages!.findIndex((x) => x.id === rec.stage)
             return (
-              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color }} onClick={() => act('record.moveStage', { id: rec.id, stage: s.id }, tr('Moved to {stage}', { stage: s.name }))} disabled={!can({ schema, user }, mod.id, 'edit')}>
+              <button key={s.id} className={i === cur ? 'cur' : i < cur && s.type === 'open' ? 'done' : ''} style={{ ['--c' as string]: s.color, ['--on-c' as string]: readableOn(s.color) }} aria-current={i === cur ? 'step' : undefined} onClick={() => act('record.moveStage', { id: rec.id, stage: s.id }, tr('Moved to {stage}', { stage: s.name }))} disabled={!can({ schema, user }, mod.id, 'edit')}>
                 {s.name}
               </button>
             )
@@ -328,7 +330,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
     case 'rating':
       return (
         <div className="row" style={{ gap: 2 }}>
-          {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" className="ghost icon" disabled={disabled} onClick={() => onChange(n)}><Star size={20} fill={Number(value) >= n ? '#f59e0b' : 'none'} color="#f59e0b" /></button>)}
+          {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" className="ghost icon" disabled={disabled} onClick={() => onChange(n)} aria-label={tr('{n} of 5', { n })} aria-pressed={Number(value) >= n}><Star size={20} fill={Number(value) >= n ? 'var(--accent)' : 'none'} color="var(--accent)" /></button>)}
         </div>
       )
     case 'date':
@@ -521,8 +523,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
   const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }) })
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <div className="modal">
+      <Modal onClose={onClose}>
         <div className="card stack">
           <h2><Banknote size={18} /> {tr(refund ? 'Refund on {doc}' : 'Register payment for {doc}', { doc: rec.number ?? '' })}</h2>
           <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
@@ -554,7 +555,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
           )}
           <div className="row"><button className="secondary" onClick={onClose}>{tr('Cancel')}</button><button className="success" onClick={() => onPay(amount, date, method, extra())}><CheckCircle2 size={16} /> {tr('Register')}</button></div>
         </div>
-      </div>
+      </Modal>
     </>
   )
 }
@@ -578,8 +579,7 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
   }
   return (
     <>
-      <div className="overlay" onClick={onClose} />
-      <div className="modal">
+      <Modal onClose={onClose}>
         <form className="card stack" onSubmit={submit} style={{ maxWidth: 720 }}>
           <h2><Undo2 size={18} /> {tr(sales ? 'Credit note for {doc}' : 'Debit note for {doc}', { doc: rec.number ?? '' })}</h2>
           <p className="small muted" style={{ margin: 0 }}>{sales ? tr('For goods the customer returned or a price you agreed to lower.') : tr('For goods you send back to the supplier or a price they agreed to lower.')} {tr('The VAT is corrected, and the credit first reduces what is still owed on {doc}.', { doc: rec.number ?? '' })}</p>
@@ -608,7 +608,7 @@ function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleD
           </div>
           <div className="row"><button type="button" className="secondary" onClick={onClose}>{tr('Cancel')}</button><button disabled={!Object.values(rows).some((r) => Number(r.qty) > 0)}>{sales ? tr('Issue credit note') : tr('Issue debit note')}</button></div>
         </form>
-      </div>
+      </Modal>
     </>
   )
 }
