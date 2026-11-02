@@ -181,7 +181,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             {cols.some((c) => c.type === 'currency') && (
               <tfoot>
                 <tr>
-                  <td>Total ({rows.length})</td>
+                  <td>{tr('Total ({n})', { n: rows.length })}</td>
                   {mod.stages && <td />}
                   {scored && <td />}
                   {mod.lines && <td />}

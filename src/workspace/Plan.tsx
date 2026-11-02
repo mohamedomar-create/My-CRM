@@ -86,8 +86,28 @@ export default function Plan() {
 
 /* ---------------- assumptions ---------------- */
 
-function Num({ value, onChange, width = 100, step }: { value: number; onChange: (n: number) => void; width?: number; step?: string }) {
-  return <input type="number" step={step ?? 'any'} value={Number.isFinite(value) ? value : 0} onChange={(e) => onChange(Number(e.target.value) || 0)} style={{ width, textAlign: 'end', padding: '4px 6px' }} />
+/**
+ * A number box that keeps what is being typed ("", "-", "1.", "-20"): the plan gets the number as soon as the text
+ * is one, and a value changed elsewhere shows up here.
+ */
+function Num({ value, onChange, width = 100 }: { value: number; onChange: (n: number) => void; width?: number; step?: string }) {
+  const shown = Number.isFinite(value) ? value : 0
+  const [text, setText] = useState(String(shown))
+  const [seen, setSeen] = useState(shown)
+  if (seen !== shown) {
+    setSeen(shown)
+    if (Number(text.replace(/,/g, '')) !== shown) setText(String(shown))
+  }
+  return (
+    <input inputMode="decimal" dir="ltr" value={text} style={{ width, textAlign: 'end', padding: '4px 6px' }}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+        setText(t)
+        const n = Number(t.replace(/,/g, ''))
+        if (t.trim() !== '' && t !== '-' && Number.isFinite(n)) { setSeen(n); onChange(n) }
+      }}
+      onBlur={() => { const n = Number(text.replace(/,/g, '')); if (text.trim() === '' || !Number.isFinite(n)) { setText('0'); setSeen(0); onChange(0) } }} />
+  )
 }
 
 type Col<T> = { key: keyof T; label: string; kind: 'text' | 'num'; width?: number }
@@ -126,7 +146,7 @@ function Assumptions({ p, set }: { p: BusinessPlan; set: (patch: Partial<Busines
   const o = p.opening
   const even = p.season.every((w) => w === p.season[0])
   const field = (label: string, value: number, onChange: (n: number) => void, width = 120) => (
-    <label className="field small" style={{ width: width + 40 }}>{label}<Num value={value} onChange={onChange} width={width} /></label>
+    <label key={label} className="field small" style={{ width: width + 40 }}>{label}<Num value={value} onChange={onChange} width={width} /></label>
   )
   return (
     <div className="stack">

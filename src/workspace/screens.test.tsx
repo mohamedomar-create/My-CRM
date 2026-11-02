@@ -28,7 +28,7 @@ registerPayment(ctx, bill, 342, '2026-01-10', 'bank', { wht: 1 })
 moneyVoucher(ctx, { party: customer.id, date: '2026-01-12', method: 'cheque', cheque: { no: '77', due: '2026-01-20' }, allocations: [{ doc: inv.id, amount: 456 }, { doc: inv2.id, amount: 100 }] })
 closeMonth(ctx, '2026-01')
 
-vi.mock('./useApp', () => ({ useApp: () => ({ ws, schema, user: admin, act: () => undefined }), showToast: () => undefined }))
+vi.mock('./useApp', async (importOriginal) => ({ ...(await importOriginal<typeof import('./useApp')>()), useApp: () => ({ ws, schema, user: admin, act: () => undefined }), showToast: () => undefined }))
 // The real translations, with the hook replaced (server rendering has no store snapshot); the language is set per test.
 vi.mock('../lib/i18n', async (importOriginal) => {
   const real = await importOriginal<typeof import('../lib/i18n')>()

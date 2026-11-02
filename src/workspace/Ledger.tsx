@@ -7,7 +7,7 @@ import { showToast, useApp } from './useApp'
 import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { taxCode } from '../lib/tax'
 import { TYPE_LABEL, typeLabel, whtLabel } from './labels'
-import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
+import { chartOf, debitNormal, type AccountType, accountLabel } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
@@ -63,7 +63,7 @@ export function JournalVoucher() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} style={{ cursor: 'default' }}>
-                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></td>
+                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}</option>)}</select></td>
                 <td><input inputMode="decimal" value={r.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? '' : r.credit })} style={{ textAlign: 'end' }} /></td>
                 <td><input inputMode="decimal" value={r.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? '' : r.debit })} style={{ textAlign: 'end' }} /></td>
                 {withCc && <td>{pl(r.account) ? <CostCenterSelect value={r.cc} onChange={(v) => set(i, { cc: v })} style={{ width: 160 }} /> : <span className="tiny muted">{r.account ? tr('company-wide') : ''}</span>}</td>}

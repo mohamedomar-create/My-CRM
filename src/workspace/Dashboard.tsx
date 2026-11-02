@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
-import { useApp } from './useApp'
+import { useApp, actorName } from './useApp'
 import { Chart } from '../components/Chart'
 import { drillFilters, isPeriodic, runReport, sparkline } from '../lib/reports'
 import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
@@ -110,7 +110,7 @@ export default function Dashboard() {
           <h2>{tr('Recent activity')}</h2>
           <ul className="timeline">
             {ws.data.activity.filter((a) => !a.module || can({ schema, user }, a.module, 'view')).slice(0, 8).map((a) => (
-              <li key={a.id}><b>{a.user}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>
+              <li key={a.id}><b>{actorName(a.user)}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>
             ))}
           </ul>
         </div>

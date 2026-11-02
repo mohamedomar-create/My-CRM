@@ -6,7 +6,7 @@ import { CheckCircle2, Download, Printer, AlertTriangle } from 'lucide-react'
 import { useApp } from './useApp'
 import { costCenterName, costCenters, costCenterTree, money, round2, todayISO } from '../lib/engine'
 import { accountName, chartOf } from '../lib/accounts'
-import { N_, tr, useLang } from '../lib/i18n'
+import { msg, N_, tr, useLang } from '../lib/i18n'
 import { balanceSheet, cashFlow, comparePeriod, generalLedger, incomeStatement, NO_COST_CENTER, profitByCostCenter, toCsv, type Section } from '../lib/statements'
 
 type Tab = 'pl' | 'cc' | 'bs' | 'cf' | 'gl'
@@ -202,7 +202,7 @@ export default function Statements() {
               <tr key={l.entry} style={{ cursor: 'default' }}>
                 <td>{l.date}</td>
                 <td>{l.doc ? <Link className="mono" to={`/app/r/${l.doc}`}>{l.ref}</Link> : <span className="mono">{l.ref}</span>}</td>
-                <td className="small">{l.memo}</td>
+                <td className="small">{msg(l.memo)}</td>
                 <td className="num">{l.debit ? money(l.debit, cur) : ''}</td>
                 <td className="num">{l.credit ? money(l.credit, cur) : ''}</td>
                 <td className="num">{money(l.balance, cur)}</td>
