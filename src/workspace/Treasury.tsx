@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Banknote, CheckCircle2, FileUp, Landmark, Scale } from 'lucide-react'
-import { useApp } from './useApp'
+import { methodLabel, useApp } from './useApp'
 import { accountBalance, cheques, list, money, reconciliationState, recordTitle, round2, todayISO, type ChequeState } from '../lib/engine'
-import { moneyAccounts, moneyKind } from '../lib/accounts'
+import { accountLabel, moneyAccounts, moneyKind } from '../lib/accounts'
 import { matchStatement, parseStatementCsv, type StatementRow } from '../lib/bank'
 import { WHT_RATES } from '../lib/tax'
 import { moduleByRole } from '../lib/schema'
@@ -30,7 +30,7 @@ export default function Treasury() {
       <div className="dash">
         {accounts.map((a) => (
           <div className="card" key={a.code}>
-            <h2>{moneyKind(a) === 'cash' ? <Banknote size={15} /> : <Landmark size={15} />} {a.code} {a.name}</h2>
+            <h2>{moneyKind(a) === 'cash' ? <Banknote size={15} /> : <Landmark size={15} />} {a.code} {accountLabel(a, getLang())}</h2>
             <div className="kpi-value" style={accountBalance(ws, a.code) < 0 ? { color: 'var(--danger)' } : undefined}>{money(accountBalance(ws, a.code), cur)}</div>
           </div>
         ))}
@@ -121,7 +121,7 @@ function Voucher() {
           </table>
         </div>
       )}
-      <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{m === 'instapay' ? tr('InstaPay') : m[0].toUpperCase() + m.slice(1)}</button>)}</div>
+      <div className="seg">{(['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         {method === 'cheque' ? (
           <>
@@ -130,7 +130,7 @@ function Voucher() {
             <label className="field" style={{ width: 160 }}>{tr('Cheque date')}<input type="date" value={cheque.due} onChange={(e) => setCheque({ ...cheque, due: e.target.value })} /></label>
           </>
         ) : (
-          <label className="field" style={{ width: 240 }}>{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
+          <label className="field" style={{ width: 240 }}>{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}</option>)}</select></label>
         )}
         <label className="field" style={{ width: 260 }}>{tr('Withholding tax')}<select value={wht} onChange={(e) => setWht(Number(e.target.value))}><option value={0}>{tr('None')}</option>{WHT_RATES.map((w) => <option key={w.rate} value={w.rate}>{getLang() === 'ar' ? w.nameAr : w.name}</option>)}</select></label>
       </div>
@@ -152,7 +152,7 @@ function ChequeRegister() {
   const partyName = (id: string) => recordTitle(ws, schema, [...list(ws, moduleByRole(schema, 'accounts')?.id ?? ''), ...list(ws, moduleByRole(schema, 'suppliers')?.id ?? '')].find((r) => r.id === id))
   const pickBank = () => {
     if (banks.length === 1) return banks[0].code
-    const v = prompt(tr('Which bank account? {list}', { list: banks.map((b) => `${b.code} ${b.name}`).join('، ') }), banks[0]?.code)
+    const v = prompt(tr('Which bank account? {list}', { list: banks.map((b) => `${b.code} ${accountLabel(b, getLang())}`).join('، ') }), banks[0]?.code)
     return v?.trim() || undefined
   }
   const pickDate = (label: string, def: string) => prompt(`${tr(label)} (yyyy-mm-dd)`, def)?.trim()
@@ -229,11 +229,11 @@ function Reconcile() {
     <form className="card stack" onSubmit={submit}>
       <h2 style={{ margin: 0 }}><Scale size={17} /> {tr('Bank reconciliation')}</h2>
       <p className="small muted" style={{ margin: 0 }}>
-        Tick the movements that appear on the bank statement (or load the bank’s CSV to tick them for you), and enter the statement’s ending balance. It must agree to the piastre.
+        {tr('Tick the movements that appear on the bank statement (or load the bank’s CSV to tick them for you), and enter the statement’s ending balance. It must agree to the piastre.')}
         {' '}{st.last ? tr('Last agreed: {date}, {amount}.', { date: st.last.date, amount: money(st.last.balance, cur) }) : tr('Nothing reconciled yet.')}
       </p>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label className="field" style={{ width: 240 }}>{tr('Bank account')}<select value={acct} onChange={(e) => { setAccount(e.target.value); setTicked(new Set()); setUnmatched([]) }}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {b.name}</option>)}</select></label>
+        <label className="field" style={{ width: 240 }}>{tr('Bank account')}<select value={acct} onChange={(e) => { setAccount(e.target.value); setTicked(new Set()); setUnmatched([]) }}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {accountLabel(b, getLang())}</option>)}</select></label>
         <label className="field" style={{ width: 170 }}>{tr('Statement date')}<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <label className="field" style={{ width: 170 }}>{tr('Ending balance')}<input required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></label>
         <label className="btn secondary" style={{ cursor: 'pointer' }}><FileUp size={14} /> {tr('Load statement CSV')}<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>

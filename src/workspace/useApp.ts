@@ -64,3 +64,6 @@ export const statusLabel = (s?: string) => {
 /** How a payment was made, shown in the chosen language. */
 const METHODS: Record<string, string> = { bank: N_('Bank transfer'), cash: N_('Cash'), instapay: N_('InstaPay'), cheque: N_('Cheque'), card: N_('Card') }
 export const methodLabel = (m: string) => (METHODS[m] ? tr(METHODS[m]) : m)
+
+/** Who did something: a person's name, or "Automation" for what the system did on its own (in the chosen language). */
+export const actorName = (name: string) => (name === 'Automation' ? tr('Automation') : name)

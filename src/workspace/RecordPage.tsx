@@ -3,7 +3,7 @@ import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
-import { methodLabel, showToast, statusLabel, useApp } from './useApp'
+import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
@@ -14,7 +14,7 @@ import { moduleById, moduleByRole, uid } from '../lib/schema'
 import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
-import { moneyAccounts } from '../lib/accounts'
+import { moneyAccounts, accountLabel } from '../lib/accounts'
 import { dateLocale, getLang, msg, N_, tr } from '../lib/i18n'
 import { Bi } from './printing'
 import { usePrintBoth } from './usePrintBoth'
@@ -289,7 +289,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
                 </div>
               )}
               <ul className="timeline">
-                {history.map((a) => <li key={a.id}><b>{a.user}</b> {msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>)}
+                {history.map((a) => <li key={a.id}><b>{actorName(a.user)}</b> {msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>)}
                 {[...(rec.imports ?? [])].reverse().map((m) => {
                   const b = ws.data.imports?.find((x) => x.id === m.batch)
                   const who = ws.users.find((u) => u.id === b?.by)?.name ?? '—'
@@ -551,7 +551,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
               <label className="field" style={{ width: 160 }}>{tr('Cheque date')}<input type="date" value={chequeDue} onChange={(e) => setChequeDue(e.target.value)} /></label>
             </div>
           ) : !refund && accounts.length > 1 && (
-            <label className="field">{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></label>
+            <label className="field">{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}</option>)}</select></label>
           )}
           {!refund && (
             <label className="field">{sales ? tr('Withholding tax the customer deducted') : tr('Withholding tax to keep back')}

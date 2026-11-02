@@ -1696,7 +1696,7 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   })
   const drafts = docs.filter((r) => r.status === 'draft' && String(r.values.date ?? '') <= end)
   checks.push({ id: 'drafts', ok: drafts.length === 0, blocking: false, title: 'Documents still in draft',
-    detail: drafts.length ? `${drafts.length} invoice${drafts.length > 1 ? 's or bills are' : ' or bill is'} dated on or before ${end} but not posted. Post or delete them, or they will have to be dated after the close.` : 'Every invoice and bill up to the month end is posted.' })
+    detail: drafts.length ? `Drafts dated on or before ${end}: ${drafts.length}. Post or delete them, or they will have to be dated after the close.` : 'Every invoice and bill up to the month end is posted.' })
   const tb = trialBalance(ws)
   const dr = round2(tb.reduce((s, [, r]) => s + r.debit, 0))
   const cr = round2(tb.reduce((s, [, r]) => s + r.credit, 0))
@@ -1720,9 +1720,9 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   const sample = ws.data.journal.some((j) => j.sample)
   checks.push({ id: 'sample', ok: !sample, blocking: true, title: 'No sample data in the books', detail: sample ? 'Remove the sample data first.' : 'Only real figures.' })
   const noEInvoice = missingEInvoices(ws, schema, start, end)
-  checks.push({ id: 'einvoice', ok: noEInvoice.length === 0, blocking: false, title: 'E-invoice numbers recorded', detail: noEInvoice.length ? `${noEInvoice.length} invoice${noEInvoice.length > 1 ? 's' : ''} of ${month} ha${noEInvoice.length > 1 ? 've' : 's'} no e-invoice number yet: ${noEInvoice.slice(0, 5).map((r) => r.number).join(', ')}${noEInvoice.length > 5 ? '…' : ''}` : 'Every invoice of the month has its e-invoice number.' })
+  checks.push({ id: 'einvoice', ok: noEInvoice.length === 0, blocking: false, title: 'E-invoice numbers recorded', detail: noEInvoice.length ? `Invoices of ${month} with no e-invoice number yet (${noEInvoice.length}): ${noEInvoice.slice(0, 5).map((r) => r.number).join(', ')}${noEInvoice.length > 5 ? '…' : ''}` : 'Every invoice of the month has its e-invoice number.' })
   const vat = vatForPeriod(ws, start, end)
-  checks.push({ id: 'vat', ok: true, blocking: false, title: `VAT for ${month}`, detail: `Output ${money(vat.output, cur)} − input ${money(vat.input, cur)} = ${vat.due >= 0 ? `${money(vat.due, cur)} to pay` : `${money(-vat.due, cur)} credit`}` })
+  checks.push({ id: 'vat', ok: true, blocking: false, title: `VAT for ${month}`, detail: vat.due >= 0 ? `Output ${money(vat.output, cur)} − input ${money(vat.input, cur)} = ${money(vat.due, cur)} to pay` : `Output ${money(vat.output, cur)} − input ${money(vat.input, cur)} = ${money(-vat.due, cur)} credit` })
   return checks
 }
 
@@ -2308,7 +2308,8 @@ function execute(ctx: Ctx, w: WorkflowDef, rec: Rec) {
     try {
       if (a.type === 'create_task' && tasks) {
         const owner = rec.values.owner ?? rec.values.assignee ?? ctx.user.id
-        createRecord(ctx, tasks.id, { title: fill(ctx, mod, rec, a.title), due_date: addDays(ctx.today ?? todayISO(), a.dueInDays), assignee: owner, done: false, related: recordTitle(ctx.ws, ctx.schema, rec), priority: a.dueInDays === 0 ? 'high' : 'normal' }, { silent: true })
+        // Logged as the automation's doing, not as whoever happened to be signed in when it ran.
+        createRecord({ ...ctx, user: { ...ctx.user, name: 'Automation' } }, tasks.id, { title: fill(ctx, mod, rec, a.title), due_date: addDays(ctx.today ?? todayISO(), a.dueInDays), assignee: owner, done: false, related: recordTitle(ctx.ws, ctx.schema, rec), priority: a.dueInDays === 0 ? 'high' : 'normal' }, { silent: true })
       } else if (a.type === 'set_field') {
         const f = fieldByKey(mod, a.field)
         const locked = (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') || (mod.role === 'quotes' && rec.status === 'invoiced')

@@ -177,7 +177,7 @@ function FieldCard({ field, selected, title, onSelect }: { field: FieldDef; sele
       <div className="fake">
         {field.type === 'select' || field.type === 'multiselect' ? (
           <>{field.options?.slice(0, 3).map((o) => <span key={o.value} className="pill tiny" style={{ background: o.color + '22', color: o.color }}>{o.label}</span>)}<ChevronDown size={14} style={{ marginInlineStart: 'auto' }} /></>
-        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ' · conditional' : ''}</span> : field.type === 'checkbox' ? '☐ Yes / No' : field.type === 'formula' ? <span className="mono tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : info.hint}
+        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ` · ${tr('conditional')}` : ''}</span> : field.type === 'checkbox' ? `☐ ${tr('Yes / No')}` : field.type === 'formula' ? <span className="mono tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : msgText(info.hint)}
       </div>
     </div>
   )
@@ -449,7 +449,7 @@ function ModuleProps({ mod, onDeleted }: { mod: ModuleDef; onDeleted: () => void
       <div className="row">{PALETTE.map((c) => <button key={c} aria-label={c} onClick={() => set({ color: c })} style={{ width: 28, height: 28, borderRadius: 8, padding: 0, background: c, outline: mod.color === c ? '3px solid var(--primary-100)' : 'none' }} />)}</div>
       <b className="small">{tr('Icon')}</b>
       <div className="row">{MODULE_ICON_CHOICES.map((i) => <button key={i} className={mod.icon === i ? '' : 'secondary'} style={{ padding: 7 }} onClick={() => set({ icon: i })} aria-label={i}><Icon name={i} size={16} /></button>)}</div>
-      <label className="field">Record title
+      <label className="field">{tr('Record title')}
         <select value={mod.titleField} onChange={(e) => set({ titleField: e.target.value })} disabled={mod.role !== 'custom'}>
           {mod.fields.filter((f) => f.type === 'text' || f.type === 'relation').map((f) => <option key={f.id} value={f.key}>{f.label}</option>)}
         </select>

@@ -63,6 +63,8 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
         if (k === 'amount' || k === 'budget' || k === 'value' || k === 'contract_value') return int(20, 900) * 1000
         if (k === 'price_per_m2') return int(25, 60) * 1000
         if (k === 'rate') return int(4, 15) * 100
+        // Limits a real book would have: the samples sit under them (the first customer is a group with others under it).
+        if (k === 'credit_limit') return i === 0 ? 2_000_000 : int(15, 40) * 10_000
         return int(1, 50) * 1000
       case 'percent':
         if (k === 'vat_rate') return schema.company.vatRate
@@ -87,6 +89,8 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
       case 'url':
         return 'https://example.com'
       case 'relation': {
+        // "Belongs to" (a record of the same list): two records under the first, the rest on their own, never a loop.
+        if (f.target === m.id) return i === 1 || i === 2 ? list(ws, m.id).find((x) => !x.values[k])?.id : undefined
         const targets = list(ws, f.target ?? '')
         return targets.length ? pick(targets).id : undefined
       }

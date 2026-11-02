@@ -97,7 +97,7 @@ export function StatementView({ rec, onClose }: { rec: Rec; onClose: () => void 
         <div className="totals">
           <span>{B(customer ? N_('Invoiced') : N_('Billed'))}</span><span className="num">{money(st.charges, cur)}</span>
           <span>{B(N_('Paid / credited'))}</span><span className="num">{money(st.payments, cur)}</span>
-          <span className="grand">{B(customer ? N_('Balance due from you') : N_('Balance due to you'))}</span><span className="grand num">{money(st.closing, cur)}</span>
+          <span className="grand">{B(st.closing < 0 ? (customer ? N_('Credit in your favour') : N_('Credit in our favour')) : customer ? N_('Balance due from you') : N_('Balance due to you'))}</span><span className="grand num">{money(Math.abs(st.closing), cur)}</span>
         </div>
         {st.chequesPending > 0 && <p className="small"><Bi en={customer ? N_('Cheques received and not yet cleared: {amount} (counted above as paid).') : N_('Cheques issued and not yet cashed: {amount} (counted above as paid).')} vars={{ amount: money(st.chequesPending, cur) }} both={both} /></p>}
         {st.ageing && (

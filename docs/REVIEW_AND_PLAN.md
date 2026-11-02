@@ -822,6 +822,30 @@ A smaller team stretches the timeline roughly in proportion.
 
 ---
 
+### Bug sweep before Phase 6 (2 Nov 2026)
+
+Every template (17) was opened in Arabic and English in a real browser, against a fake server that runs the real server code:
+- every list, record and new-record page;
+- every Accounting tab, the builder tabs, the role homes;
+- every action button on the money pages.
+
+The main flows were clicked through and checked in the saved data: budget, business plan, journal voucher, cost center, receipt, cheque deposit and bounce, advance and statement, stock adjustment, target, month close, VAT settlement, and invoice create, post and credit use.
+
+- **Fixed: live server out of date.** The live server had not deployed since 1 Nov. The deploy tool now asks for a confirmation that a scheduled run can't give, so it deployed nothing. That is why the live site showed "Unknown action" for business plans and budgets. `--yes` was added and the server is now current.
+- **Fixed: English left in Arabic screens.**
+  - month-end checks;
+  - journal memos (receipts, payments, reversals, bounced cheques, VAT returns, year-end close);
+  - account names in pickers;
+  - payment method buttons;
+  - "Automation" in history.
+- **Fixed: business plan number boxes.** They now take a minus sign, decimals and Arabic digits as typed, and don't jump while typing.
+- **Fixed: Accounting tabs** wrap on narrow screens instead of running off the page.
+- **Fixed: statement of account.** A customer in credit reads "Credit in your favour", not a negative "balance due".
+- **Fixed: automation tasks** are logged as Automation, not as whoever was signed in.
+- **Fixed: sample data.** Customers now sit in one sensible group, with credit limits a real book would have, so every sample invoice no longer posts over the limit.
+
+---
+
 ### Phase 6: Go to market and compete
 
 **Goal.** Something to sell, a reason to trust it, and a smooth path in from Excel, Daftra or Odoo.

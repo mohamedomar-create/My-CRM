@@ -74,6 +74,9 @@ export function account(ws: Pick<Workspace, 'chart'>, code: string): Account | u
   return chartOf(ws).find((a) => a.code === code)
 }
 
+/** An account's name in the language chosen (its Arabic name when there is one). */
+export const accountLabel = (a: { name: string; nameAr?: string }, lang: 'en' | 'ar') => (lang === 'ar' && a.nameAr) || a.name
+
 export function accountName(ws: Pick<Workspace, 'chart'>, code: string, lang: 'en' | 'ar' = 'en') {
   const a = account(ws, code)
   return a ? (lang === 'ar' && a.nameAr) || a.name : `Account ${code}`
