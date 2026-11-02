@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
@@ -8,6 +8,8 @@ import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory
 import { activeBudget, budgetVsActual, offBudget } from '../lib/budget'
 import { TargetsCard } from './Targets'
 import { OwnerCockpit, PeriodBar } from './Cockpit'
+import { MyPipeline, ReorderList, SetupChecklist, TodayStrip } from './Home'
+import { homeKind, mineFilter } from '../lib/today'
 import { useOpenList, usePeriod } from './usePeriod'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { dateLocale, useLang } from '../lib/i18n'
@@ -25,6 +27,10 @@ export default function Dashboard() {
   const [tables, setTables] = useState<string[]>([])
   const openList = useOpenList()
   const finance = canPost({ schema, user })
+  const kind = homeKind(schema, user)
+  // "Only mine": on by default for sales reps and the team, off for the owner and finance (kept in the address).
+  const [params, setParams] = useSearchParams()
+  const mine = params.get('me') ? params.get('me') === '1' : kind === 'sales' || kind === 'team'
 
   return (
     <div className="page">
@@ -43,8 +49,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      <PeriodBar p={p} />
+      <TodayStrip />
+      {kind === 'owner' && <SetupChecklist />}
+      <div className="row between" style={{ alignItems: 'flex-start' }}>
+        <PeriodBar p={p} />
+        <label className="row small no-print" style={{ gap: 6 }}><input type="checkbox" checked={mine} onChange={(e) => { const next = new URLSearchParams(params); next.set('me', e.target.checked ? '1' : '0'); setParams(next, { replace: true }) }} style={{ width: 'auto' }} /> {tr('Only mine')}</label>
+      </div>
       {finance && <OwnerCockpit period={p.period} before={p.before} />}
+      {kind === 'sales' && <MyPipeline />}
+      {kind === 'warehouse' && <ReorderList />}
 
       <SalesHistory />
       <BudgetCard />
@@ -57,8 +70,10 @@ export default function Dashboard() {
         </div>
       )}
       <div className="dash">
-        {reports.map((r) => {
-          const mod = moduleById(schema, r.module)
+        {reports.map((base) => {
+          const mod = moduleById(schema, base.module)
+          const own = mine ? mineFilter(schema, base.module, user) : undefined
+          const r = own ? { ...base, filters: [...base.filters, own] } : base
           const periodic = isPeriodic(schema, r)
           const res = runReport(ws, schema, r, undefined, { period: p.period })
           const before = r.chart === 'kpi' && periodic && p.before ? runReport(ws, schema, r, undefined, { period: p.before }).total : undefined

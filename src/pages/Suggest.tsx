@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Rocket, Sparkles, Wand2 } from 'lucide-react'
+import { ArrowLeft, Check, Rocket, Sparkles, Wand2, Wrench } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { generateSchema, suggest } from '../lib/recommend'
@@ -30,6 +30,17 @@ export default function Suggest() {
   function build() {
     run('setup.chooseTemplate', { draft: preview!, seedOnPublish: sample }, `Chose the ${pick!.template.name} template`)
     nav('/builder')
+  }
+
+  /** The quickest way in (4.2d, UX-09): the suggested system goes live as it is, and can be changed any time later. */
+  function start() {
+    run('setup.chooseTemplate', { draft: preview!, seedOnPublish: sample }, `Chose the ${pick!.template.name} template`)
+    try {
+      run('setup.publish', {}, tr('Published the first version'))
+      nav('/app')
+    } catch {
+      nav('/builder')
+    }
   }
 
   return (
@@ -103,7 +114,10 @@ export default function Suggest() {
       </div>
       <div className="wizard-foot">
         <button className="secondary" onClick={() => nav('/onboarding')}><ArrowLeft size={16} /> {tr('Change answers')}</button>
-        <button className="glow big" onClick={build}><Rocket size={18} /> {tr('Open the builder')}</button>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="secondary" onClick={build}><Wrench size={16} /> {tr('Customise it first')}</button>
+          <button className="glow big" onClick={start} autoFocus><Rocket size={18} /> {tr('Start using it now')}</button>
+        </div>
       </div>
     </div>
   )
