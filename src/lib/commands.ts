@@ -12,7 +12,7 @@ import { createPlan, deletePlan, savePlan } from './plan'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, useCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -44,7 +44,10 @@ export interface CommandArgs {
   'payment.voucher': { party: string; date: string; method: Method; account?: string; wht?: number; cheque?: { no: string; bank?: string; due: string }; allocations: { doc: string; amount: number }[] }
   'cheque.deposit': { id: string; account: string; date: string }
   'cheque.clear': { id: string; date: string; account?: string }
-  'cheque.bounce': { id: string; date: string; reason: string }
+  'cheque.bounce': { id: string; date: string; reason: string; charges?: number }
+  'credit.advance': { party: string; amount: number; date: string; method: Method; account?: string; note?: string }
+  'credit.use': { credit: string; doc: string; amount: number; date: string }
+  'credit.unuse': { doc: string; use: string }
   'bank.reconcile': { account: string; date: string; balance: number; entries: string[] }
   'approval.request': { id: string; rule: string }
   'approval.decide': { approval: string; approve: boolean; note?: string }
@@ -185,7 +188,10 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'payment.voucher': { run: (ws, u, a) => moneyVoucher(ctx(ws, u), a) },
   'cheque.deposit': { run: (ws, u, a) => depositCheque(ctx(ws, u), String(a.id), String(a.account), String(a.date)) },
   'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
-  'cheque.bounce': { run: (ws, u, a) => bounceCheque(ctx(ws, u), String(a.id), String(a.date), String(a.reason ?? '')) },
+  'cheque.bounce': { run: (ws, u, a) => bounceCheque(ctx(ws, u), String(a.id), String(a.date), String(a.reason ?? ''), Number(a.charges) || 0) },
+  'credit.advance': { run: (ws, u, a) => ({ id: recordAdvance(ctx(ws, u), { party: String(a.party ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), method: a.method, account: a.account === undefined ? undefined : String(a.account), note: a.note === undefined ? undefined : String(a.note) }).id }) },
+  'credit.use': { run: (ws, u, a) => void useCredit(ctx(ws, u), { credit: String(a.credit ?? ''), doc: String(a.doc ?? ''), amount: Number(a.amount), date: String(a.date ?? '') }) },
+  'credit.unuse': { run: (ws, u, a) => unuseCredit(ctx(ws, u), String(a.doc ?? ''), String(a.use ?? '')) },
   'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },

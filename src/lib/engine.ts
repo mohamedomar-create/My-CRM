@@ -680,7 +680,27 @@ export function setUserCostCenter(ctx: Ctx, userId: string, code?: string) {
 /* ---------------- documents ---------------- */
 
 export function lineNet(l: Line) {
-  return round2(l.qty * l.price * (1 - (l.discount || 0) / 100))
+  return round2(l.qty * l.price * (1 - (l.discount || 0) / 100) - (l.discAmt || 0))
+}
+
+/**
+ * A discount on the whole document, spread over its lines in proportion to their value (as an amount off each line),
+ * so every line keeps its own VAT rate right. The last line takes the rounding.
+ */
+export function spreadDiscount(lines: Line[], amount: number): Line[] {
+  amount = round2(Number(amount))
+  const base = lines.map((l) => lineNet(l))
+  const sum = round2(base.reduce((s, v) => s + v, 0))
+  if (!(amount > 0)) throw new EngineError('Enter the discount amount')
+  if (amount > sum) throw new EngineError(`The discount is more than the document (${sum})`)
+  let left = amount
+  const last = base.reduce((k, v, i) => (v > 0 ? i : k), -1)
+  return lines.map((l, i) => {
+    if (!(base[i] > 0)) return l
+    const part = i === last ? left : round2((amount * base[i]) / sum)
+    left = round2(left - part)
+    return { ...l, discAmt: round2((l.discAmt || 0) + part) }
+  })
 }
 export function lineTax(l: Line) {
   return round2(lineNet(l) * (l.vat || 0) / 100)
@@ -718,6 +738,10 @@ function checkLines(lines: Line[]) {
     if (!(l.qty > 0)) throw new EngineError(`Quantity must be more than 0 (${l.description || 'line'})`)
     if (!(l.price >= 0)) throw new EngineError(`Price can’t be negative (${l.description || 'line'})`)
     if (l.discount < 0 || l.discount > 100) throw new EngineError('Discount must be between 0 and 100%')
+    if (l.discAmt !== undefined && !(Number(l.discAmt) >= 0)) throw new EngineError(`The discount amount can’t be negative (${l.description || 'line'})`)
+    if (!l.discAmt) delete l.discAmt
+    else l.discAmt = round2(Number(l.discAmt))
+    if (lineNet(l) < 0) throw new EngineError(`The discount is more than the line (${l.description || 'line'})`)
     if (l.vat < 0 || l.vat > 100) throw new EngineError('VAT must be between 0 and 100%')
     if (l.taxCode) {
       const code = taxCode(l.taxCode)
@@ -919,6 +943,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (rec.status === 'draft' || rec.status === 'void') throw new EngineError('Only posted documents can be voided')
   if (Number(rec.values.paid) > 0) throw new EngineError(rec.values.credit_for ? 'This credit note was refunded. Reverse the refund before voiding.' : 'This document has payments. Reverse them before voiding.')
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
+  if (usesOf(rec).length) throw new EngineError('A credit was used on this document. Take it back first.')
   const date = ctx.today ?? todayISO()
   const moves = ctx.ws.data.stock.filter((s) => s.doc === rec.id && !s.ref.startsWith('VOID'))
   // A bill can only be voided while its goods are still in stock; otherwise they were sold and a purchase return is needed.
@@ -1191,7 +1216,9 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
     if (qty > left) throw new EngineError(`Only ${left} of “${ol.description}” can still be credited`)
     const price = c.price === undefined || c.price === null ? ol.price : round2(Number(c.price))
     if (!(price >= 0) || price > ol.price) throw new EngineError(`The price for “${ol.description}” can be lowered, but not above the original ${money(ol.price, ctx.schema.company.currency)}`)
-    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
+    // An amount off the original line is given back in proportion to the quantity credited.
+    const discAmt = ol.discAmt ? round2((ol.discAmt * qty) / ol.qty) : 0
+    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, ...(discAmt ? { discAmt } : {}), vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
   }
   if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
   const t = totals(lines)
@@ -1289,6 +1316,111 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   rec.values.paid = round2(Number(rec.values.paid ?? 0) + amount)
   refreshBalance(rec)
   log(ctx, `refunded ${money(amount, ctx.schema.company.currency)} on ${rec.number}`, rec)
+}
+
+/* ---------------- advances and using a credit (2A leftovers) ---------------- */
+
+/**
+ * Money received from a customer (or paid to a supplier) before there is an invoice or bill: it waits on their
+ * account as a credit (receivables 1200 or payables 2100) until it is used against one, or refunded.
+ */
+export function recordAdvance(ctx: Ctx, o: { party: string; amount: number; date: string; method: PayMethod; account?: string; note?: string }) {
+  needFinance(ctx, 'record advances')
+  noRealPostingOverSamples(ctx)
+  const party = findRecord(ctx.ws, o.party)
+  const pmod = party ? moduleById(ctx.schema, party.module) : undefined
+  const sales = pmod?.role === 'accounts'
+  if (!party || !pmod || (pmod.role !== 'accounts' && pmod.role !== 'suppliers')) throw new EngineError('Choose the customer or supplier')
+  const docs = moduleByRole(ctx.schema, sales ? 'invoices' : 'purchases')
+  if (!docs) throw new EngineError(sales ? 'Add an Invoices module first' : 'Add a Purchases module first')
+  const amount = round2(Number(o.amount))
+  if (!(amount > 0)) throw new EngineError('The advance must be more than 0')
+  const date = String(o.date ?? '')
+  if (!ISO_DATE.test(date)) throw new EngineError('Choose the date')
+  noFutureDate(ctx, date, 'advance')
+  checkOpenPeriod(ctx, date)
+  if (o.method === 'cheque') throw new EngineError('Record an advance by cash, bank transfer, InstaPay or card')
+  const cash = moneyAccountFor(ctx, o.method, sales, o.account)
+  const number = nextNumber(ctx, sales ? 'ADV' : 'ADP', date)
+  const key = sales ? 'customer' : 'supplier'
+  const rec = createRecord(ctx, docs.id, { [key]: party.id, date, due_date: date }, { silent: true, lines: [] })
+  const note = String(o.note ?? '').trim().slice(0, 200)
+  journal(ctx, {
+    date, ref: number, memo: `Advance ${sales ? 'from' : 'to'} ${recordTitle(ctx.ws, ctx.schema, party)}${note ? `: ${note}` : ''}`, doc: rec.id,
+    lines: sales ? [{ account: cash, debit: amount, credit: 0 }, { account: '1200', debit: 0, credit: amount }] : [{ account: '2100', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }],
+  }, rec)
+  Object.assign(rec.values, { subtotal: -amount, tax: 0, total: -amount, credit_for: 'advance', reason: note || (sales ? 'Advance received' : 'Advance paid'), applied: 0, paid: 0, method: o.method, account: cash })
+  rec.number = number
+  rec.status = 'posted'
+  rec.postedAt = nowISO()
+  refreshBalance(rec)
+  log(ctx, `${sales ? 'received an advance of' : 'paid an advance of'} ${money(amount, ctx.schema.company.currency)} (${number})`, rec)
+  return rec
+}
+
+export interface CreditUse { id: string; credit: string; doc: string; amount: number; date: string }
+
+const usesOf = (r: Rec | undefined): CreditUse[] => (Array.isArray(r?.values.creditUses) ? (r!.values.creditUses as CreditUse[]) : [])
+
+/** The customer's (or supplier's) credits that can still be used: advances, credit notes and opening credits with credit left. */
+export function openCredits(ws: Workspace, schema: AppSchema, doc: Rec) {
+  const mod = moduleById(schema, doc.module)
+  const key = mod?.role === 'purchases' ? 'supplier' : 'customer'
+  return list(ws, doc.module).filter((r) => r.values.credit_for && (r.status === 'posted' || r.status === 'partial') && Number(r.values.balance) < 0 && r.values[key] === doc.values[key])
+}
+
+/**
+ * Uses a credit against an invoice or bill of the same customer or supplier: what the invoice still owes goes down,
+ * and so does the credit. Nothing moves in the books (both sit on the same account); it can be taken back.
+ */
+export function useCredit(ctx: Ctx, o: { credit: string; doc: string; amount: number; date: string }) {
+  needFinance(ctx, 'use credits')
+  const credit = findRecord(ctx.ws, o.credit)
+  const doc = findRecord(ctx.ws, o.doc)
+  const mod = doc ? moduleById(ctx.schema, doc.module) : undefined
+  if (!credit || !doc || !mod || (mod.role !== 'invoices' && mod.role !== 'purchases') || credit.module !== doc.module) throw new EngineError('Choose a credit and an invoice or bill of the same customer or supplier')
+  const key = mod.role === 'invoices' ? 'customer' : 'supplier'
+  if (!credit.values.credit_for || (credit.status !== 'posted' && credit.status !== 'partial')) throw new EngineError('That is not a credit that can be used')
+  if (doc.values.credit_for || (doc.status !== 'posted' && doc.status !== 'partial')) throw new EngineError('Use a credit on a posted invoice or bill that is still owed')
+  if (credit.values[key] !== doc.values[key]) throw new EngineError(`The credit belongs to another ${key}`)
+  const amount = round2(Number(o.amount))
+  const left = round2(-Number(credit.values.balance ?? 0))
+  const owed = round2(Number(doc.values.balance ?? 0))
+  if (!(amount > 0)) throw new EngineError('The amount must be more than 0')
+  if (amount > left) throw new EngineError(`Only ${money(left, ctx.schema.company.currency)} of credit is left`)
+  if (amount > owed) throw new EngineError(`${doc.number} only has ${money(owed, ctx.schema.company.currency)} left to pay`)
+  const date = String(o.date ?? '')
+  if (!ISO_DATE.test(date) || date < String(credit.values.date) || date < String(doc.values.date)) throw new EngineError('The date can’t be before the credit or the document')
+  noFutureDate(ctx, date, 'credit')
+  checkOpenPeriod(ctx, date)
+  const use: CreditUse = { id: uid('cu'), credit: credit.id, doc: doc.id, amount, date }
+  credit.values.creditUses = [...usesOf(credit), use]
+  doc.values.creditUses = [...usesOf(doc), use]
+  credit.values.applied = round2(Number(credit.values.applied ?? 0) + amount)
+  doc.values.credited = round2(Number(doc.values.credited ?? 0) + amount)
+  refreshBalance(credit)
+  refreshBalance(doc)
+  log(ctx, `used ${money(amount, ctx.schema.company.currency)} of ${credit.number} on ${doc.number}`, doc)
+  return use
+}
+
+/** Takes back a credit used on an invoice or bill: it is owed again, and the credit is free again. */
+export function unuseCredit(ctx: Ctx, docId: string, useId: string) {
+  needFinance(ctx, 'use credits')
+  const doc = findRecord(ctx.ws, docId)
+  const use = usesOf(doc).find((u) => u.id === useId)
+  if (!doc || !use) throw new EngineError('That use of a credit doesn’t exist')
+  const other = findRecord(ctx.ws, use.doc === doc.id ? use.credit : use.doc)!
+  const [credit, target] = use.doc === doc.id ? [other, doc] : [doc, other]
+  checkOpenPeriod(ctx, ctx.today ?? todayISO())
+  if (credit.status === 'void' || target.status === 'void') throw new EngineError('One of the documents was voided')
+  credit.values.creditUses = usesOf(credit).filter((u) => u.id !== use.id)
+  target.values.creditUses = usesOf(target).filter((u) => u.id !== use.id)
+  credit.values.applied = round2(Number(credit.values.applied ?? 0) - use.amount)
+  target.values.credited = round2(Number(target.values.credited ?? 0) - use.amount)
+  refreshBalance(credit)
+  refreshBalance(target)
+  log(ctx, `took back ${money(use.amount, ctx.schema.company.currency)} of ${credit.number} used on ${target.number}`, target)
 }
 
 /** Cancels a payment or refund entered by mistake: the original stays, an opposite row and entry cancel it. */
@@ -1408,13 +1540,16 @@ export function clearCheque(ctx: Ctx, id: string, date: string, account?: string
  * A cheque that bounced or was cancelled before it was cashed: every payment it made is reversed, so the invoices or bills
  * it settled are owed again, and the cheque leaves 1150/1160 (received) or 2150 (issued).
  */
-export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string) {
+export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string, charges = 0) {
   needFinance(ctx, 'bounce cheques')
   const c = chequeById(ctx, id)
   if (c.state === 'cleared' || c.state === 'bounced') throw new EngineError(c.state === 'cleared' ? 'A cleared cheque can’t bounce: reverse it with a journal voucher if the bank takes it back' : 'This cheque already bounced')
   const why = String(reason ?? '').trim()
   if (why.length < 3) throw new EngineError('Give the reason (e.g. insufficient funds, cancelled)')
   chequeDate(ctx, c, date, 'bounce')
+  const fee = round2(Number(charges) || 0)
+  if (fee < 0) throw new EngineError('Bank charges can’t be negative')
+  if (fee && (c.direction !== 'in' || c.state !== 'deposited' || !c.account)) throw new EngineError('Bank charges are for a received cheque that was deposited')
   const holding = c.state === 'deposited' ? '1160' : undefined
   for (const p of ctx.ws.data.payments.filter((x) => x.cheque?.id === id && !x.reverses)) {
     const rec = findRecord(ctx.ws, p.doc)!
@@ -1428,7 +1563,12 @@ export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string)
     rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
     refreshBalance(rec)
   }
-  logLedger(ctx, `cheque ${c.no} bounced (${why})`)
+  // What the bank took for the returned cheque (a received cheque that was deposited) goes to bank charges.
+  if (fee) {
+    const cost = findAccount(ctx.ws, '5500')?.active === false ? '5100' : '5500'
+    journal(ctx, { date, ref: `CHQ ${c.no} FEE`, memo: `Bank charges on bounced cheque ${c.no}`, lines: [{ account: cost, debit: fee, credit: 0 }, { account: c.account!, debit: 0, credit: fee }] })
+  }
+  logLedger(ctx, `cheque ${c.no} bounced (${why})${fee ? `, bank charges ${money(fee, ctx.schema.company.currency)}` : ''}`)
 }
 
 /* ---------------- bank reconciliation ---------------- */

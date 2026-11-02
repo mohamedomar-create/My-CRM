@@ -48,6 +48,7 @@ const DONE = [
   'src/workspace/Plan.tsx',
   'src/workspace/Statement.tsx',
   'src/workspace/printing.tsx',
+  'src/workspace/Credits.tsx',
   'src/workspace/GroupCard.tsx',
   'src/builder/Builder.tsx',
   'src/builder/ModulesTab.tsx',
