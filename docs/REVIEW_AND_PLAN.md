@@ -651,6 +651,13 @@ A smaller team stretches the timeline roughly in proportion.
 - After a year: the plan's first year against what happened.
 - *Done when:* an accountant rebuilds a sample plan from its assumptions and the three statements agree with each other (the balance sheet balances, cash ties to the cash flow) for every period and scenario.
 
+> **Progress (P3: the business plan). Done, except the plan against actual.**
+> - **Business plan page** (menu, admins and finance): up to 20 plans of 3–5 years, each started from the books (last year's sales per product with their average price and cost, salaries as staff, every other expense its own overhead line, the year's seasons, and the position at its end: cash, customers, stock, fixed assets, suppliers, loans) or empty. Seeded names come in the language of whoever starts it.
+> - **Assumptions:** product lines (units × price, cost per unit, growth of each), staff (people × salary, raise, start month), overheads with growth, investments with their month and life, loans (drawn in a month or already owed, interest, term, grace), capital put in, days customers and suppliers take and stock is kept, income tax and the discount rate, and the scenarios (best and worst as % on units, prices, cost per unit and overheads).
+> - **Outputs:** profit and loss, balance sheet and cash flow by month and by year, the balance sheet checked to balance every month in every scenario; funding needed and when, lowest cash, break-even sales, NPV, IRR and payback of the free cash flow; the three cases side by side. Income tax is worked out per year with losses carried forward, booked in December and paid the April after.
+> - **Export:** a printable feasibility study (summary, market, sales plan, investment and financing, projected statements, indicators, sensitivity) in Arabic or English, and a CSV for Excel of all three cases.
+> - **Not yet (P3b, after a year of data):** the plan's first year against what happened.
+
 **What the owner will see**
 - Accounting → Budget, with "Budget against actual".
 - Over-budget warnings on the dashboard.
