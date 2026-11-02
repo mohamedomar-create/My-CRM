@@ -395,4 +395,62 @@ select pg_temp.check('and takes a batch out again', (select public.history_undo(
 reset role;
 select pg_temp.check('adding and undoing are in the audit trail', (select count(*) = 3 from public.audit_events where workspace_id = 'ws_books000001' and command like 'history.%'));
 
+
+-- Phase 6.1a: billing. A trial for every new company; read-only after it; seats; the Free plan; paid periods.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.allowed('the owner makes a second company', $q$select public.create_workspace('ws_bill00000001','B','{"id":"ws_bill00000001","users":[{"id":"u_o","name":"O","email":"owner@test.dev","roleId":"role_admin"}],"draft":null,"published":{"roles":[{"id":"role_admin","admin":true}],"modules":[]},"data":{}}')$q$);
+select pg_temp.check('it starts a 14-day trial with everything', (select b ->> 'state' = 'trial' and (b ->> 'writable')::boolean and (b ->> 'days_left')::int = 14 and b -> 'features' ? 'books' from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.blocked('a member reads the subscriptions table directly', $q$select * from public.subscriptions$q$);
+select pg_temp.blocked('a member changes their own subscription', $q$update public.subscriptions set paid_until = now() + interval '10 years'$q$);
+select pg_temp.blocked('a member grants themselves a plan', $q$select public.billing_grant('ws_bill00000001', 'pro', 99, now() + interval '10 years')$q$);
+select pg_temp.blocked('a member asks for the server''s billing check', $q$select public.billing_status_for('ws_bill00000001')$q$);
+select pg_temp.check('the pricing page reads the plans', (select count(*) = 3 from public.plans));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('someone outside the company reads its subscription', $q$select public.billing_status('ws_bill00000001')$q$);
+reset role;
+set role anon;
+select pg_temp.check('the plans can be read without signing in', (select count(*) = 3 from public.plans) and (select vat_rate = 14 from public.billing_settings));
+reset role;
+
+-- the trial ends
+update public.subscriptions set trial_ends_at = now() - interval '1 minute' where workspace_id = 'ws_bill00000001';
+set role service_role;
+select pg_temp.blocked('a save after the trial ended (read-only)', $q$select public.save_workspace_changes('ws_bill00000001', 1, '{"id":"ws_bill00000001","users":[],"data":{}}', '{}', '00000000-0000-0000-0000-00000000000a')$q$);
+select pg_temp.check('the nightly run skips it', (select not ('ws_bill00000001' = any (array(select public.scheduled_workspaces())))));
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('the company says why it is read-only', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'trial_ended' and not (b ->> 'writable')::boolean from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.blocked('inviting someone while read-only', $q$select public.create_invitation('ws_bill00000001', 'new@test.dev', false)$q$);
+select pg_temp.allowed('the owner moves to the Free plan', $q$select public.billing_choose_free('ws_bill00000001')$q$);
+select pg_temp.check('Free: writable, 2 people, the CRM only', (select (b ->> 'writable')::boolean and (b ->> 'seat_limit')::int = 2 and b -> 'features' = '["crm"]' from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.allowed('inviting a second person on Free', $q$select public.create_invitation('ws_bill00000001', 'two@test.dev', false)$q$);
+select pg_temp.blocked('inviting a third person on Free', $q$select public.create_invitation('ws_bill00000001', 'three@test.dev', false)$q$);
+select pg_temp.blocked('past invoices on the Free plan', $q$select public.history_add('ws_bill00000001', 'imp_b1', 'x', '[]')$q$);
+reset role;
+insert into public.workspace_members (workspace_id, email) values ('ws_bill00000001', 'two@test.dev');
+select pg_temp.blocked('a third member joins on Free (seats are checked by the database)', $q$insert into public.workspace_members (workspace_id, email) values ('ws_bill00000001', 'three@test.dev')$q$);
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"two@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('someone who isn''t the owner changes the plan', $q$select public.billing_choose_free('ws_bill00000001')$q$);
+reset role;
+
+-- a paid plan, set by Bonyan's staff (payment server or SQL editor)
+set role service_role;
+select pg_temp.allowed('Growth for 3 seats, paid for a month', $q$select public.billing_grant('ws_bill00000001', 'growth', 3, now() + interval '30 days', 'bank transfer')$q$);
+reset role;
+insert into public.workspace_members (workspace_id, email) values ('ws_bill00000001', 'three@test.dev');
+select pg_temp.blocked('a fourth member on 3 seats', $q$insert into public.workspace_members (workspace_id, email) values ('ws_bill00000001', 'four@test.dev')$q$);
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('paid: active, the books included', (select b ->> 'state' = 'active' and b -> 'features' ? 'books' and (b ->> 'seat_limit')::int = 3 from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.blocked('moving to Free while the paid period runs', $q$select public.billing_choose_free('ws_bill00000001')$q$);
+reset role;
+update public.subscriptions set paid_until = now() - interval '2 days' where workspace_id = 'ws_bill00000001';
+select pg_temp.check('a few days after the paid period: still writable, past due', (select b ->> 'state' = 'past_due' and (b ->> 'writable')::boolean from (select private.billing_state('ws_bill00000001') b) x));
+update public.subscriptions set paid_until = now() - interval '8 days' where workspace_id = 'ws_bill00000001';
+select pg_temp.check('after the grace days: read-only, unpaid', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'unpaid' from (select private.billing_state('ws_bill00000001') b) x));
+select pg_temp.check('and nothing was deleted', (select count(*) = 3 from public.workspace_members where workspace_id = 'ws_bill00000001') and exists (select 1 from public.workspaces where id = 'ws_bill00000001'));
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

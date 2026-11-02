@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, Users, Wand2, X } from 'lucide-react'
+import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, CreditCard, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, Users, Wand2, X } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
@@ -8,6 +8,7 @@ import { can, canApprove, canPost, hasSampleData, list } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
 import { CommandPalette } from './CommandPalette'
+import { BillingBanner } from './BillingBanner'
 import { dateLocale, useLang } from '../lib/i18n'
 import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
 
@@ -26,12 +27,15 @@ export default function Shell() {
   const ran = useRef(false)
   const role = schema.roles.find((r) => r.id === user.roleId)
 
+  const billing = useStore((s) => s.billing)
   useEffect(() => {
-    if (ran.current) return
+    // Waits for the subscription: a read-only company runs no automations (they wait until it pays).
+    if (ran.current || !billing) return
     ran.current = true
+    if (!billing.writable) return
     const n = act<number>('automation.runScheduled', {}, undefined, 'Date-based automations')
     if (n) showToast({ kind: 'ok', text: n > 1 ? tr('{n} date-based automations ran (overdue items, reminders)', { n }) : tr('1 date-based automation ran (overdue items, reminders)') })
-  }, [act, tr])
+  }, [act, tr, billing])
 
   const visible = schema.modules.filter((m) => can({ schema, user }, m.id, 'view'))
   // Notes addressed to a person go only to them; notes for a role go to that role (and Admin); the rest go to everyone.
@@ -79,6 +83,7 @@ export default function Shell() {
         {canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> {tr('Accounting')}</NavLink>}
         {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> {tr('Approvals')} {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> {tr('Team')}</NavLink>}
+        {role?.admin && <NavLink to="/app/billing"><CreditCard size={18} /> {tr('Billing')}</NavLink>}
         {role?.admin && <NavLink to="/app/audit"><ShieldCheck size={18} /> {tr('Audit trail')}</NavLink>}
         {(role?.admin || canPost({ schema, user })) && <NavLink to="/app/migrate"><FileSpreadsheet size={18} /> {tr('Bring your data in')}</NavLink>}
         {role?.admin && <NavLink to="/builder"><Wand2 size={18} /> {tr('Customise system')}</NavLink>}
@@ -134,6 +139,7 @@ export default function Shell() {
           </div>
         )}
         <div className="no-print" style={{ padding: "0 24px" }}>
+          <BillingBanner admin={Boolean(role?.admin)} />
           <Invitations />
           {(role?.admin || role?.finance) && !twoFactor && <div className="info row" style={{ gap: 8 }}><ShieldCheck size={15} /><span className="grow">{tr('You can see the company’s books: protect your login with two-factor (a code from your phone).')}</span><Link className="btn small" to="/security">{tr('Set it up')}</Link></div>}
         </div>

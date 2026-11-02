@@ -21,6 +21,8 @@ const Migrate = lazy(loadScreen(() => import('./workspace/Migrate')))
 const SalesAnalysis = lazy(loadScreen(() => import('./workspace/SalesAnalysis')))
 const Plan = lazy(loadScreen(() => import('./workspace/Plan')))
 const Audit = lazy(loadScreen(() => import('./workspace/Audit')))
+const Billing = lazy(loadScreen(() => import('./workspace/Billing')))
+const Pricing = lazy(loadScreen(() => import('./pages/Pricing')))
 import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signOut, signOutIdle, useStore } from './lib/store'
 import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
@@ -159,6 +161,7 @@ export default function App() {
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/security" element={<Security />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Legal doc="privacy" />} />
       <Route path="/terms" element={<Legal doc="terms" />} />
       <Route path="/dpa" element={<Legal doc="dpa" />} />
@@ -178,6 +181,7 @@ export default function App() {
         <Route path="migrate" element={<Migrate />} />
         <Route path="sales" element={<SalesAnalysis />} />
         <Route path="plan" element={<Plan />} />
+        <Route path="billing" element={<Billing />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

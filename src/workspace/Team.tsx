@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRightLeft, Copy, Crown, Link2, ShieldCheck, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useApp, showToast } from './useApp'
-import { inviteMember, listInvitations, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, useStore, type Invitation, type Member } from '../lib/store'
+import { inviteMember, listInvitations, refreshBilling, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, useStore, type Invitation, type Member } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { User } from '../lib/types'
 import { tr } from '../lib/i18n'
@@ -12,6 +12,7 @@ import { CostCenterSelect } from './CostCenters'
 export default function Team() {
   const { ws, schema, user, act } = useApp()
   const myTwoFactor = useStore((s) => s.twoFactor)
+  const billing = useStore((s) => s.billing)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleId, setRoleId] = useState(schema.roles.find((r) => !r.admin)?.id ?? 'role_admin')
@@ -23,7 +24,7 @@ export default function Team() {
   const isAdmin = roleIsAdmin(user.roleId)
 
   const reload = () =>
-    Promise.all([listMembers(ws.id), listInvitations(ws.id)])
+    Promise.all([listMembers(ws.id), listInvitations(ws.id), refreshBilling(ws.id)])
       .then(([m, i]) => { setMembers(m); setInvitations(i) })
       .catch((err: Error) => showToast({ kind: 'error', text: err.message }))
   useEffect(() => {
@@ -38,6 +39,8 @@ export default function Team() {
   const lastInvite = (email: string) => invitations.find((i) => i.email === email)
   const owner = members.find((m) => m.is_owner)
   const iAmOwner = owner?.email === user.email
+
+  const full = Boolean(billing && billing.members + billing.invites >= billing.seat_limit)
 
   async function add(e: React.FormEvent) {
     e.preventDefault()
@@ -183,7 +186,8 @@ export default function Team() {
           <label className="field">{tr('Role')}
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>{schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
           </label>
-          <button><UserPlus size={16} /> {tr('Invite')}</button>
+          {billing && <p className="small" style={{ margin: 0 }}>{tr('Seats: {used} of {limit} in use or invited.', { used: billing.members + billing.invites, limit: billing.seat_limit })} {full && <Link to="/app/billing">{tr('Add seats')}</Link>}</p>}
+          <button disabled={full}><UserPlus size={16} /> {tr('Invite')}</button>
           <p className="tiny muted">{tr('You get a private link to send them. They sign in or create a login with this e-mail, then accept. Roles control what each person can see and do.')}</p>
         </form>
         </div>

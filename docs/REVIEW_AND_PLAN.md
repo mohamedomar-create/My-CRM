@@ -860,6 +860,26 @@ The main flows were clicked through and checked in the saved data: budget, busin
 - An independent penetration test before paid launch, with a published security page.
 - Arabic support desk.
 
+> **Phase 6.1a done (plans, trial, seats, read-only).** The owner's decisions (2 Nov 2026):
+> - **Plans:** Free (2 people, the CRM only), Growth EGP 400 and Pro EGP 650 per person per month, before 14% VAT. Yearly is 10 months' price. Pro's AI doctor, WhatsApp and multi-step approvals are marked "coming".
+> - **Payment:** through Paymob.
+> - **Trial:** every company gets 14 days of everything. After it, or 7 days after a paid period ends, the company is read-only: everyone signs in, sees and exports everything, and nothing can be saved. Data is never deleted.
+>
+> How it works:
+> - **The database decides.** Saves, new members (seats), invitations, past-document imports and the nightly run all check the subscription. The command server and the browser say why before trying.
+> - **Free plan:** customers, contacts, leads, deals, quotations, tasks, automations and the builder keep working. Invoices, bills, payments, stock and the books are refused.
+> - **Screens:**
+>   - a public /pricing page;
+>   - a Billing page for admins: plan, days left, seats, prices with VAT for the chosen number of people, and moving to Free;
+>   - a banner in the last 7 days of the trial, when past due and when read-only;
+>   - seats on the Team page.
+> - **Prices and settings** live in the `plans` and `billing_settings` tables, so they change without code.
+> - **Existing companies** got a fresh 14-day trial on the day this went live.
+> - **Setting a plan by hand** (bank transfer, pilot customer), in the Supabase SQL editor:
+>   `select public.billing_grant('ws_…', 'growth', 5, now() + interval '1 month', 'bank transfer');`
+>
+> Next: 6.1b, paying online with Paymob.
+
 **What the owner will see**
 - Pricing page.
 - Online signup with a trial.
