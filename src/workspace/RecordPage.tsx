@@ -18,6 +18,7 @@ import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
 import { GroupCard } from './GroupCard'
 import { CostCenterSelect } from './CostCenters'
+import { overBudgetWarnings } from '../lib/budget'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -207,7 +208,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               ))}
             </div>
           </div>
-          {mod.lines && <LinesEditor mod={mod} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {mod.lines && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
           {payments.length > 0 && (
             <div className="card">
               <h2>{tr('Payments')}</h2>
@@ -350,7 +351,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
   }
 }
 
-function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema }) {
+function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string }) {
   const { user } = useApp()
   // Cost centers (P1): each line's income or cost goes to one; a new line starts with the person's own.
   const withCc = costCenters(ws).some((c) => c.active) || lines.some((l) => l.cc)
@@ -370,6 +371,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   return (
     <div className="card">
       <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate), ...((lines.at(-1)?.cc ?? myCc) ? { cc: lines.at(-1)?.cc ?? myCc } : {}) }])}><Plus size={15} /> {tr('Add line')}</button>}</div>
+      {mod.role === 'purchases' && !disabled && <BudgetWarnings lines={lines} date={date} />}
       {withCc && !disabled && lines.length > 0 && (
         <label className="row small" style={{ gap: 6, margin: '8px 0' }}>{tr('Cost center for every line')}
           <CostCenterSelect value={lines.every((l) => l.cc === lines[0].cc) ? lines[0].cc : undefined} onChange={(v) => onChange(lines.map((l) => { const { cc: _c, ...rest } = l; return v ? { ...rest, cc: v } : rest }))} empty={lines.every((l) => l.cc === lines[0].cc) ? '—' : tr('(mixed)')} style={{ width: 'auto' }} />
@@ -417,6 +419,23 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
         <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
         <span className="grand">{tr('Total')}</span><span className="grand num">{money(t.total, cur)}</span>
       </div>
+    </div>
+  )
+}
+
+/** A bill's services against the approved budget (P2): a warning, not a block, when a line would go over it. */
+function BudgetWarnings({ lines, date }: { lines: Line[]; date?: string }) {
+  const { ws, schema, user } = useApp()
+  if (!canPost({ schema, user })) return null
+  const products = moduleByRole(schema, 'products')
+  const tracked = new Set((products ? list(ws, products.id) : []).filter((p) => p.values.track_stock).map((p) => p.id))
+  const day = date || todayISO()
+  const warn = overBudgetWarnings(ws, lines.filter((l) => !l.product || !tracked.has(l.product)).map((l) => ({ account: '5100', cc: l.cc, amount: lineNet(l), date: day })), getLang())
+  if (!warn.length) return null
+  const cur = schema.company.currency
+  return (
+    <div className="note small" style={{ margin: '8px 0' }}>
+      {warn.map((w) => <div key={w.account + (w.cc ?? '')}>{tr('Over budget: {account}{cc} would reach {after} this year, against {budget} budgeted so far.', { account: w.name, cc: w.cc ? ` (${w.cc})` : '', after: money(w.after, cur), budget: money(w.budget, cur) })}</div>)}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
 import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
 import { activeBudget, budgetVsActual, offBudget } from '../lib/budget'
+import { TargetsCard } from './Targets'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { useLang } from '../lib/i18n'
 
@@ -37,6 +38,7 @@ export default function Dashboard() {
 
       <SalesHistory />
       <BudgetCard />
+      <TargetsCard />
 
       {reports.length === 0 && (
         <div className="card empty">

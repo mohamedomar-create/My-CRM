@@ -44,6 +44,7 @@ const DONE = [
   'src/workspace/SalesAnalysis.tsx',
   'src/workspace/CostCenters.tsx',
   'src/workspace/Budgets.tsx',
+  'src/workspace/Targets.tsx',
   'src/workspace/GroupCard.tsx',
   'src/builder/Builder.tsx',
   'src/builder/ModulesTab.tsx',

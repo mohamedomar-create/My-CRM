@@ -1,12 +1,12 @@
 // Phase P2: budgets. A year's versions (drafted, submitted, approved by another admin, revised), the grid of income and
 // expenses per account, cost center and month, a sheet to fill it from, and the budget against what the books say.
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { CheckCircle2, Copy, Plus, Send, Trash2, Upload, Undo2, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { canPost, costCenterName, importKey, isAdmin, money, round2, todayISO } from '../lib/engine'
 import { chartOf, accountName } from '../lib/accounts'
 import type { Budget, BudgetLine } from '../lib/types'
-import { actualsByMonth, budgets, budgetVsActual, MONTHS, spread } from '../lib/budget'
+import { activeBudget, actualsByMonth, budgets, budgetVsActual, cashBudget, MONTHS, spread, type CashMonth } from '../lib/budget'
 import { CostCenterSelect } from './CostCenters'
 import { readXlsx } from '../lib/xlsx'
 import { parseCsv } from './ImportModal'
@@ -131,6 +131,46 @@ export default function Budgets() {
             : <BudgetVsActual budget={open} />}
         </div>
       )}
+      {finance && <CashBudget year={year} />}
+    </div>
+  )
+}
+
+/** Cash month by month for the year: what moved, what is due, what the approved budget plans beyond the books. */
+function CashBudget({ year }: { year: number }) {
+  const { ws, schema } = useApp()
+  const cur = schema.company.currency
+  const today = todayISO()
+  const b = activeBudget(ws, year)
+  const rows = cashBudget(ws, schema, year, today, b)
+  const cell = (n: number, strong = false) => <td className="num small" style={{ fontWeight: strong ? 700 : undefined, color: n < 0 ? 'var(--danger)' : undefined }}>{n ? money(n, cur) : '—'}</td>
+  const line = (label: string, pick: (r: CashMonth) => number, strong = false) => <tr style={{ cursor: 'default' }}><td className="small">{strong ? <b>{label}</b> : label}</td>{rows.map((r) => <Fragment key={r.month}>{cell(pick(r), strong)}</Fragment>)}</tr>
+  const low = rows.find((r) => !r.past && r.closing < 0)
+  return (
+    <div className="card stack">
+      <h2 style={{ margin: 0 }}>{tr('Cash budget {year}', { year })}</h2>
+      <p className="small muted" style={{ margin: 0 }}>{b
+        ? tr('Months gone: what moved through the cash boxes and bank accounts. This month and those to come: invoices and bills by due date (overdue ones now), cheques by their date, and what the approved budget plans beyond what is already invoiced.')
+        : tr('Months gone: what moved through the cash boxes and bank accounts. This month and those to come: invoices and bills by due date (overdue ones now) and cheques by their date. Approve a budget to add what it plans.')}</p>
+      {low && <div className="error-box">{tr('Cash goes below zero in {month}: {amount}', { month: new Date(`${low.month}-01T00:00:00Z`).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric', timeZone: 'UTC' }), amount: money(low.closing, cur) })}</div>}
+      <div className="table-wrap">
+        <table className="data" style={{ fontSize: 13 }}>
+          <thead><tr><th />{rows.map((r) => <th key={r.month} className="num">{monthName(Number(r.month.slice(5)) - 1)}{r.past ? '' : ' *'}</th>)}</tr></thead>
+          <tbody>
+            {line(tr('Cash at the start'), (r) => r.opening, true)}
+            {line(tr('Came in'), (r) => r.actualIn)}
+            {line(tr('Due from customers'), (r) => r.fromCustomers)}
+            {line(tr('Cheques to collect'), (r) => r.chequesIn)}
+            {line(tr('Planned income not yet invoiced'), (r) => r.plannedIn)}
+            {line(tr('Went out'), (r) => -r.actualOut)}
+            {line(tr('Due to suppliers'), (r) => -r.toSuppliers)}
+            {line(tr('Cheques to pay'), (r) => -r.chequesOut)}
+            {line(tr('Planned expenses'), (r) => -r.plannedOut)}
+            {line(tr('Cash at the end'), (r) => r.closing, true)}
+          </tbody>
+        </table>
+      </div>
+      <p className="tiny muted" style={{ margin: 0 }}>{tr('* expected')}</p>
     </div>
   )
 }

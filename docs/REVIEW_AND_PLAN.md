@@ -634,7 +634,13 @@ A smaller team stretches the timeline roughly in proportion.
 > - **Versions and approval:** drafted, submitted, approved by an admin who didn't prepare it (or by its preparer with a written reason), or sent back with what to change; a revision during the year is a new version, and approving it keeps the earlier one as superseded. Checked on the server; every step is in the activity log.
 > - **Budget against actual:** per account, income and expenses apart, for the month, the year to date (budgeted, actual, better or worse, % used) and the whole year, for the company, one cost center (with those under it) or none; lines more than 10% off are highlighted. The actuals are the profit and loss's own figures (tested).
 > - **Dashboard (finance):** this year's profit against the budget so far, and the lines furthest off budget.
-> - **Next (P2, second part):** sales targets per rep, product or customer group with attainment, the cash budget, a warning when a bill would take a line over budget, and over-budget lines in a weekly digest.
+>
+> **Progress (P2, second part: targets, cash budget, warnings). P2 is done.**
+> - **Sales targets** (Sales analysis page): a year's target per rep, product or customer (a group counts every customer under it), spread like last year's sales; attainment to date with a bar, furthest behind first. A rep's sales are the invoices of the customers they own (or the invoice's own owner, else who entered it) — Sales analysis "by rep" now counts the same way. The dashboard shows a rep their own target, and admins and finance the targets furthest behind.
+> - **Cash budget** (Budgets page): month by month for the year, from the cash boxes and bank accounts: months gone with what moved; this month and those to come with invoices and bills by due date (overdue ones now), cheques by their date, and what the approved budget plans beyond what is already invoiced (the cost of goods left out: bills pay it). A warning when cash would go below zero.
+> - **Over-budget warning:** a draft bill or a journal voucher that would take an expense line over its budget so far says so (per cost center when the budget is), without blocking.
+> - **Weekly notice:** on Sundays the nightly run tells admins and finance which lines are more than 10% off budget for the year so far (once a week, in-app).
+> - **Not yet:** e-mailing the weekly notice (in-app only for now).
 
 **P3. Business plan (L)**
 - A 3–5 year plan built from assumptions: sales by product line (volume × price) and growth, cost of sales %, staff (headcount × salary, raises), rent and overheads, capital expenditure and depreciation, loans (amount, rate, term), VAT and income tax, and how many days customers and suppliers take to pay and stock is kept.
