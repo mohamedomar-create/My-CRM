@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type Line, type User, type Workspace } from './types'
-import { accountBalance, ageing, bounceCheque, cheques, createRecord, creditNote, depositCheque, lineNet, openCredits, postDocument, recordAdvance, refundCredit, registerPayment, spreadDiscount, totals, unuseCredit, useCredit, voidDocument, type Ctx } from './engine'
+import { accountBalance, ageing, bounceCheque, cheques, createRecord, creditNote, depositCheque, lineNet, openCredits, postDocument, recordAdvance, refundCredit, registerPayment, spreadDiscount, totals, unuseCredit, applyCredit, voidDocument, type Ctx } from './engine'
 import { moduleByRole, uid } from './schema'
 import { statementOfAccount } from './partyStatement'
 import { applyCommand } from './commands'
@@ -39,10 +39,10 @@ describe('advances and using credit', () => {
     const inv = post('invoices', kasr.id, [line(30)], '2026-03-10') // 3,420
     expect(openCredits(ws, schema, inv).map((r) => r.id)).toEqual([adv.id])
     // Not more than the invoice owes, nor than is left, nor on another customer's invoice.
-    expect(() => useCredit(ctx, { credit: adv.id, doc: inv.id, amount: 3500, date: '2026-03-10' })).toThrow(/only has/)
+    expect(() => applyCredit(ctx, { credit: adv.id, doc: inv.id, amount: 3500, date: '2026-03-10' })).toThrow(/only has/)
     const theirs = post('invoices', other.id, [line(1)], '2026-03-10')
-    expect(() => useCredit(ctx, { credit: adv.id, doc: theirs.id, amount: 10, date: '2026-03-10' })).toThrow(/another customer/)
-    const use = useCredit(ctx, { credit: adv.id, doc: inv.id, amount: 3420, date: '2026-03-10' })
+    expect(() => applyCredit(ctx, { credit: adv.id, doc: theirs.id, amount: 10, date: '2026-03-10' })).toThrow(/another customer/)
+    const use = applyCredit(ctx, { credit: adv.id, doc: inv.id, amount: 3420, date: '2026-03-10' })
     expect([inv.status, inv.values.balance, adv.values.balance, adv.status]).toEqual(['paid', 0, -1580, 'posted'])
     // The books don't move: what Kasr El Ainy owes in total is the same, and the ageing agrees with the ledger.
     expect(accountBalance(ws, '1200')).toBe(-1580 + 114)
@@ -66,7 +66,7 @@ describe('advances and using credit', () => {
     registerPayment(ctx, a, 1140, '2026-02-05', 'bank')
     const cn = creditNote(ctx, a.id, { lines: [{ line: a.lines![0].id, qty: 5 }], date: '2026-02-10', reason: 'returned' }) // 570 left as credit
     const b = post('invoices', kasr.id, [line(10)], '2026-03-01')
-    useCredit(ctx, { credit: cn.id, doc: b.id, amount: 570, date: '2026-03-01' })
+    applyCredit(ctx, { credit: cn.id, doc: b.id, amount: 570, date: '2026-03-01' })
     expect([b.values.balance, cn.values.balance]).toEqual([570, 0])
     // A credit note whose credit was used elsewhere isn't voided until that is taken back.
     expect(() => voidDocument(ctx, cn)).toThrow(/Take it back first/)
@@ -74,7 +74,7 @@ describe('advances and using credit', () => {
     expect(adp.number).toBe('ADP-2026-0001')
     expect(accountBalance(ws, '2100')).toBe(2000)
     const bill = post('purchases', mill.id, [line(10)], '2026-03-05')
-    useCredit(ctx, { credit: adp.id, doc: bill.id, amount: 1140, date: '2026-03-05' })
+    applyCredit(ctx, { credit: adp.id, doc: bill.id, amount: 1140, date: '2026-03-05' })
     expect([bill.status, adp.values.balance]).toEqual(['paid', -860])
     expect(statementOfAccount(ws, schema, { party: mill.id, from: '2026-01-01', to: '2026-06-30' })!.rows.map((r) => [r.kind, r.charge, r.payment])).toEqual([['advance', 0, 2000], ['bill', 1140, 0]])
   })

@@ -12,7 +12,7 @@ import { createPlan, deletePlan, savePlan } from './plan'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, useCredit, unuseCredit, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -190,7 +190,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
   'cheque.bounce': { run: (ws, u, a) => bounceCheque(ctx(ws, u), String(a.id), String(a.date), String(a.reason ?? ''), Number(a.charges) || 0) },
   'credit.advance': { run: (ws, u, a) => ({ id: recordAdvance(ctx(ws, u), { party: String(a.party ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), method: a.method, account: a.account === undefined ? undefined : String(a.account), note: a.note === undefined ? undefined : String(a.note) }).id }) },
-  'credit.use': { run: (ws, u, a) => void useCredit(ctx(ws, u), { credit: String(a.credit ?? ''), doc: String(a.doc ?? ''), amount: Number(a.amount), date: String(a.date ?? '') }) },
+  'credit.use': { run: (ws, u, a) => void applyCredit(ctx(ws, u), { credit: String(a.credit ?? ''), doc: String(a.doc ?? ''), amount: Number(a.amount), date: String(a.date ?? '') }) },
   'credit.unuse': { run: (ws, u, a) => unuseCredit(ctx(ws, u), String(a.doc ?? ''), String(a.use ?? '')) },
   'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },

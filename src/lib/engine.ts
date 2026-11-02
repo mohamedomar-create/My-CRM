@@ -1373,7 +1373,7 @@ export function openCredits(ws: Workspace, schema: AppSchema, doc: Rec) {
  * Uses a credit against an invoice or bill of the same customer or supplier: what the invoice still owes goes down,
  * and so does the credit. Nothing moves in the books (both sit on the same account); it can be taken back.
  */
-export function useCredit(ctx: Ctx, o: { credit: string; doc: string; amount: number; date: string }) {
+export function applyCredit(ctx: Ctx, o: { credit: string; doc: string; amount: number; date: string }) {
   needFinance(ctx, 'use credits')
   const credit = findRecord(ctx.ws, o.credit)
   const doc = findRecord(ctx.ws, o.doc)
