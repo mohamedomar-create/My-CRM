@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { useApp } from './useApp'
-import { can, canPost, money, todayISO } from '../lib/engine'
+import { can, canPost, list, money, parentField, recordTitle, todayISO } from '../lib/engine'
+import { topOf } from '../lib/hierarchy'
 import { moduleByRole } from '../lib/schema'
 import { historySummary } from '../lib/store'
 import { liveSummary, mergeTotals, type AnalysisBy, type AnalysisRow } from '../lib/salesAnalysis'
@@ -18,7 +19,11 @@ export default function SalesAnalysis() {
   const thisYear = Number(todayISO().slice(0, 4))
   const [side, setSide] = useState<'sales' | 'purchases'>(sides[0] ?? 'sales')
   const [year, setYear] = useState(thisYear)
-  const [by, setBy] = useState<AnalysisBy>('month')
+  const [view, setView] = useState<AnalysisBy | 'top'>('month')
+  // "Group (top level)": by customer, then each customer counted under the top of its layers (UPA for a hospital).
+  const by: AnalysisBy = view === 'top' ? 'party' : view
+  const partyMod = moduleByRole(schema, side === 'sales' ? 'accounts' : 'suppliers')
+  const layered = Boolean(parentField(partyMod))
   const [withHistory, setWithHistory] = useState(true)
   const [past, setPast] = useState<{ key: string; rows: AnalysisRow[]; problem?: string } | null>(null)
   const from = `${year}-01-01`
@@ -35,7 +40,15 @@ export default function SalesAnalysis() {
 
   const here = useMemo(() => liveSummary(ws, schema, side, from, to, by), [ws, schema, side, from, to, by])
   const history = withHistory && past?.key === want ? past.rows : []
-  const rows = mergeTotals(by, here, history)
+  const merged = mergeTotals(by, here, history)
+  const rows = view === 'top' && partyMod ? (() => {
+    const byId = new Map(list(ws, partyMod.id).map((r) => [r.id, r]))
+    return mergeTotals('party', merged.map((r) => {
+      const rec = byId.get(r.key)
+      const top = rec ? topOf(ws, partyMod, rec) : undefined
+      return top ? { ...r, key: top.id, label: recordTitle(ws, schema, top) } : r
+    }))
+  })() : merged
   const total = rows.reduce((s, r) => s + r.amount, 0)
   const top = Math.max(1, ...rows.map((r) => Math.abs(r.amount)))
   const loading = withHistory && past?.key !== want
@@ -66,10 +79,11 @@ export default function SalesAnalysis() {
           </select>
         </label>
         <label className="field small">{tr('Group by')}
-          <select value={by} onChange={(e) => setBy(e.target.value as AnalysisBy)}>
+          <select value={view} onChange={(e) => setView(e.target.value as AnalysisBy | 'top')}>
             <option value="month">{tr('Month')}</option>
             <option value="product">{tr('Product')}</option>
             <option value="party">{side === 'sales' ? tr('Customer') : tr('Supplier')}</option>
+            {layered && <option value="top">{side === 'sales' ? tr('Customer group (top level)') : tr('Supplier group (top level)')}</option>}
             <option value="rep">{tr('Sales rep')}</option>
           </select>
         </label>
@@ -83,7 +97,7 @@ export default function SalesAnalysis() {
         </div>
         {rows.length === 0 ? <p className="muted small" style={{ margin: 0 }}>{tr('Nothing in {year}', { year })}</p> : (
           <table className="data">
-            <thead><tr><th>{by === 'month' ? tr('Month') : by === 'product' ? tr('Product') : by === 'party' ? (side === 'sales' ? tr('Customer') : tr('Supplier')) : tr('Sales rep')}</th><th className="num">{tr('Documents')}</th>{by === 'product' && <th className="num">{tr('Quantity')}</th>}<th className="num">{tr('Before VAT')}</th><th style={{ width: '30%' }} /></tr></thead>
+            <thead><tr><th>{by === 'month' ? tr('Month') : by === 'product' ? tr('Product') : view === 'top' ? tr('Group') : by === 'party' ? (side === 'sales' ? tr('Customer') : tr('Supplier')) : tr('Sales rep')}</th><th className="num">{tr('Documents')}</th>{by === 'product' && <th className="num">{tr('Quantity')}</th>}<th className="num">{tr('Before VAT')}</th><th style={{ width: '30%' }} /></tr></thead>
             <tbody>
               {rows.slice(0, 200).map((r) => (
                 <tr key={r.key} style={{ cursor: 'default' }}>

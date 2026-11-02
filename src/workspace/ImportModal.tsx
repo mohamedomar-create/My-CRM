@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
-import { FORMER, STAGE_AT, importKey, importStatus, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
+import { FORMER, STAGE_AT, importKey, importStatus, parentsFirst, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
 import type { AppSchema, FieldDef, ModuleDef } from '../lib/schema'
 import { uid } from '../lib/schema'
 import { flush } from '../lib/store'
@@ -234,10 +234,14 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
     const batch = { id: uid('imp'), file: fileName.slice(0, 120) }
     const total = Math.ceil(objects.length / PART)
     const sum = { batch: batch.id, created: 0, updated: 0, skipped: 0, errors: [] as ImportResult['errors'], stopped: false }
+    // A customer's group goes in before the customers under it, so each part finds the groups of earlier parts.
+    const order = parentsFirst(raw, objects, mapping)
+    const sorted = order.some((n, i) => n !== i)
     setProgress({ done: 0, total })
     for (let p = 0; p < total; p++) {
-      const rows = objects.slice(p * PART, (p + 1) * PART)
-      const res = act<ImportResult>('import.rows', { module: mod.id, rows, mapping, batch, firstRow: 2 + p * PART, ...options() }, undefined, `Imported ${raw.name.toLowerCase()}`)
+      const part = order.slice(p * PART, (p + 1) * PART)
+      const rows = part.map((i) => objects[i])
+      const res = act<ImportResult>('import.rows', { module: mod.id, rows, mapping, batch, firstRow: 2 + p * PART, ...(sorted ? { rowNumbers: part.map((i) => i + 2) } : {}), ...options() }, undefined, `Imported ${raw.name.toLowerCase()}`)
       if (!res) { sum.stopped = true; break }
       sum.created += res.created
       sum.updated += res.updated

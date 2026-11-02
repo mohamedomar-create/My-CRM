@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, statusLabel, useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, creditNotesOf, displayValue, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, creditNotesOf, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -16,6 +16,7 @@ import { moneyAccounts } from '../lib/accounts'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
+import { GroupCard } from './GroupCard'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -31,7 +32,15 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const nav = useNavigate()
   const { user, act } = useApp()
   // A new record starts with the same defaults the engine would save (today's date, VAT rate, stock tracking…).
-  const [values, setValues] = useState<Record<string, unknown>>(() => (rec ? { ...rec.values } : defaultValues({ schema, user }, mod)))
+  const [params] = useSearchParams()
+  // "Add a customer under it" opens a new record already under that one.
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
+    if (rec) return { ...rec.values }
+    const start = defaultValues({ schema, user }, mod)
+    const pf = parentField(mod)
+    const under = params.get('under')
+    return pf && under && findRecord(ws, under)?.module === mod.id ? { ...start, [pf.key]: under } : start
+  })
   const [lines, setLinesState] = useState<Line[]>(() => rec?.lines ?? [])
   // What the form started from. Only fields that differ from it are saved, so a colleague's change to another field is never undone.
   const [base, setBase] = useState<Record<string, unknown>>(() => (rec ? { ...rec.values } : {}))
@@ -190,7 +199,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
                 <div key={f.id} className={f.width === 2 || f.type === 'longtext' ? 'w2' : ''}>
                   <label className="field">
                     <span>{f.label}{f.required && !f.readOnly && <span style={{ color: 'var(--danger)' }}> *</span>}</span>
-                    <FieldInput field={f} value={(f.type === 'lookup' || f.type === 'rollup') ? (rec ? fieldValue(ws, schema, rec, f) : undefined) : values[f.key]} onChange={(v) => set(f.key, v)} disabled={!editable} ws={ws} schema={schema} />
+                    <FieldInput self={rec?.id} mod={mod} field={f} value={(f.type === 'lookup' || f.type === 'rollup') ? (rec ? fieldValue(ws, schema, rec, f) : undefined) : values[f.key]} onChange={(v) => set(f.key, v)} disabled={!editable} ws={ws} schema={schema} />
                   </label>
                   {f.help && <span className="tiny muted">{f.help}</span>}
                 </div>
@@ -224,6 +233,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               ))}
             </div>
           )}
+          {rec && parentField(mod) && <GroupCard rec={rec} mod={mod} />}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && <PartyHistory rec={rec} mod={mod} />}
           {rec && <Comments rec={rec} />}
           {rec && (
@@ -270,7 +280,7 @@ function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
   return out.slice(0, 20)
 }
 
-function FieldInput({ field, value, onChange, disabled, ws, schema }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema }) {
+function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema; self?: string; mod?: ModuleDef }) {
   if (field.readOnly || field.type === 'formula' || field.type === 'lookup' || field.type === 'rollup') {
     const shown = field.type === 'formula' ? (value === undefined || value === null ? '—' : Number(value).toLocaleString()) : displayValue(ws, schema, field, value) || (value === 0 ? '0' : '—')
     return <div className="ro-value">{shown}</div>
@@ -311,7 +321,9 @@ function FieldInput({ field, value, onChange, disabled, ws, schema }: { field: F
       )
     }
     case 'relation': {
-      const targets = list(ws, field.target ?? '')
+      // Under itself or under one of its own is a loop: those aren't offered.
+      const own = mod && field.target === mod.id && self ? new Set([self, ...descendants(ws, mod, self).map((d) => d.rec.id)]) : undefined
+      const targets = list(ws, field.target ?? '').filter((r) => !own?.has(r.id))
       return (
         <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
           <option value="">—</option>

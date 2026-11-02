@@ -5,7 +5,8 @@ import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Fla
 import { ImportModal } from './ImportModal'
 import { statusLabel, useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, list, money, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, groupIds, list, money, parentField, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { groupChoices } from '../lib/hierarchy'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import type { FieldDef, ModuleDef } from '../lib/schema'
@@ -32,6 +33,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: '__created', dir: -1 })
   const [stage, setStage] = useState('')
+  const [group, setGroup] = useState('')
   const [importing, setImporting] = useState(false)
   /** long lists show a page at a time, so they open fast */
   const [limit, setLimit] = useState(PAGE)
@@ -49,7 +51,19 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const hidden = (key: string) => secret.includes(key)
   const cols = mod.fields.filter((f) => f.inList && !hidden(f.key)).slice(0, 7)
   const all = list(ws, mod.id)
+  // Layers: a list whose records are under one another (customers under groups), or a list linked to one (their
+  // invoices, deals, contacts) can show one group: the record chosen and everything under it.
+  const via = parentField(mod) ? { field: parentField(mod)!, target: mod } : (() => {
+    for (const f of mod.fields) {
+      const t = f.type === 'relation' ? moduleById(schema, f.target ?? '') : undefined
+      if (t && t.id !== mod.id && parentField(t)) return { field: f, target: t }
+    }
+    return undefined
+  })()
+  const groups = via ? groupChoices(ws, schema, via.target) : []
+  const inGroup = group && via ? groupIds(ws, via.target, group) : undefined
   const rows = all
+    .filter((r) => !inGroup || inGroup.has(via!.target.id === mod.id ? r.id : String(r.values[via!.field.key] ?? '')))
     .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())) || [r.legacy?.id, r.legacy?.number].some((x) => x?.toLowerCase().includes(q.toLowerCase())))
     .filter((r) => !stage || r.stage === stage || r.status === stage)
     // each sort value is worked out once per record, not once per comparison
@@ -97,6 +111,12 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             <option value="">{mod.stages ? tr('All stages') : tr('All statuses')}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+          </select>
+        )}
+        {groups.length > 0 && (
+          <select value={group} onChange={(e) => { setGroup(e.target.value); setLimit(PAGE) }} style={{ width: 'auto', maxWidth: 280 }} aria-label={tr('Group')}>
+            <option value="">{via!.target.id === mod.id ? tr('All groups') : tr('All {what} groups', { what: via!.target.singular.toLowerCase() })}</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{'\u00a0\u00a0'.repeat(g.depth)}{g.label} ({g.members})</option>)}
           </select>
         )}
         <span className="grow" />

@@ -106,6 +106,16 @@ export default function ModulesTab({ focus, setFocus }: Props) {
               <span className="pill" style={{ background: '#ffffff26', color: '#fff' }}>{mod.role === 'custom' ? tr('Custom module') : msgText(ROLES[mod.role].label)}</span>
             </div>
             {mod.role !== 'custom' && <div className="info" style={{ margin: '14px 18px 0' }}>{msgText(ROLES[mod.role].description)} {tr('Fields with a')} <Lock size={12} /> {tr('keep this working — rename and move them freely.')}</div>}
+            {!mod.lines && !mod.fields.some((f) => f.type === 'relation' && f.target === mod.id) && (
+              <div className="row" style={{ margin: '10px 18px 0' }}>
+                <button className="ghost small" onClick={() => {
+                  const keys = mod.fields.map((f) => f.key)
+                  const field: FieldDef = { ...newField('relation', keys), label: tr('Belongs to'), key: keys.includes('parent') ? 'parent_record' : 'parent', target: mod.id, help: tr('The {what} this one is under (each can be under another)', { what: mod.singular.toLowerCase() }) }
+                  editMod((m) => m.fields.push(field))
+                  setFocus({ moduleId: mod.id, fieldId: field.id })
+                }}><Plus size={14} /> {tr('Allow layers: one {what} under another', { what: mod.singular.toLowerCase() })}</button>
+              </div>
+            )}
             {mod.lines && <div className="note" style={{ margin: '10px 18px 0' }}>{tr('This is a document: it also gets a product lines table with quantity, price, discount and VAT. Totals are calculated by the system.')}</div>}
             <Canvas mod={mod} selectedId={focus.fieldId} onSelect={(id) => setFocus({ moduleId: mod.id, fieldId: id })} />
           </div>
@@ -379,9 +389,9 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
       )}
 
       {field.type === 'relation' && (
-        <label className="field">Links to
+        <label className="field">{tr('Links to')}
           <select value={field.target} disabled={field.system || used > 0} onChange={(e) => set({ target: e.target.value })}>
-            {schema.modules.filter((m) => m.id !== mod.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {schema.modules.map((m) => <option key={m.id} value={m.id}>{m.id === mod.id ? tr('{name} (one under another)', { name: m.name }) : m.name}</option>)}
           </select>
         </label>
       )}

@@ -176,6 +176,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       if (a.batch !== undefined && !(typeof a.batch?.id === 'string' && /^imp_[A-Za-z0-9_-]{1,60}$/.test(a.batch.id) && typeof a.batch.file === 'string')) throw new EngineError('That setup is not valid')
       if (a.match !== undefined && typeof a.match !== 'string') throw new EngineError('That setup is not valid')
       if (a.firstRow !== undefined && !(Number.isInteger(a.firstRow) && a.firstRow >= 2)) throw new EngineError('That setup is not valid')
+      if (a.rowNumbers !== undefined && !(Array.isArray(a.rowNumbers) && a.rowNumbers.length === a.rows.length && a.rowNumbers.every((n) => Number.isInteger(n) && n >= 2))) throw new EngineError('That setup is not valid')
       return importRows(ctx(ws, u), a.module, a.rows, a.mapping, { batch: a.batch, match: a.match || undefined, onlyUpdate: Boolean(a.onlyUpdate), values: a.values, firstRow: a.firstRow })
     },
   },
