@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
+import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp } from './useApp'
@@ -323,6 +324,19 @@ function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
   return out.slice(0, 20)
 }
 
+/** A link field: type to find the record, or create one when only its name is needed (4.2d). */
+type Ids = Set<string>
+type RelationProps = { field: FieldDef; value?: string; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema; exclude?: Ids }
+
+function RelationPicker({ field, value, onChange, disabled, ws, schema, exclude }: RelationProps) {
+  const { user, act } = useApp()
+  const target = moduleById(schema, field.target ?? '')
+  // Only a record that needs nothing but its name is created from here; anything more opens its own form.
+  const simple = target && can({ schema, user }, target.id, 'create') && target.fields.every((f) => !f.required || f.key === target.titleField || f.readOnly)
+  const create = simple ? (name: string) => (act('record.create', { module: target!.id, values: { [target!.titleField]: name } }, tr('{what} created', { what: target!.singular })) as { id: string } | undefined)?.id : undefined
+  return <RecordPicker ws={ws} schema={schema} moduleId={field.target ?? ''} value={value} onChange={(id) => onChange(id)} disabled={disabled} exclude={exclude} onCreate={create} label={field.label} />
+}
+
 function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema; self?: string; mod?: ModuleDef }) {
   if (field.readOnly || field.type === 'formula' || field.type === 'lookup' || field.type === 'rollup') {
     const shown = field.type === 'formula' ? (value === undefined || value === null ? '—' : Number(value).toLocaleString()) : displayValue(ws, schema, field, value) || (value === 0 ? '0' : '—')
@@ -366,13 +380,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
     case 'relation': {
       // Under itself or under one of its own is a loop: those aren't offered.
       const own = mod && field.target === mod.id && self ? new Set([self, ...descendants(ws, mod, self).map((d) => d.rec.id)]) : undefined
-      const targets = list(ws, field.target ?? '').filter((r) => !own?.has(r.id))
-      return (
-        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
-          <option value="">—</option>
-          {targets.map((r) => <option key={r.id} value={r.id}>{recordTitle(ws, schema, r)}</option>)}
-        </select>
-      )
+      return <RelationPicker field={field} value={str || undefined} onChange={onChange} disabled={disabled} ws={ws} schema={schema} exclude={own} />
     }
     case 'user':
       return (
@@ -429,10 +437,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
               return (
                 <tr key={l.id}>
                   <td>
-                    <select value={l.product ?? ''} onChange={(e) => pick(i, e.target.value)} disabled={disabled}>
-                      <option value="">{tr('— free text —')}</option>
-                      {items.map((x) => <option key={x.id} value={x.id}>{String(x.values.name)} {x.values.sku ? `(${x.values.sku})` : ''}</option>)}
-                    </select>
+                    {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} /> : null}
                     {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
                     {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
                   </td>
