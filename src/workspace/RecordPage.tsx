@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
-import { methodLabel, statusLabel, useApp } from './useApp'
+import { methodLabel, showToast, statusLabel, useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -17,6 +17,7 @@ import { dateLocale, getLang, msg, N_, tr } from '../lib/i18n'
 import { Bi } from './printing'
 import { usePrintBoth } from './usePrintBoth'
 import { StatementView } from './Statement'
+import { AdvanceModal, CreditsPanel } from './Credits'
 import { creditStanding } from '../lib/partyStatement'
 import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
@@ -56,6 +57,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const [crediting, setCrediting] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [statement, setStatement] = useState(false)
+  const [advancing, setAdvancing] = useState(false)
   const isCredit = Boolean(rec?.values.credit_for)
   const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
@@ -168,6 +170,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.lines && rec && (rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) && canPost({ schema, user }) && (
             <button className="danger" onClick={() => confirm(tr('Void this document? Stock and journal entries will be reversed. This can’t be undone.')) && act('doc.void', { id: rec.id }, tr('Voided and reversed'))}><Ban size={15} /> {tr('Void')}</button>
           )}
+          {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && canPost({ schema, user }) && <button className="secondary" onClick={() => setAdvancing(true)}><Banknote size={15} /> {tr('Advance')}</button>}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && seesStatement && <button className="secondary" onClick={() => setStatement(true)}><FileText size={15} /> {tr('Statement of account')}</button>}
           {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? tr('Save first') : sync !== 'saved' ? tr('Waiting for the save to be confirmed, so the printed number is final') : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> {tr('Print')}</button>}
           {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? tr('Create') : tr('Save')}</button>}
@@ -175,14 +178,20 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       </div>
 
       {rec && <ApprovalBanner rec={rec} mod={mod} />}
-      {rec && isCredit && (
+      {rec && isCredit && (rec.values.credit_for === 'advance' || rec.values.credit_for === 'opening') && (
+        <div className="info" style={{ marginBottom: 14 }}>
+          {rec.values.credit_for === 'advance' ? tr(mod.role === 'invoices' ? 'Advance received from the customer on {date}.' : 'Advance paid to the supplier on {date}.', { date: String(rec.values.date ?? '') }) : tr('Credit brought in from the old system.')}
+          {' '}{Number(rec.values.balance) < 0 ? tr('{amount} of it is left: use it on an invoice or bill below, or refund it.', { amount: money(-Number(rec.values.balance), schema.company.currency) }) : tr('All of it has been used or refunded.')}
+        </div>
+      )}
+      {rec && isCredit && rec.values.credit_for !== 'advance' && rec.values.credit_for !== 'opening' && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit note for') : tr('Debit note for')} <Link to={`/app/r/${String(rec.values.credit_for)}`}>{findRecord(ws, String(rec.values.credit_for))?.number ?? tr('the original document')}</Link>: {String(rec.values.reason ?? '')}.
           {' '}{tr('{amount} reduced what was owed.', { amount: money(Number(rec.values.applied ?? 0), schema.company.currency) })}
           {Number(rec.values.balance) < 0 && <> {tr(mod.role === 'invoices' ? '{amount} is left as the customer’s credit (refund it, or keep it for later).' : '{amount} is left as the supplier’s credit (refund it, or keep it for later).', { amount: money(-Number(rec.values.balance), schema.company.currency) })}</>}
         </div>
       )}
-      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && (
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && rec.values.credit_for !== 'advance' && (
         <div className={rec.values.eta_uuid ? 'info row' : mod.role === 'invoices' ? 'warn-box row' : 'info row'} style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
           <FileCheck2 size={16} />
           {rec.values.eta_uuid
@@ -191,6 +200,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {canPost({ schema, user }) && <button className="ghost small" onClick={() => { const n = prompt(tr('E-invoice number from the ETA portal (leave empty to remove)'), String(rec.values.eta_uuid ?? '')); if (n !== null) act('doc.eInvoice', { id: rec.id, number: n }, n.trim() ? tr('E-invoice number saved') : tr('E-invoice number removed'), `E-invoice number on ${rec.number}`) }}>{rec.values.eta_uuid ? tr('Change') : tr('Enter number')}</button>}
         </div>
       )}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
@@ -227,7 +237,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             </div>
           </div>
           {mod.role === 'invoices' && (isNew || rec?.status === 'draft') && !isCredit && <CreditWarning customer={String(values.customer ?? '')} lines={lines} />}
-          {mod.lines && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {mod.lines && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
           {payments.length > 0 && (
             <div className="card">
               <h2>{tr('Payments')}</h2>
@@ -286,6 +296,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       {paying && rec && (isCredit
         ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, tr('Refund registered'))) setPaying(false) }} />
         : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
+      {advancing && rec && <AdvanceModal party={rec} onClose={() => setAdvancing(false)} />}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
   )
@@ -398,9 +409,9 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
       )}
       <div style={{ overflowX: 'auto' }}>
         <table className="lines">
-          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
+          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Disc. amount')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
           <tbody>
-            {lines.length === 0 && <tr><td colSpan={withCc ? 9 : 8} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={withCc ? 10 : 9} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
             {lines.map((l, i) => {
               const p = items.find((x) => x.id === l.product)
               const stock = p?.values.track_stock ? onHand(ws, p.id) : undefined
@@ -417,6 +428,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
                   <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
                   <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
+                  <td><input type="number" min={0} step="0.01" value={l.discAmt ?? ''} placeholder="0" onChange={(e) => upd(i, { discAmt: e.target.value === '' ? undefined : Number(e.target.value) })} disabled={disabled} style={{ width: 90 }} title={tr('An amount off this line, before VAT')} /></td>
                   <td>
                     <select value={lineTaxCode(l)} onChange={(e) => upd(i, { taxCode: e.target.value, vat: TAX_CODES.find((t) => t.code === e.target.value)?.rate ?? l.vat })} disabled={disabled} style={{ width: 150 }} title={tr('VAT treatment of this line')}>
                       {!TAX_CODES.some((t) => t.code === lineTaxCode(l)) && <option value={lineTaxCode(l)}>VAT {l.vat}%</option>}
@@ -433,6 +445,13 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
           </tbody>
         </table>
       </div>
+      {!disabled && lines.length > 0 && (
+        <button className="ghost small" style={{ marginTop: 6 }} onClick={() => {
+          const v = prompt(tr('Discount on the whole document, before VAT (spread over the lines by their value):'))
+          if (!v) return
+          try { onChange(spreadDiscount(lines, Number(v.replace(/,/g, '')))) } catch (e) { showToast({ kind: 'error', text: msg((e as Error).message) }) }
+        }}>{tr('Discount on the whole document')}</button>
+      )}
       <div className="totals">
         <span>{tr('Subtotal')}</span><b className="num">{money(t.subtotal, cur)}</b>
         <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
@@ -603,7 +622,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const B = (en: string, vars?: Record<string, string | number>) => <Bi en={en} vars={vars} both={both} />
   const draft = rec.status === 'draft' && mod.role !== 'quotes'
   // A draft is not a tax document: it says so in the title and across the page.
-  const title = draft ? (mod.role === 'invoices' ? N_('Proforma / draft – not a tax invoice') : N_('Draft – not posted')) : rec.values.credit_for ? (mod.role === 'invoices' ? N_('Tax credit note') : N_('Debit note')) : mod.role === 'invoices' ? N_('Tax invoice') : mod.role === 'quotes' ? N_('Quotation') : N_('Purchase bill')
+  const title = draft ? (mod.role === 'invoices' ? N_('Proforma / draft – not a tax invoice') : N_('Draft – not posted')) : rec.values.credit_for === 'advance' ? (mod.role === 'invoices' ? N_('Advance receipt') : N_('Advance payment')) : rec.values.credit_for ? (mod.role === 'invoices' ? N_('Tax credit note') : N_('Debit note')) : mod.role === 'invoices' ? N_('Tax invoice') : mod.role === 'quotes' ? N_('Quotation') : N_('Purchase bill')
   const codeNote = (l: Line) => (lineTaxCode(l) === 'Z0' ? N_('zero-rated') : lineTaxCode(l) === 'EX' ? N_('exempt') : lineTaxCode(l) === 'OS' ? N_('out of scope') : '')
   return (
     <div className="page">
@@ -638,7 +657,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
           <thead><tr><th>#</th><th>{B(N_('Description'))}</th><th className="num">{B(N_('Qty'))}</th><th className="num">{B(N_('Unit price'))}</th><th className="num">{B(N_('Disc.'))}</th><th className="num">{B(N_('VAT'))}</th><th className="num">{B(N_('Amount'))}</th></tr></thead>
           <tbody>
             {(rec.lines ?? []).map((l, i) => (
-              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%</td><td className="num">{l.vat}%{codeNote(l) ? <> ({tr(codeNote(l))})</> : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
+              <tr key={l.id}><td>{i + 1}</td><td>{l.description}</td><td className="num">{l.qty}</td><td className="num">{l.price.toFixed(2)}</td><td className="num">{l.discount}%{l.discAmt ? <> + {l.discAmt.toFixed(2)}</> : null}</td><td className="num">{l.vat}%{codeNote(l) ? <> ({tr(codeNote(l))})</> : ''}</td><td className="num">{lineNet(l).toFixed(2)}</td></tr>
             ))}
           </tbody>
         </table>

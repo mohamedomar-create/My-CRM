@@ -14,7 +14,7 @@ import { usePrintBoth } from './usePrintBoth'
 import type { Rec } from '../lib/types'
 
 // The statement's labels, marked for translation (the printout shows them through <Bi>).
-N_('Invoice'); N_('Purchase bill'); N_('Credit note'); N_('Debit note'); N_('Opening balance'); N_('Receipt'); N_('Payment')
+N_('Advance'); N_('Invoice'); N_('Purchase bill'); N_('Credit note'); N_('Debit note'); N_('Opening balance'); N_('Receipt'); N_('Payment')
 N_('Payment reversed'); N_('Cheque bounced'); N_('Refund'); N_('Voided'); N_('Other')
 
 function download(name: string, text: string) {

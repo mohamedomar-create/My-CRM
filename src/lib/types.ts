@@ -10,6 +10,8 @@ export interface Line {
   qty: number
   price: number
   discount: number
+  /** an amount off the line before VAT, on top of the % (a discount on the whole document is spread as these) */
+  discAmt?: number
   vat: number
   /** the tax code (see tax.ts); when set, the VAT rate follows it */
   taxCode?: string

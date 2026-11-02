@@ -6,7 +6,7 @@ import { moduleById, moduleByRole } from './schema'
 import type { JournalEntry, Rec, Workspace } from './types'
 import { cheques, creditUsed, findRecord, groupIds, list, paymentTerms, recordTitle, round2 } from './engine'
 
-export type StatementKind = 'invoice' | 'bill' | 'credit' | 'debit' | 'opening' | 'receipt' | 'payment' | 'reversal' | 'bounced' | 'refund' | 'void' | 'other'
+export type StatementKind = 'advance' | 'invoice' | 'bill' | 'credit' | 'debit' | 'opening' | 'receipt' | 'payment' | 'reversal' | 'bounced' | 'refund' | 'void' | 'other'
 
 export interface StatementRow {
   entry: string
@@ -66,6 +66,7 @@ function kindOf(ws: Workspace, j: JournalEntry, doc: Rec, side: 'customer' | 'su
   if (pay && j.ref.startsWith('REF-')) return { kind: 'refund' }
   if (pay) return { kind: side === 'customer' ? 'receipt' : 'payment', cheque: pay.cheque?.no }
   if (doc.values.opening) return { kind: 'opening' }
+  if (doc.values.credit_for === 'advance') return { kind: 'advance' }
   if (doc.values.credit_for) return { kind: side === 'customer' ? 'credit' : 'debit' }
   if (j.ref === doc.number) return { kind: side === 'customer' ? 'invoice' : 'bill' }
   return { kind: 'other' }
@@ -141,7 +142,7 @@ export function statementRows(ws: Workspace, schema: AppSchema, st: PartyStateme
 }
 
 export const KIND_LABEL: Record<StatementKind, string> = {
-  invoice: 'Invoice', bill: 'Purchase bill', credit: 'Credit note', debit: 'Debit note', opening: 'Opening balance',
+  advance: 'Advance', invoice: 'Invoice', bill: 'Purchase bill', credit: 'Credit note', debit: 'Debit note', opening: 'Opening balance',
   receipt: 'Receipt', payment: 'Payment', reversal: 'Payment reversed', bounced: 'Cheque bounced', refund: 'Refund', void: 'Voided', other: 'Other',
 }
 
