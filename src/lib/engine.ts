@@ -394,7 +394,7 @@ function log(ctx: Ctx, text: string, rec?: Rec) {
  * The values a new record starts with. The form shows exactly these, so what you see is what gets saved.
  * Stock tracking is on by default only when the company buys stock (it has a Purchases module); services companies start with it off.
  */
-export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'>, mod: ModuleDef, values: Record<string, unknown> = {}) {
+export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'> & { ws?: Workspace }, mod: ModuleDef, values: Record<string, unknown> = {}) {
   const defaults: Record<string, unknown> = {}
   for (const f of mod.fields) {
     if (f.type === 'user' && (f.key === 'owner' || f.key === 'assignee') && values[f.key] === undefined) defaults[f.key] = ctx.user.id
@@ -402,7 +402,7 @@ export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'>, mod: ModuleDef,
     if (f.key === 'track_stock' && values[f.key] === undefined) defaults[f.key] = Boolean(moduleByRole(ctx.schema, 'purchases'))
     if (f.type === 'date' && ['date', 'visit_date', 'survey_date'].includes(f.key) && values[f.key] === undefined) defaults[f.key] = todayISO()
   }
-  if (mod.lines && values.due_date === undefined && mod.role !== 'quotes') defaults.due_date = addDays(String(values.date ?? defaults.date ?? todayISO()), 30)
+  if (mod.lines && values.due_date === undefined && mod.role !== 'quotes') defaults.due_date = dueDateFor(ctx.ws, ctx.schema, mod, String(values.date ?? defaults.date ?? todayISO()), values)
   if (mod.role === 'quotes' && values.valid_until === undefined) defaults.valid_until = addDays(String(values.date ?? defaults.date ?? todayISO()), 15)
   return defaults
 }
@@ -827,6 +827,13 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     if (short.length) throw new EngineError(`Not enough stock: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${onHand(ctx.ws, pid)})`).join(', ')}`)
   }
 
+  // The customer's credit limit (and every group's above it): only an admin can post over it.
+  const overLimit = mod.role === 'invoices' && !sample && !rec.values.credit_for && !rec.values.opening ? creditProblems(ctx.ws, ctx.schema, String(party), totals(lines).total) : []
+  if (overLimit.length && !isAdmin(ctx)) {
+    const o = overLimit[0]
+    throw new EngineError(`${o.name}: this invoice takes what is owed to ${money(o.owed + o.cheques + o.adding, ctx.schema.company.currency)}, over the credit limit of ${money(o.limit, ctx.schema.company.currency)}. Only an admin can post it.`)
+  }
+
   // Every check is done, so the number is only taken when posting succeeds: numbering stays gapless.
   const t = totals(lines)
   const number = nextNumber(ctx, mod.numberPrefix || 'DOC', date, sample)
@@ -902,6 +909,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   rec.values.paid = 0
   rec.values.balance = t.total
   log(ctx, `posted ${mod.singular} ${number}`, rec)
+  for (const o of overLimit) log(ctx, `posted ${number} over the credit limit of ${o.name} (${money(o.limit, ctx.schema.company.currency)})`, rec)
   runWorkflows(ctx, rec, 'updated')
 }
 
@@ -3785,6 +3793,75 @@ export function removeSampleData(ctx: Ctx) {
   }
   log(ctx, `removed the sample data (${gone.size} records)`)
   return gone.size
+}
+
+/* ---------------- payment terms and credit limits (ACCO-16) ---------------- */
+
+const numberOrNone = (v: unknown) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v))
+
+/** The customer's or supplier's own setting, or the nearest group above it that has one (a hospital follows its authority). */
+function partySetting(ws: Workspace, schema: AppSchema, partyId: string, key: 'payment_terms' | 'credit_limit') {
+  const rec = findRecord(ws, partyId)
+  if (!rec) return undefined
+  const mod = moduleById(schema, rec.module)
+  for (const r of [rec, ...(mod ? ancestors(ws, mod, rec) : [])]) {
+    const n = numberOrNone(r.values[key])
+    if (n !== undefined) return { value: n, from: r }
+  }
+  return undefined
+}
+
+/** Days the customer or supplier has to pay (their own terms, their group's, or 30). */
+export function paymentTerms(ws: Workspace | undefined, schema: AppSchema, partyId: string) {
+  const t = ws ? partySetting(ws, schema, partyId, 'payment_terms')?.value : undefined
+  return t === undefined ? 30 : Math.max(0, Math.min(365, Math.trunc(t)))
+}
+
+/** A document's due date: its date plus the customer's or supplier's payment terms. */
+export function dueDateFor(ws: Workspace | undefined, schema: AppSchema, mod: ModuleDef, date: string, values: Record<string, unknown>) {
+  const party = String(values[mod.role === 'purchases' ? 'supplier' : 'customer'] ?? '')
+  return addDays(date, party ? paymentTerms(ws, schema, party) : 30)
+}
+
+export interface CreditCheck {
+  /** the customer or group whose limit it is */
+  party: string
+  name: string
+  limit: number
+  /** what its invoices still have open (credit notes and advances taken off) */
+  owed: number
+  /** cheques received but not yet cleared: counted as paid in the balance, still owed until the bank pays them */
+  cheques: number
+  /** what is being added (the invoice being posted) */
+  adding: number
+}
+
+/** What a customer (with everyone under it) owes now, with the cheques of theirs not yet cleared. */
+export function creditUsed(ws: Workspace, schema: AppSchema, partyId: string) {
+  const accounts = moduleByRole(schema, 'accounts')
+  const invoices = moduleByRole(schema, 'invoices')
+  const ids = accounts ? groupIds(ws, accounts, partyId) : new Set([partyId])
+  let owed = 0
+  for (const r of invoices ? list(ws, invoices.id) : []) {
+    if ((r.status === 'posted' || r.status === 'partial') && ids.has(String(r.values.customer ?? ''))) owed += Number(r.values.balance ?? 0)
+  }
+  const pending = cheques(ws).filter((c) => c.direction === 'in' && ids.has(c.party) && (c.state === 'in_hand' || c.state === 'deposited')).reduce((s, c) => s + c.amount, 0)
+  return { owed: round2(owed), cheques: round2(pending) }
+}
+
+/** Every credit limit (the customer's and each group's above it) that adding this amount would go over. */
+export function creditProblems(ws: Workspace, schema: AppSchema, customerId: string, adding: number): CreditCheck[] {
+  const rec = findRecord(ws, customerId)
+  const accounts = moduleByRole(schema, 'accounts')
+  if (!rec || !accounts || rec.module !== accounts.id) return []
+  const out: CreditCheck[] = []
+  for (const r of [rec, ...ancestors(ws, accounts, rec)]) {
+    const limit = numberOrNone(r.values.credit_limit)
+    if (limit === undefined || limit <= 0) continue
+    const used = creditUsed(ws, schema, r.id)
+    if (round2(used.owed + used.cheques + adding) > round2(limit)) out.push({ party: r.id, name: recordTitle(ws, schema, r), limit: round2(limit), ...used, adding: round2(adding) })
+  }
+  return out
 }
 
 /* ---------------- ageing ---------------- */

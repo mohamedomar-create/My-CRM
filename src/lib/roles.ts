@@ -180,6 +180,8 @@ export function systemFields(role: ModuleRole, vatRate: number): FieldDef[] {
         f('Phone', 'phone', { inList: true }),
         f('E-mail', 'email', { key: 'email' }),
         f('Belongs to', 'relation', { key: 'parent', target: MODULE_IDS.accounts, help: 'The group, head office or authority this customer is under (each of those can be under another)' }),
+        f('Payment terms (days)', 'number', { key: 'payment_terms', help: 'Sets the due date of their invoices; left empty, the group’s terms or 30 days' }),
+        f('Credit limit', 'currency', { key: 'credit_limit', help: 'Only an admin can post an invoice that takes what they owe (with cheques not yet cleared) over it; a group’s limit counts everyone under it' }),
       ]
     case 'contacts':
       return [
@@ -238,6 +240,7 @@ export function systemFields(role: ModuleRole, vatRate: number): FieldDef[] {
         f('Phone', 'phone', { inList: true }),
         f('E-mail', 'email', { key: 'email' }),
         f('Tax registration no.', 'text', { key: 'tax_id' }),
+        f('Payment terms (days)', 'number', { key: 'payment_terms', help: 'Sets the due date of their bills; left empty, 30 days' }),
       ]
     case 'purchases':
       return [
