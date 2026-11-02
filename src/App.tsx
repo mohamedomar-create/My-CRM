@@ -8,25 +8,26 @@ import Password from './pages/Password'
 import Onboarding from './pages/Onboarding'
 import Suggest from './pages/Suggest'
 
-const Builder = lazy(() => import('./builder/Builder'))
-const Shell = lazy(() => import('./workspace/Shell'))
-const Dashboard = lazy(() => import('./workspace/Dashboard'))
-const ModuleView = lazy(() => import('./workspace/ModuleView'))
-const RecordPage = lazy(() => import('./workspace/RecordPage'))
-const Inventory = lazy(() => import('./workspace/Inventory'))
-const Accounting = lazy(() => import('./workspace/Accounting'))
-const Team = lazy(() => import('./workspace/Team'))
-const Approvals = lazy(() => import('./workspace/Approvals'))
-const Migrate = lazy(() => import('./workspace/Migrate'))
-const SalesAnalysis = lazy(() => import('./workspace/SalesAnalysis'))
-const Plan = lazy(() => import('./workspace/Plan'))
-const Audit = lazy(() => import('./workspace/Audit'))
+const Builder = lazy(loadScreen(() => import('./builder/Builder')))
+const Shell = lazy(loadScreen(() => import('./workspace/Shell')))
+const Dashboard = lazy(loadScreen(() => import('./workspace/Dashboard')))
+const ModuleView = lazy(loadScreen(() => import('./workspace/ModuleView')))
+const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
+const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
+const Accounting = lazy(loadScreen(() => import('./workspace/Accounting')))
+const Team = lazy(loadScreen(() => import('./workspace/Team')))
+const Approvals = lazy(loadScreen(() => import('./workspace/Approvals')))
+const Migrate = lazy(loadScreen(() => import('./workspace/Migrate')))
+const SalesAnalysis = lazy(loadScreen(() => import('./workspace/SalesAnalysis')))
+const Plan = lazy(loadScreen(() => import('./workspace/Plan')))
+const Audit = lazy(loadScreen(() => import('./workspace/Audit')))
 import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signOut, signOutIdle, useStore } from './lib/store'
 import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
 import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
+import { loadScreen } from './lib/update'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
