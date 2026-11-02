@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { CheckCircle2, Download, Lock, Plus, Rocket, Trash2, Unlock, Upload } from 'lucide-react'
 import { useApp } from './useApp'
 import {
-  goLive as goLiveCheck, importKey, money, openingCheques, openingDateOf, openingDocuments, openingStatus, openingStock, openingTrialBalance,
+  goLive as goLiveCheck, importKey, money, openingCheques, openingDateOf, openingDocuments, openingEarlierPeriods, openingStatus, openingStock, openingTrialBalance,
   openingWht, RowsError, todayISO, type Ctx,
 } from '../lib/engine'
 import { chartOf, moneyAccounts, moneyKind, accountName } from '../lib/accounts'
@@ -310,6 +310,7 @@ export default function GoLive({ presets }: { presets?: Record<string, SheetPres
       {o && (
         <>
           <SheetCard key={`tb:${presets?.tb?.file ?? ""}`} preset={presets?.tb} step="tb" disabled={final} mapRows={(r) => r.map((x) => ({ ...x, account: autoAccount(ws, x.account, x.name) ?? x.account }))} run={(c, r) => openingTrialBalance(c, r)} send={(r) => act('opening.trialBalance', { rows: r.map(({ account, debit, credit }) => ({ account, debit, credit })) }, tr('Trial balance saved'))} extra={(r, set) => <AccountMapping rows={r} set={set} />} />
+          {o.tb && <SheetCard key={`earlier:${presets?.earlier?.file ?? ""}`} preset={presets?.earlier} step="earlier" disabled={final} mapRows={(r) => r.map((x) => ({ ...x, account: autoAccount(ws, x.account, x.name) ?? x.account }))} run={(c, r) => openingEarlierPeriods(c, r)} send={(r) => act('opening.earlier', { rows: r.map(({ period, account, debit, credit }) => ({ period, account, debit, credit })) }, tr('Earlier periods saved'))} extra={(r, set) => <AccountMapping rows={r} set={set} />} />}
           {has('invoices') && <SheetCard key={`customers:${presets?.customers?.file ?? ""}`} preset={presets?.customers} step="customers" disabled={final} run={(c, r) => openingDocuments(c, 'customers', r)} send={(r) => act('opening.documents', { kind: 'customers', rows: r }, tr('Saved'))} />}
           {has('purchases') && <SheetCard key={`suppliers:${presets?.suppliers?.file ?? ""}`} preset={presets?.suppliers} step="suppliers" disabled={final} run={(c, r) => openingDocuments(c, 'suppliers', r)} send={(r) => act('opening.documents', { kind: 'suppliers', rows: r }, tr('Saved'))} />}
           {(has('invoices') || has('purchases')) && <SheetCard key={`cheques:${presets?.cheques?.file ?? ""}`} preset={presets?.cheques} step="cheques" disabled={final} run={(c, r) => openingCheques(c, r)} send={(r) => act('opening.cheques', { rows: r }, tr('Saved'))} />}

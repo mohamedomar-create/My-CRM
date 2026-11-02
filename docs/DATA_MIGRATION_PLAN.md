@@ -538,7 +538,21 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 **What it adds:** monthly trial balances of one or two earlier years posted as month-end summary entries, the years closed, and the opening checked against them.
 
 **Done when**
-- [ ] The profit and loss with "compare with last year" and the balance sheet on last year's year-end match the old system's.
+- [x] The profit and loss with "compare with last year" and the balance sheet on last year's year-end match the old system's. (Tested against the trial balances brought in; the first real company confirms them against its own old system.)
+
+> **Progress (H6 built).**
+> - **A new opening step, "Earlier periods (optional)"**, after the trial balance, and a sheet in the migration workbook:
+>   - one row per account per month: the month (2025-03, 03/2025 or a date in it), the account (matched to the chart like the trial balance), debit or credit at the month's end;
+>   - months may be skipped (quarters or half years are fine), but every December before the opening date is needed: each earlier year is closed from it;
+>   - every month must balance; a December, a month after the opening date, an unknown account or 3900 are refused, every problem by row.
+> - **In the books:**
+>   - the first month is the starting point; each later month is one summary entry of its movements, on its last day;
+>   - each earlier year is closed on 31 December (the usual year-end entry; the year shows as closed);
+>   - from the last month to the opening date: the difference to the opening trial balance; then the history is handed over to the opening balances;
+>   - from the opening date on, every balance is exactly what it is without the history, and 3900 is untouched.
+> - **What it gives:** the profit and loss of earlier years and months, the balance sheet on earlier dates, the cash flow from last year's closing cash, and "compare with last year". History is never in a VAT return.
+> - **Entered again or taken out** before going live: every entry is reversed on its own date and the years opened again. The opening trial balance can't be replaced while the earlier periods lead up to it.
+> - **Limits:** up to 72 months; up to 5,000 rows in one sheet.
 
 ### H7. Presets, AI mapping, files and partners (L, later)
 

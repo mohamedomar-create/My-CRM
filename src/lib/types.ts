@@ -247,6 +247,10 @@ export interface OpeningStep {
   stock: string[]
   /** the bank account whose first reconciliation starts at the opening */
   recon?: string
+  /** earlier periods (H6): the first and last month brought in, and the years they closed */
+  from?: string
+  to?: string
+  years?: number[]
 }
 
 /** Withholding tax of the go-live quarter from before going live: counted in Form 41, not posted again. */

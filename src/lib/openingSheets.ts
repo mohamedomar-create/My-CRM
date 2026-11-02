@@ -33,6 +33,13 @@ export const SHEETS: Record<string, Column[]> = {
     { key: 'debit', label: N_('Debit'), aliases: ['مدين', 'dr'] },
     { key: 'credit', label: N_('Credit'), aliases: ['دائن', 'cr'] },
   ],
+  earlier: [
+    { key: 'period', label: N_('Month'), required: true, aliases: ['period', 'month end', 'الشهر', 'الفترة', 'نهاية الشهر'], names: ['Month'] },
+    { key: 'account', label: N_('Account code'), required: true, aliases: ['account', 'code', 'كود الحساب', 'رقم الحساب'], hints: [/^Account /] },
+    { key: 'name', label: N_('Account name'), aliases: ['اسم الحساب', 'الحساب'] },
+    { key: 'debit', label: N_('Debit'), aliases: ['مدين', 'dr'] },
+    { key: 'credit', label: N_('Credit'), aliases: ['دائن', 'cr'] },
+  ],
   customers: PARTY_DOC(N_('Customer'), ['customer name', 'العميل', 'اسم العميل']),
   suppliers: PARTY_DOC(N_('Supplier'), ['supplier name', 'المورد', 'اسم المورد']),
   cheques: [
@@ -64,6 +71,7 @@ export const SHEETS: Record<string, Column[]> = {
 
 export const TITLES: Record<string, { title: string; help: string }> = {
   tb: { title: N_('Trial balance'), help: N_('The old system’s trial balance at the end of the opening date: account code, name, debit and credit. Accounts that a later step fills from its detail (customers, suppliers, stock, cheques, cash and bank) are kept to compare with; every other account is posted as it is.') },
+  earlier: { title: N_('Earlier periods (optional)'), help: N_('The old system’s trial balance at the end of each earlier month, one or two years back, so the profit and loss, the balance sheet and “compare with last year” cover the time before Bonyan. One row per account per month: the month, the account code and its debit or credit balance at the month’s end (the profit and loss for the year so far, as trial balances show it). Include every December: each earlier year is closed from it. Nothing changes from the opening date on.') },
   customers: { title: N_('What customers owe'), help: N_('One row per invoice not fully paid, with its old number, date, due date, total and the amount still owed, so ageing and collection work invoice by invoice. A customer’s advance or unused credit is a row with a negative amount.') },
   suppliers: { title: N_('What you owe suppliers'), help: N_('One row per bill not fully paid. An advance you paid a supplier is a row with a negative amount.') },
   cheques: { title: N_('Cheques not yet cashed'), help: N_('Cheques received and still in the safe or under collection, and cheques you issued that the bank hasn’t paid yet. After going live they are deposited, cleared or bounced like any cheque; a bounced one is owed again.') },

@@ -32,7 +32,7 @@ describe('the migration workbook', () => {
     const schema = generateSchema(templateById('distribution'), emptyAnswers('Co'))
     const steps = migrationSteps(schema)
     const roles = steps.map((s) => (s.kind === 'module' ? s.module.role : s.kind === 'books' ? s.step : s.kind === 'history' ? s.id : s.kind))
-    expect(roles).toEqual(['accounts', 'contacts', 'suppliers', 'products', 'leads', 'deals', 'tasks', 'activities', 'tb', 'customers', 'suppliers', 'cheques', 'stock', 'wht', 'history-sales', 'history-purchases'])
+    expect(roles).toEqual(['accounts', 'contacts', 'suppliers', 'products', 'leads', 'deals', 'tasks', 'activities', 'tb', 'earlier', 'customers', 'suppliers', 'cheques', 'stock', 'wht', 'history-sales', 'history-purchases'])
     // A custom module that links to deals comes after deals, whatever its role.
     const custom = { ...schema.modules.find((m) => m.role === 'contacts')!, id: 'm_visits', role: 'custom' as const, name: 'Visits', fields: [{ id: 'f1', key: 'deal', label: 'Deal', type: 'relation' as const, target: schema.modules.find((m) => m.role === 'deals')!.id }] }
     const order = migrationSteps({ ...schema, modules: [custom, ...schema.modules] }).map((s) => s.id)

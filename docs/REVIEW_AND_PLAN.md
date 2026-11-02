@@ -389,6 +389,7 @@ Two tracks run in parallel so visible UX progress does not wait for back-end wor
 | 1 | Foundations: the server becomes the boss | A (back end) | Week 7 | 3–4 months | Phase 0 |
 | 2A | Accounting core and Egypt compliance | A | Month 3 (engine work in parallel with Phase 1) | 3–4 months | Phase 1 for server posting |
 | H | Bring your history in (data migration, [plan](DATA_MIGRATION_PLAN.md)) | A + B | After Arabic (4.1) | 4–5 months; H1–H3 about 2–2.5 | 2A (opening balances, cheques, close) |
+| P | Plan and budget: cost centers, budgets, business plan | A + B | After H6 | 3–4 months; P1–P2 about 2 | 2A (statements), H6 (earlier years by month) |
 | 2B | Supply-chain depth | A | Month 6 | 4–5 months | 2A (chart of accounts, adjustments) |
 | 3 | CRM and builder depth | A + B | Month 6 | ~3 months | Phase 1 (record scope, events) |
 | 4 | UX, visual and dashboard overhaul | B (front end and design) | Month 2 (design system and Arabic first) | 6–8 months, in waves | Design system first; drill-down needs Phase 1 queries |
@@ -572,7 +573,9 @@ A smaller team stretches the timeline roughly in proportion.
 >
 > **Phase H4 done (CRM and activity history).** Stage history from a date per stage, lost reasons, long-closed deals off the board unless asked; calls, meetings, visits, e-mails and notes on each record's timeline in date order (undoable); former members keep history and reports by person true, with hand-over of their open records; a sales history panel (win rate, sales cycle, this year against last).
 >
-> **Phase H5 done (history store and document history).** Past invoices, credit notes, quotations and bills kept on the server, never loaded when the app opens, read a page at a time or as server totals, by side and role; a wizard step and workbook sheets for them (undoable, sent again adds nothing twice, linked to the opening balance still owed); each customer and supplier shows what they bought per year and the past documents with lines; a Sales analysis page by month, product, customer or rep with "include history". Sales reports no longer count opening balances. Next: H6, earlier periods in the books.
+> **Phase H5 done (history store and document history).** Past invoices, credit notes, quotations and bills kept on the server, never loaded when the app opens, read a page at a time or as server totals, by side and role; a wizard step and workbook sheets for them (undoable, sent again adds nothing twice, linked to the opening balance still owed); each customer and supplier shows what they bought per year and the past documents with lines; a Sales analysis page by month, product, customer or rep with "include history". Sales reports no longer count opening balances.
+>
+> **Phase H6 done (earlier periods in the books).** The old system's month-end trial balances for one or more earlier years become one summary entry per month (the first month is the starting point); every earlier year is closed on 31 December; on the opening date the history is handed over to the opening balances, so the books from the opening date on are exactly what they are without it and 3900 is untouched. The profit and loss, balance sheet, cash flow and "compare with last year" then cover the years before Bonyan. History is never in a VAT return. Next: Phase P (plan and budget), then H7 as customers ask.
 
 **Work items**
 - **H1:** import engine (Excel, large files, dry run, update by key, links by old id, value mapping, original dates and owners, batches with undo, no side effects).
@@ -586,6 +589,48 @@ A smaller team stretches the timeline roughly in proportion.
 **Acceptance checks**
 - [ ] An accountant migrates a test company and the ageing, cheques, stock and opening balance sheet match the old system, with 3900 at zero.
 - [ ] Three years of history import without slowing the app or changing any figure in the books.
+
+---
+
+### Phase P: Plan and budget (cost centers, budgets, business plan)
+
+**Goal.** An owner sets where the company is going and sees every month whether it is on the way: a budget the books are measured against, sales targets, and a business plan for the next 3–5 years that a bank or an investor accepts. Added at the owner's request on 2 November 2026.
+
+**Why now.** It needs the books (2A) and the earlier years month by month (H6): a budget starts from last year's actuals, and a plan from the company's real history. Most Egyptian SMEs plan in Excel today; none of the CRMs Bonyan competes with does this inside the books.
+
+**P1. Cost centers (S–M)**
+- An optional tag on document lines, journal lines and expenses: branch, department, project or van. Defaults per user, customer or product, so nobody types it twice.
+- Profit and loss by cost center, and every report filtered by one.
+- *Done when:* the profit and loss of all cost centers adds up to the company's, to the pound.
+
+**P2. Budget (M)**
+- A yearly budget per account and month, optionally per cost center.
+- Three ways to fill it:
+  - from last year's actuals with a growth % per line or section;
+  - typed in a grid (spread a year's figure evenly or by last year's seasonality);
+  - imported from Excel.
+- Versions: the original and revised budgets kept side by side; the owner approves a version before it is the active one (maker is never checker).
+- **Budget against actual:** per line the budget, the actual from the books, the difference and % used, month and year to date, with drill-down to the documents. Lines over budget show on the dashboard and in the weekly digest; an optional warning when a purchase or expense would take a line over.
+- **Sales targets** per rep, product or customer group, by month, with attainment on the dashboard (this is SALE-11's targets part).
+- **Cash budget:** expected receipts and payments by month (from the budget, open invoices and bills, cheques by due date), against the cash actually moved.
+- *Done when:* a company enters a budget from last year's actuals in under 10 minutes, and budget against actual for any month equals the profit and loss for that month to the pound.
+
+**P3. Business plan (L)**
+- A 3–5 year plan built from assumptions: sales by product line (volume × price) and growth, cost of sales %, staff (headcount × salary, raises), rent and overheads, capital expenditure and depreciation, loans (amount, rate, term), VAT and income tax, and how many days customers and suppliers take to pay and stock is kept.
+- Starts from the company's own history (the last closed year and this year to date), not a blank sheet.
+- **Outputs:** projected profit and loss, balance sheet and cash flow by month for year 1 and by year after; break-even, payback, return on investment (NPV and IRR); funding needed and when.
+- **Scenarios:** base, best and worst, side by side; change one assumption and see the effect at once.
+- **Export:** a printable plan in Arabic and English in the feasibility-study layout Egyptian banks ask for, and Excel.
+- After a year: the plan's first year against what happened.
+- *Done when:* an accountant rebuilds a sample plan from its assumptions and the three statements agree with each other (the balance sheet balances, cash ties to the cash flow) for every period and scenario.
+
+**What the owner will see**
+- Accounting → Budget, with "Budget against actual".
+- Over-budget warnings on the dashboard.
+- Targets and attainment per rep.
+- Accounting → Business plan, with scenarios and a printable plan.
+
+**Rough effort:** P1 S–M, P2 M, P3 L (about 3–4 months together; P1–P2 about 2).
 
 ---
 
