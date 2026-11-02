@@ -627,6 +627,15 @@ A smaller team stretches the timeline roughly in proportion.
 - **Cash budget:** expected receipts and payments by month (from the budget, open invoices and bills, cheques by due date), against the cash actually moved.
 - *Done when:* a company enters a budget from last year's actuals in under 10 minutes, and budget against actual for any month equals the profit and loss for that month to the pound.
 
+> **Progress (P2, first part: budgets).**
+> - **Accounting → Budgets:** a year's income and expenses per account and month, optionally per cost center.
+>   - Start from last year's actuals (per account, cost center and month) grown by a percentage for income and one for expenses, or empty.
+>   - Edit in a grid; type a year total and it is spread like last year (or evenly); bring the grid from Excel (account, cost center, a column per month in English, Arabic or 1–12, or a year total).
+> - **Versions and approval:** drafted, submitted, approved by an admin who didn't prepare it (or by its preparer with a written reason), or sent back with what to change; a revision during the year is a new version, and approving it keeps the earlier one as superseded. Checked on the server; every step is in the activity log.
+> - **Budget against actual:** per account, income and expenses apart, for the month, the year to date (budgeted, actual, better or worse, % used) and the whole year, for the company, one cost center (with those under it) or none; lines more than 10% off are highlighted. The actuals are the profit and loss's own figures (tested).
+> - **Dashboard (finance):** this year's profit against the budget so far, and the lines furthest off budget.
+> - **Next (P2, second part):** sales targets per rep, product or customer group with attainment, the cash budget, a warning when a bill would take a line over budget, and over-budget lines in a weekly digest.
+
 **P3. Business plan (L)**
 - A 3–5 year plan built from assumptions: sales by product line (volume × price) and growth, cost of sales %, staff (headcount × salary, raises), rent and overheads, capital expenditure and depreciation, loans (amount, rate, term), VAT and income tax, and how many days customers and suppliers take to pay and stock is kept.
 - Starts from the company's own history (the last closed year and this year to date), not a blank sheet.

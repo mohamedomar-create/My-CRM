@@ -193,6 +193,34 @@ export interface User {
   costCenter?: string
 }
 
+/** One budget line: an income or expense account, optionally for one cost center, and its amount per month. */
+export interface BudgetLine {
+  account: string
+  cc?: string
+  /** January to December; income and expenses both as positive amounts */
+  months: number[]
+}
+
+/** A version of a year's budget: drafted, submitted, approved by another admin (then superseded by a revision). */
+export interface Budget {
+  id: string
+  year: number
+  name: string
+  version: number
+  status: 'draft' | 'submitted' | 'approved' | 'superseded'
+  lines: BudgetLine[]
+  createdBy: string
+  createdAt: string
+  submittedBy?: string
+  submittedAt?: string
+  approvedBy?: string
+  approvedAt?: string
+  /** why it was sent back, or why its own preparer approved it */
+  note?: string
+  /** the version it revises */
+  from?: string
+}
+
 /** A branch, department, project or van that income and expenses are tagged with (P1); it can be under another. */
 export interface CostCenter {
   code: string
@@ -243,6 +271,8 @@ export interface Workspace {
   chart?: import('./accounts').Account[]
   /** the company's cost centers (P1) */
   costCenters?: CostCenter[]
+  /** budgets, every version of every year (P2) */
+  budgets?: Budget[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData
