@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -58,6 +58,9 @@ export interface CommandArgs {
   'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
   'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
+  'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
+  'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
+  'team.setCostCenter': { userId: string; code?: string }
   'journal.reverse': { id: string; date?: string }
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'opening.setGoLive': { date: string }
@@ -270,6 +273,16 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'accounts.add': { run: (ws, u, a) => addAccount(ctx(ws, u), a) },
   'accounts.update': { run: (ws, u, a) => updateAccount(ctx(ws, u), a.code, a) },
   'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), a) },
+  'costCenter.add': { run: (ws, u, a) => addCostCenter(ctx(ws, u), { code: String(a.code ?? ''), name: String(a.name ?? ''), nameAr: a.nameAr === undefined ? undefined : String(a.nameAr), parent: a.parent ? String(a.parent) : undefined }) },
+  'costCenter.update': {
+    run: (ws, u, a) => void updateCostCenter(ctx(ws, u), String(a.code ?? ''), {
+      ...(a.name !== undefined ? { name: String(a.name) } : {}),
+      ...(a.nameAr !== undefined ? { nameAr: String(a.nameAr) } : {}),
+      ...(a.parent !== undefined ? { parent: a.parent === null ? null : String(a.parent) } : {}),
+      ...(a.active !== undefined ? { active: a.active === true } : {}),
+    }),
+  },
+  'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
   'opening.setGoLive': { run: (ws, u, a) => void setGoLive(ctx(ws, u), String(a.date)) },

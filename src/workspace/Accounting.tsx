@@ -8,13 +8,14 @@ import { msg, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
 import GoLive from './GoLive'
+import CostCenters from './CostCenters'
 import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">{tr('Only Admin and finance roles can see accounting.')}</div>
   const cur = schema.company.currency
@@ -55,6 +56,7 @@ export default function Accounting() {
         <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>{tr('Journal')}</button>
         <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>{tr('New journal voucher')}</button>
         <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>{tr('Chart of accounts')}</button>
+        <button className={tab === 'cc' ? 'on' : ''} onClick={() => setTab('cc')}>{tr('Cost centers')}</button>
         <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>{tr('Opening balances')}</button>
         <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>{tr('Payments')}</button>
         <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>{tr('Bank & cash')}</button>
@@ -103,7 +105,7 @@ export default function Accounting() {
             <div className="card" key={j.id} style={{ padding: 12 }}>
               <div className="row between"><b className="mono">{j.ref}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
               <table className="lines" style={{ marginTop: 6 }}>
-                <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
+                <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}{l.cc && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{l.cc}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
               </table>
             </div>
           ))}
@@ -111,6 +113,7 @@ export default function Accounting() {
       )}
       {tab === 'voucher' && <JournalVoucher />}
       {tab === 'chart' && <ChartOfAccounts />}
+      {tab === 'cc' && <CostCenters />}
       {tab === 'opening' && (
         <div className="stack">
           <GoLive />

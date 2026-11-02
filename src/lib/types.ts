@@ -15,6 +15,8 @@ export interface Line {
   taxCode?: string
   /** on a credit or debit note: the line of the original document it gives back */
   from?: string
+  /** the cost center its income or expense goes to (P1) */
+  cc?: string
 }
 
 export interface Rec {
@@ -87,7 +89,8 @@ export interface JournalEntry {
   ref: string
   memo: string
   doc?: string
-  lines: { account: AccountCode; debit: number; credit: number; note?: string }[]
+  /** cc: the cost center of an income or expense line (P1) */
+  lines: { account: AccountCode; debit: number; credit: number; note?: string; cc?: string }[]
   sample?: boolean
   /** entered by hand (a journal voucher), not by a document */
   manual?: boolean
@@ -186,6 +189,18 @@ export interface User {
   former?: boolean
   /** the e-mail they had, kept for the record only (a former member never signs in) */
   formerEmail?: string
+  /** their own cost center (a branch, a van): the lines they enter start with it */
+  costCenter?: string
+}
+
+/** A branch, department, project or van that income and expenses are tagged with (P1); it can be under another. */
+export interface CostCenter {
+  code: string
+  name: string
+  nameAr?: string
+  parent?: string
+  /** turned off: no new postings; it stays on what was posted with it */
+  active: boolean
 }
 
 export interface WorkspaceData {
@@ -226,6 +241,8 @@ export interface Workspace {
   }
   /** the company's chart of accounts (see accounts.ts); missing = the standard chart */
   chart?: import('./accounts').Account[]
+  /** the company's cost centers (P1) */
+  costCenters?: CostCenter[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData

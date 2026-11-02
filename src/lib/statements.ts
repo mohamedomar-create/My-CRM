@@ -2,7 +2,7 @@
 // (direct method) and the general ledger they all drill down to. Pure functions, so the server and tests can use them.
 import type { JournalEntry, Workspace } from './types'
 import { account, accountName, chartOf, moneyKind, type Account } from './accounts'
-import { isClosingEntry, isHistoryBalance, round2 } from './engine'
+import { costCenter, costCenterCodes, costCenters, isClosingEntry, isHistoryBalance, round2 } from './engine'
 import { N_ } from './i18n'
 
 export interface Row {
@@ -20,14 +20,27 @@ export interface Section {
 const sum = (rows: { amount: number }[]) => round2(rows.reduce((s, r) => s + r.amount, 0))
 const inPeriod = (j: JournalEntry, from: string, to: string) => j.date >= from && j.date <= to
 
-/** debits − credits per account over the entries chosen */
-function balances(ws: Workspace, keep: (j: JournalEntry) => boolean) {
+type Line = JournalEntry['lines'][number]
+
+/** debits − credits per account over the entries chosen (and, for a cost center, the lines tagged with it) */
+function balances(ws: Workspace, keep: (j: JournalEntry) => boolean, line: (l: Line) => boolean = () => true) {
   const out = new Map<string, number>()
   for (const j of ws.data.journal) {
     if (!keep(j)) continue
-    for (const l of j.lines) out.set(l.account, round2((out.get(l.account) ?? 0) + l.debit - l.credit))
+    for (const l of j.lines) if (line(l)) out.set(l.account, round2((out.get(l.account) ?? 0) + l.debit - l.credit))
   }
   return out
+}
+
+/** No cost center: income and expenses posted without one. */
+export const NO_COST_CENTER = '__none'
+
+/** The lines of one cost center and every one under it, or of none (NO_COST_CENTER); all lines when not given. */
+function ccLines(ws: Workspace, cc?: string): (l: Line) => boolean {
+  if (!cc) return () => true
+  if (cc === NO_COST_CENTER) return (l) => !l.cc
+  const codes = costCenterCodes(ws, cc)
+  return (l) => Boolean(l.cc && codes.has(l.cc))
 }
 
 function section(ws: Workspace, title: string, b: Map<string, number>, pick: (a: Account) => boolean, sign: 1 | -1, lang: 'en' | 'ar'): Section {
@@ -43,9 +56,12 @@ const isOtherIncome = (a: Account) => a.type === 'income' && a.code.startsWith('
 /** Cost of sales: the goods sold and stock written off or found (inventory adjustments). Everything else is overhead. */
 const isCostOfSales = (a: Account) => a.type === 'expense' && (a.code === '5000' || a.code === '5900')
 
-/** Profit and loss for entries dated from…to (inclusive). The year-end closing entries are left out. */
-export function incomeStatement(ws: Workspace, from: string, to: string, lang: 'en' | 'ar' = 'en') {
-  const b = balances(ws, (j) => inPeriod(j, from, to) && !isClosingEntry(j))
+/**
+ * Profit and loss for entries dated from…to (inclusive). The year-end closing entries are left out. With a cost
+ * center, only its income and expenses (and those of the cost centers under it).
+ */
+export function incomeStatement(ws: Workspace, from: string, to: string, lang: 'en' | 'ar' = 'en', cc?: string) {
+  const b = balances(ws, (j) => inPeriod(j, from, to) && !isClosingEntry(j), ccLines(ws, cc))
   const revenue = section(ws, N_('Revenue'), b, (a) => a.type === 'income' && !isOtherIncome(a), -1, lang)
   const cost = section(ws, N_('Cost of sales'), b, isCostOfSales, 1, lang)
   const gross = round2(revenue.total - cost.total)
@@ -54,6 +70,49 @@ export function incomeStatement(ws: Workspace, from: string, to: string, lang: '
   const other = section(ws, N_('Other income'), b, isOtherIncome, -1, lang)
   const net = round2(operating + other.total)
   return { from, to, revenue, cost, gross, grossMargin: revenue.total ? round2((gross / revenue.total) * 100) : 0, overheads, operating, other, net }
+}
+
+/**
+ * Profit and loss side by side per cost center, from…to: the top cost centers (or those directly under one), each
+ * with everything under it, then what has no cost center. The columns always add up to the company's profit and loss.
+ */
+export function profitByCostCenter(ws: Workspace, from: string, to: string, lang: 'en' | 'ar' = 'en', under?: string) {
+  const all = costCenters(ws)
+  const parent = under ? costCenter(ws, under) : undefined
+  const kids = all.filter((c) => (parent ? c.parent === parent.code : !c.parent || !costCenter(ws, c.parent)))
+  const cols: { code: string; name: string; own?: boolean }[] = [
+    ...(parent ? [{ code: parent.code, name: (lang === 'ar' && parent.nameAr) || parent.name, own: true }] : []),
+    ...kids.map((c) => ({ code: c.code, name: (lang === 'ar' && c.nameAr) || c.name })),
+    ...(parent ? [] : [{ code: NO_COST_CENTER, name: lang === 'ar' ? 'بدون مركز تكلفة' : 'No cost center' }]),
+  ]
+  // Which column a line goes to: its own cost center, or the one above it that is a column.
+  const sets = cols.map((c) => (c.code === NO_COST_CENTER ? new Set<string>() : c.own ? new Set([c.code]) : costCenterCodes(ws, c.code)))
+  const scope = parent ? costCenterCodes(ws, parent.code) : undefined
+  const colOf = (l: Line) => {
+    if (scope && !(l.cc && scope.has(l.cc))) return -1
+    if (!l.cc) return parent ? -1 : cols.length - 1
+    const i = sets.findIndex((set, k) => cols[k].code !== NO_COST_CENTER && set.has(l.cc!))
+    return i >= 0 ? i : parent ? -1 : cols.length - 1
+  }
+  const by = cols.map(() => new Map<string, number>())
+  for (const j of ws.data.journal) {
+    if (!inPeriod(j, from, to) || isClosingEntry(j)) continue
+    for (const l of j.lines) {
+      const i = colOf(l)
+      if (i >= 0) by[i].set(l.account, round2((by[i].get(l.account) ?? 0) + l.debit - l.credit))
+    }
+  }
+  const sections = (b: Map<string, number>) => {
+    const revenue = section(ws, N_('Revenue'), b, (a) => a.type === 'income' && !isOtherIncome(a), -1, lang)
+    const cost = section(ws, N_('Cost of sales'), b, isCostOfSales, 1, lang)
+    const overheads = section(ws, N_('Operating expenses'), b, (a) => a.type === 'expense' && !isCostOfSales(a), 1, lang)
+    const other = section(ws, N_('Other income'), b, isOtherIncome, -1, lang)
+    const gross = round2(revenue.total - cost.total)
+    return { revenue, cost, gross, overheads, operating: round2(gross - overheads.total), other, net: round2(gross - overheads.total + other.total) }
+  }
+  const columns = cols.map((c, i) => ({ ...c, ...sections(by[i]) }))
+  const total = parent ? incomeStatement(ws, from, to, lang, parent.code) : incomeStatement(ws, from, to, lang)
+  return { from, to, columns, total }
 }
 
 /* ---------------- balance sheet ---------------- */

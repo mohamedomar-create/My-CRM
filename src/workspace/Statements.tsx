@@ -4,12 +4,12 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Download, Printer, AlertTriangle } from 'lucide-react'
 import { useApp } from './useApp'
-import { money, round2, todayISO } from '../lib/engine'
+import { costCenterName, costCenters, costCenterTree, money, round2, todayISO } from '../lib/engine'
 import { accountName, chartOf } from '../lib/accounts'
 import { N_, tr, useLang } from '../lib/i18n'
-import { balanceSheet, cashFlow, comparePeriod, generalLedger, incomeStatement, toCsv, type Section } from '../lib/statements'
+import { balanceSheet, cashFlow, comparePeriod, generalLedger, incomeStatement, NO_COST_CENTER, profitByCostCenter, toCsv, type Section } from '../lib/statements'
 
-type Tab = 'pl' | 'bs' | 'cf' | 'gl'
+type Tab = 'pl' | 'cc' | 'bs' | 'cf' | 'gl'
 type Compare = 'none' | 'previous' | 'lastYear'
 
 function presets(today: string) {
@@ -52,6 +52,10 @@ export default function Statements() {
   const [compare, setCompare] = useState<Compare>('none')
   const prior = compare === 'none' ? undefined : comparePeriod(period.from, period.to, compare)
   const [glAccount, setGlAccount] = useState('1100')
+  // Cost centers (P1): the profit and loss of one (with those under it), or all side by side.
+  const ccs = costCenters(ws)
+  const [cc, setCc] = useState('')
+  const [inside, setInside] = useState('')
   const lg = lang === 'ar' ? 'ar' : 'en'
   const open = (code: string) => { if (code && /^\d/.test(code)) { setGlAccount(code); setTab('gl') } }
 
@@ -92,10 +96,46 @@ export default function Statements() {
 
   let body: React.ReactNode = null
   let title = ''
-  if (tab === 'pl') {
-    const pl = incomeStatement(ws, period.from, period.to, lg)
-    const was = prior && incomeStatement(ws, prior.from, prior.to, lg)
-    title = `${tr('Profit and loss')} ${label(period.from, period.to)}`
+  if (tab === 'cc') {
+    const pc = profitByCostCenter(ws, period.from, period.to, lg, inside || undefined)
+    const cols = [...pc.columns.map((c) => ({ code: c.code, name: c.code === NO_COST_CENTER ? tr('No cost center') : c.own ? tr('{name} itself', { name: c.name }) : c.name, s: c })), { code: '__total', name: tr('Total'), s: { ...pc.total, code: '__total', name: '' } }]
+    title = `${tr('Profit and loss by cost center')} ${label(period.from, period.to)}${inside ? ` · ${costCenterName(ws, inside, lg)}` : ''}`
+    type Part = 'revenue' | 'cost' | 'overheads' | 'other'
+    csv.push(['', ...cols.map((c) => c.name)])
+    const part = (k: Part) => {
+      const codes = [...new Set(cols.flatMap((c) => c.s[k].rows.map((r) => r.code)))].sort()
+      const rows = codes.map((code) => ({ code, name: cols.map((c) => c.s[k].rows.find((r) => r.code === code)?.name).find(Boolean) ?? code, amounts: cols.map((c) => c.s[k].rows.find((r) => r.code === code)?.amount ?? 0) }))
+      csv.push([tr(pc.total[k].title)])
+      for (const r of rows) csv.push([`${r.code} ${r.name}`, ...r.amounts])
+      csv.push([tr('Total {what}', { what: tr(pc.total[k].title).toLowerCase() }), ...cols.map((c) => c.s[k].total)])
+      return (
+        <tbody key={k}>
+          <tr className="section-row"><td colSpan={cols.length + 1}><b>{tr(pc.total[k].title)}</b></td></tr>
+          {rows.map((r) => <tr key={r.code} onClick={() => open(r.code)} style={{ cursor: 'pointer' }}><td style={{ paddingInlineStart: 22 }}><span className="mono muted">{r.code} </span>{r.name}</td>{r.amounts.map((a, i) => <td key={i} className="num">{a ? money(a, cur) : '—'}</td>)}</tr>)}
+          <tr><td><b>{tr('Total {what}', { what: tr(pc.total[k].title).toLowerCase() })}</b></td>{cols.map((c) => <td key={c.code} className="num"><b>{money(c.s[k].total, cur)}</b></td>)}</tr>
+        </tbody>
+      )
+    }
+    const sum = (labelText: string, pick: (x: { gross: number; operating: number; net: number }) => number) => {
+      csv.push([labelText, ...cols.map((c) => pick(c.s))])
+      return <tbody key={labelText}><tr className="total-row"><td><b>{labelText}</b></td>{cols.map((c) => <td key={c.code} className="num" style={{ color: pick(c.s) < 0 ? 'var(--danger)' : undefined }}><b>{money(pick(c.s), cur)}</b></td>)}</tr></tbody>
+    }
+    body = ccs.length === 0 ? <p className="muted">{tr('No cost centers yet. Add them under Accounting → Cost centers.')}</p> : (
+      <table className="data statement">
+        <thead><tr><th />{cols.map((c) => <th key={c.code} className="num">{c.name}</th>)}</tr></thead>
+        {part('revenue')}
+        {part('cost')}
+        {sum(tr('Gross profit'), (x) => x.gross)}
+        {part('overheads')}
+        {sum(tr('Operating profit'), (x) => x.operating)}
+        {part('other')}
+        {sum(tr('Net profit'), (x) => x.net)}
+      </table>
+    )
+  } else if (tab === 'pl') {
+    const pl = incomeStatement(ws, period.from, period.to, lg, cc || undefined)
+    const was = prior && incomeStatement(ws, prior.from, prior.to, lg, cc || undefined)
+    title = `${tr('Profit and loss')} ${label(period.from, period.to)}${cc ? ` · ${cc === NO_COST_CENTER ? tr('No cost center') : costCenterName(ws, cc, lg)}` : ''}`
     body = (
       <table className="data statement">
         {head(was ? ['', label(period.from, period.to), label(prior!.from, prior!.to), tr('Change')] : ['', label(period.from, period.to)])}
@@ -179,14 +219,31 @@ export default function Statements() {
     <div className="stack">
       <div className="row no-print" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="seg">
-          {([['pl', N_('Profit and loss')], ['bs', N_('Balance sheet')], ['cf', N_('Cash flow')], ['gl', N_('General ledger')]] as const).map(([k, v]) => <button key={k} type="button" className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{tr(v)}</button>)}
+          {([['pl', N_('Profit and loss')], ...(ccs.length ? [['cc', N_('By cost center')] as const] : []), ['bs', N_('Balance sheet')], ['cf', N_('Cash flow')], ['gl', N_('General ledger')]] as const).map(([k, v]) => <button key={k} type="button" className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{tr(v)}</button>)}
         </div>
         <label className="field" style={{ width: 170 }}>{tr('Period')}<select value={preset} onChange={(e) => setPreset(e.target.value as keyof typeof p | 'custom')}>{Object.entries(p).map(([k, v]) => <option key={k} value={k}>{tr(v.label)}</option>)}<option value="custom">{tr('Custom…')}</option></select></label>
         {preset === 'custom' && <>
           <label className="field" style={{ width: 160 }}>{tr('From')}<input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} /></label>
           <label className="field" style={{ width: 160 }}>{tr('To')}<input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} /></label>
         </>}
-        {tab !== 'gl' && <label className="field" style={{ width: 200 }}>{tr('Compare with')}<select value={compare} onChange={(e) => setCompare(e.target.value as Compare)}><option value="none">{tr('Nothing')}</option><option value="previous">{tr('The period before')}</option><option value="lastYear">{tr('Same period last year')}</option></select></label>}
+        {tab === 'pl' && ccs.length > 0 && (
+          <label className="field" style={{ width: 220 }}>{tr('Cost center')}
+            <select value={cc} onChange={(e) => setCc(e.target.value)}>
+              <option value="">{tr('All cost centers')}</option>
+              {costCenterTree(ccs).map(({ c, depth }) => <option key={c.code} value={c.code}>{'\u00a0\u00a0'.repeat(depth)}{costCenterName(ws, c.code, lg)}</option>)}
+              <option value={NO_COST_CENTER}>{tr('No cost center')}</option>
+            </select>
+          </label>
+        )}
+        {tab === 'cc' && (
+          <label className="field" style={{ width: 220 }}>{tr('Show')}
+            <select value={inside} onChange={(e) => setInside(e.target.value)}>
+              <option value="">{tr('The top cost centers')}</option>
+              {costCenterTree(ccs).filter(({ c }) => ccs.some((x) => x.parent === c.code)).map(({ c, depth }) => <option key={c.code} value={c.code}>{'\u00a0\u00a0'.repeat(depth)}{tr('Inside {name}', { name: costCenterName(ws, c.code, lg) })}</option>)}
+            </select>
+          </label>
+        )}
+        {tab !== 'gl' && tab !== 'cc' && <label className="field" style={{ width: 200 }}>{tr('Compare with')}<select value={compare} onChange={(e) => setCompare(e.target.value as Compare)}><option value="none">{tr('Nothing')}</option><option value="previous">{tr('The period before')}</option><option value="lastYear">{tr('Same period last year')}</option></select></label>}
         <button type="button" className="secondary" onClick={() => download(`${title.replace(/[^\w؀-ۿ -]+/g, '').replace(/\s+/g, '-')}.csv`, toCsv([[title], [], ...csv]))}><Download size={14} /> {tr('Excel (CSV)')}</button>
         <button type="button" className="secondary" onClick={() => window.print()}><Printer size={14} /> {tr('Print / PDF')}</button>
       </div>

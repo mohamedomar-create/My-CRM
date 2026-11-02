@@ -3,7 +3,7 @@
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, ActivityKind, Approval, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
+import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
 import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
@@ -407,7 +407,7 @@ export function defaultValues(ctx: Pick<Ctx, 'schema' | 'user'>, mod: ModuleDef,
   return defaults
 }
 
-export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, unknown>, opts: { stage?: string; lines?: Line[]; silent?: boolean; quiet?: boolean } = {}): Rec {
+export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, unknown>, opts: { stage?: string; lines?: Line[]; silent?: boolean; quiet?: boolean; /** lines keep exactly their own cost centers (a credit note mirrors its invoice) */ ownCc?: boolean } = {}): Rec {
   const mod = moduleById(ctx.schema, moduleId)
   if (!mod) throw new EngineError('This module no longer exists')
   if (!opts.silent) need(ctx, moduleId, 'create')
@@ -431,6 +431,7 @@ export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, 
   if (mod.lines) {
     rec.status = 'draft'
     rec.lines = (opts.lines ?? []).map((l) => ({ ...l, id: l.id || uid('l') }))
+    lineCostCenters(ctx, rec.lines, opts.ownCc)
     applyTotals(rec)
   }
   if (mod.role === 'products') {
@@ -541,6 +542,141 @@ function pick(mod: ModuleDef, values: Record<string, unknown>) {
   return out
 }
 
+/* ---------------- cost centers (Phase P1) ---------------- */
+
+/** How many layers cost centers can have (a branch, its departments, their teams…). */
+export const MAX_CC_LAYERS = 6
+const CC_CODE = /^[A-Za-z0-9_-]{1,20}$/
+
+/** The company's cost centers: branches, departments, projects, vans. Income and expenses are tagged with them. */
+export const costCenters = (ws: Pick<Workspace, 'costCenters'>) => ws.costCenters ?? []
+export const costCenter = (ws: Pick<Workspace, 'costCenters'>, code: string) => costCenters(ws).find((c) => c.code === code)
+export function costCenterName(ws: Pick<Workspace, 'costCenters'>, code: string, lang: 'en' | 'ar' = 'en') {
+  const c = costCenter(ws, code)
+  return c ? `${c.code} · ${(lang === 'ar' && c.nameAr) || c.name}` : code
+}
+
+/** A cost center and every one under it (a branch and its departments). */
+export function costCenterCodes(ws: Pick<Workspace, 'costCenters'>, code: string) {
+  const out = new Set([code])
+  for (let grew = true; grew;) {
+    grew = false
+    for (const c of costCenters(ws)) if (c.parent && out.has(c.parent) && !out.has(c.code)) { out.add(c.code); grew = true }
+  }
+  return out
+}
+
+/** The cost centers above one, nearest first. */
+export function costCenterPath(ws: Pick<Workspace, 'costCenters'>, code: string) {
+  const out: CostCenter[] = []
+  let c = costCenter(ws, code)
+  while (c?.parent && out.length < MAX_CC_LAYERS * 2) {
+    const p = costCenter(ws, c.parent)
+    if (!p || out.includes(p)) break
+    out.push(p)
+    c = p
+  }
+  return out
+}
+
+/** Cost centers in tree order, each with its layer (0 = top). */
+export function costCenterTree(list: CostCenter[]) {
+  const out: { c: CostCenter; depth: number }[] = []
+  const known = new Set(list.map((c) => c.code))
+  const walk = (parent: string | undefined, depth: number) => {
+    for (const c of list.filter((x) => (parent ? x.parent === parent : !x.parent || !known.has(x.parent))).sort((a, b) => a.code.localeCompare(b.code))) {
+      if (out.some((o) => o.c.code === c.code)) continue
+      out.push({ c, depth })
+      walk(c.code, depth + 1)
+    }
+  }
+  walk(undefined, 0)
+  return out
+}
+
+/** A cost center to post with: one that exists and is on. */
+function activeCostCenter(ctx: Ctx, code: string) {
+  const c = costCenter(ctx.ws, code)
+  if (!c) throw new EngineError(`Cost center ${code} doesn’t exist`)
+  if (!c.active) throw new EngineError(`Cost center ${c.code} ${c.name} is turned off`)
+  return c.code
+}
+
+/** Checks a document's lines' cost centers; unless `asIs`, lines without one take the person's own (a new document). */
+function lineCostCenters(ctx: Ctx, lines: Line[], asIs = false) {
+  const mine = ctx.user.costCenter && costCenter(ctx.ws, ctx.user.costCenter)?.active ? ctx.user.costCenter : undefined
+  for (const l of lines) {
+    if (!l.cc && !asIs && mine) l.cc = mine
+    if (l.cc) l.cc = activeCostCenter(ctx, String(l.cc))
+    else delete l.cc
+  }
+}
+
+function ccLayers(ws: Workspace, code: string, parent?: string) {
+  const below = (c: string): number => Math.max(0, ...costCenters(ws).filter((x) => x.parent === c).map((x) => 1 + below(x.code)))
+  return (parent ? costCenterPath(ws, parent).length + 2 : 1) + below(code)
+}
+
+function checkCcParent(ws: Workspace, code: string, parent?: string) {
+  if (!parent) return
+  if (!costCenter(ws, parent)) throw new EngineError(`Cost center ${parent} doesn’t exist`)
+  if (parent === code || costCenterCodes(ws, code).has(parent)) throw new EngineError('A cost center can’t be under itself or under one of its own')
+  if (ccLayers(ws, code, parent) > MAX_CC_LAYERS) throw new EngineError(`Cost centers can have up to ${MAX_CC_LAYERS} layers`)
+}
+
+/** Adds a cost center (finance), optionally under another. */
+export function addCostCenter(ctx: Ctx, c: { code: string; name: string; nameAr?: string; parent?: string }) {
+  needFinance(ctx, 'set up cost centers')
+  const code = String(c.code ?? '').trim().toUpperCase()
+  const name = String(c.name ?? '').trim()
+  if (!CC_CODE.test(code)) throw new EngineError('The code is 1–20 letters, digits, - or _ (e.g. CAI, BR-ALX, PRJ-7)')
+  if (!name) throw new EngineError('Give the cost center a name')
+  if (costCenter(ctx.ws, code)) throw new EngineError(`Cost center ${code} already exists`)
+  if (costCenters(ctx.ws).length >= 500) throw new EngineError('Up to 500 cost centers')
+  const parent = String(c.parent ?? '').trim() || undefined
+  checkCcParent(ctx.ws, code, parent)
+  const nameAr = String(c.nameAr ?? '').trim() || undefined
+  ctx.ws.costCenters = [...costCenters(ctx.ws), { code, name: name.slice(0, 80), ...(nameAr ? { nameAr: nameAr.slice(0, 80) } : {}), ...(parent ? { parent } : {}), active: true }]
+  logLedger(ctx, `added cost center ${code} ${name}`)
+  return code
+}
+
+/** Renames a cost center, moves it under another, or turns it off (it stays on what was posted with it). */
+export function updateCostCenter(ctx: Ctx, code: string, patch: { name?: string; nameAr?: string; parent?: string | null; active?: boolean }) {
+  needFinance(ctx, 'set up cost centers')
+  const c = costCenter(ctx.ws, code)
+  if (!c) throw new EngineError(`Cost center ${code} doesn’t exist`)
+  const next = { ...c }
+  if (patch.name !== undefined) {
+    const name = String(patch.name).trim()
+    if (!name) throw new EngineError('Give the cost center a name')
+    next.name = name.slice(0, 80)
+  }
+  if (patch.nameAr !== undefined) {
+    const ar = String(patch.nameAr ?? '').trim()
+    if (ar) next.nameAr = ar.slice(0, 80)
+    else delete next.nameAr
+  }
+  if (patch.parent !== undefined) {
+    const parent = String(patch.parent ?? '').trim() || undefined
+    checkCcParent(ctx.ws, code, parent)
+    if (parent) next.parent = parent
+    else delete next.parent
+  }
+  if (patch.active !== undefined) next.active = Boolean(patch.active)
+  ctx.ws.costCenters = costCenters(ctx.ws).map((x) => (x.code === code ? next : x))
+  logLedger(ctx, `changed cost center ${code}`)
+}
+
+/** A team member's own cost center: the lines they enter start with it (admins). */
+export function setUserCostCenter(ctx: Ctx, userId: string, code?: string) {
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can change the team')
+  const u = ctx.ws.users.find((x) => x.id === userId)
+  if (!u) throw new EngineError('That team member doesn’t exist')
+  if (code) u.costCenter = activeCostCenter(ctx, code)
+  else delete u.costCenter
+}
+
 /* ---------------- documents ---------------- */
 
 export function lineNet(l: Line) {
@@ -570,6 +706,8 @@ export function setLines(ctx: Ctx, rec: Rec, lines: Line[]) {
   need(ctx, rec.module, 'edit')
   if (rec.status !== 'draft' && rec.status !== 'sent') throw new EngineError('Only drafts can be changed')
   checkLines(lines)
+  // Lines are saved as the person set them: a cost center cleared stays cleared.
+  lineCostCenters(ctx, lines, true)
   rec.lines = lines
   applyTotals(rec)
   rec.updatedAt = nowISO()
@@ -606,11 +744,23 @@ export function hasSampleData(ws: Workspace) {
 function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: boolean }) {
   checkOpenPeriod(ctx, entry.date)
   if (entry.lines.some((l) => round2(l.debit) < 0 || round2(l.credit) < 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has a negative amount`)
-  const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => ({ ...l, debit: round2(l.debit), credit: round2(l.credit) }))
+  const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => {
+    const { cc, ...rest } = l as typeof l & { cc?: string }
+    // A cost center tags income and expenses only (P1): the balance sheet is the company's as a whole.
+    const keep = cc && costCenter(ctx.ws, cc) && ['income', 'expense'].includes(findAccount(ctx.ws, l.account)?.type ?? '')
+    return { ...rest, ...(keep ? { cc } : {}), debit: round2(l.debit), credit: round2(l.credit) }
+  })
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
   if (dr !== cr) throw new EngineError(`Internal check failed: journal ${entry.ref} does not balance (${dr} ≠ ${cr})`)
   ctx.ws.data.journal.unshift(tag(ctx, { ...entry, lines, id: uid('j') }, from))
+}
+
+/** One account's amount split by cost center: a line per cost center (debit when positive), untagged together. */
+function ccSides(account: AccountCode, parts: { cc?: string; amount: number }[]) {
+  const by = new Map<string, number>()
+  for (const p of parts) by.set(p.cc ?? '', (by.get(p.cc ?? '') ?? 0) + p.amount)
+  return [...by].filter(([, v]) => round2(v) !== 0).map(([cc, v]) => ({ ...side(account, round2(v)), ...(cc ? { cc } : {}) }))
 }
 
 /** A debit or credit of `amount` on one account, whichever way round the sign says. */
@@ -657,6 +807,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   checkOpenPeriod(ctx, date)
   if (rec.values.due_date && String(rec.values.due_date) < date) throw new EngineError('The due date can’t be before the document date')
   checkLines(lines)
+  lineCostCenters(ctx, lines, true)
   applyTotals(rec)
 
   // Quantities per tracked product
@@ -682,6 +833,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
 
   if (mod.role === 'invoices') {
     let cogs = 0
+    const cogsBy: { cc?: string; amount: number }[] = []
     for (const [pid, q] of qtyBy) {
       const p = productRec(ctx, pid)!
       const cost = Number(p.values.cost ?? 0)
@@ -690,6 +842,14 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       // Selling the last units takes exactly what is left, so no rounding cents stay behind in inventory.
       const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
       cogs += issue
+      // The cost of the goods follows each line's cost center, by quantity (the last line takes the cents left).
+      const own = lines.filter((l) => l.product === pid)
+      let left = issue
+      own.forEach((l, i) => {
+        const share = i === own.length - 1 ? round2(left) : round2((issue * l.qty) / q)
+        left = round2(left - share)
+        cogsBy.push({ cc: l.cc, amount: share })
+      })
       ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc: rec.id, ref: number, date }, rec))
       setValuation(ctx.ws, p, oldValue - issue)
       reorderAlert(ctx, p)
@@ -698,15 +858,16 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       date, ref: number, memo: `Sales invoice ${number}`, doc: rec.id,
       lines: [
         { account: '1200', debit: t.total, credit: 0 },
-        { account: '4000', debit: 0, credit: t.subtotal },
+        ...ccSides('4000', lines.map((l) => ({ cc: l.cc, amount: -lineNet(l) }))),
         { account: '2200', debit: 0, credit: t.tax },
-        { account: '5000', debit: round2(cogs), credit: 0 },
+        ...ccSides('5000', cogsBy),
         { account: '1300', debit: 0, credit: round2(cogs) },
       ],
     }, rec)
   } else {
     let received = 0
     let priceDiff = 0
+    const diffBy: { cc?: string; amount: number }[] = []
     for (const l of lines) {
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
@@ -718,6 +879,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       // The difference to the real price goes to cost of sales now, so inventory ends at the right value.
       const target = oldQty < 0 ? round2((oldQty + l.qty) * unitCost) : round2(oldValue + lineValue)
       priceDiff = round2(priceDiff + (oldValue + lineValue - target))
+      diffBy.push({ cc: l.cc, amount: round2(oldValue + lineValue - target) })
       received = round2(received + lineValue)
       ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(unitCost), value: round2(target - oldValue), doc: rec.id, ref: number, date }, rec))
       setValuation(ctx.ws, p, target)
@@ -726,10 +888,10 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       date, ref: number, memo: `Purchase bill ${number}`, doc: rec.id,
       lines: [
         { account: '1300', debit: received, credit: 0 },
-        { account: '5100', debit: round2(t.subtotal - received), credit: 0 },
+        ...ccSides('5100', lines.filter((l) => !productRec(ctx, l.product)?.values.track_stock).map((l) => ({ cc: l.cc, amount: lineNet(l) }))),
         { account: '1400', debit: t.tax, credit: 0 },
         { account: '2100', debit: 0, credit: t.total },
-        side('5000', priceDiff),
+        ...ccSides('5000', diffBy),
         side('1300', -priceDiff),
       ],
     }, rec)
@@ -775,7 +937,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
     setValuation(ctx.ws, p, value)
   }
   for (const je of ctx.ws.data.journal.filter((j) => j.doc === rec.id && !j.ref.startsWith('VOID'))) {
-    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
   }
   if (residual !== 0) {
     journal(ctx, { date, ref: `VOID ${rec.number} ADJ`, memo: `Inventory rounding after voiding ${rec.number}`, doc: rec.id, lines: [side('5000', residual), side('1300', -residual)] }, rec)
@@ -1021,7 +1183,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
     if (qty > left) throw new EngineError(`Only ${left} of “${ol.description}” can still be credited`)
     const price = c.price === undefined || c.price === null ? ol.price : round2(Number(c.price))
     if (!(price >= 0) || price > ol.price) throw new EngineError(`The price for “${ol.description}” can be lowered, but not above the original ${money(ol.price, ctx.schema.company.currency)}`)
-    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), from: ol.id })
+    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
   }
   if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
   const t = totals(lines)
@@ -1031,13 +1193,13 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   const prefix = sales ? 'CN' : 'DN'
   const number = nextNumber(ctx, prefix, date, Boolean(ctx.sample || orig.sample))
   const party = sales ? 'customer' : 'supplier'
-  const rec = createRecord(ctx, orig.module, { [party]: orig.values[party], date, due_date: date }, { silent: true, lines })
+  const rec = createRecord(ctx, orig.module, { [party]: orig.values[party], date, due_date: date }, { silent: true, lines, ownCc: true })
   if (orig.sample) rec.sample = true
 
   const restock = n.restock !== false
-  const jl: { account: string; debit: number; credit: number }[] = []
+  const jl: { account: string; debit: number; credit: number; cc?: string }[] = []
   if (sales) {
-    jl.push({ account: '4000', debit: t.subtotal, credit: 0 }, { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
+    jl.push(...ccSides('4000', lines.map((l) => ({ cc: l.cc, amount: lineNet(l) }))), { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
     if (restock) {
       for (const l of lines) {
         const p = productRec(ctx, l.product)
@@ -1046,17 +1208,18 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
         const oldValue = stockValue(ctx.ws, p)
         ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date }, rec))
         setValuation(ctx.ws, p, oldValue + value)
-        jl.push(side('1300', value), side('5000', -value))
+        jl.push(side('1300', value), { ...side('5000', -value), ...(l.cc ? { cc: l.cc } : {}) })
       }
     }
   } else {
     jl.push({ account: '2100', debit: t.total, credit: 0 }, { account: '1400', debit: 0, credit: t.tax })
-    let services = 0
+    const services: { cc?: string; amount: number }[] = []
     for (const l of lines) {
       const p = productRec(ctx, l.product)
       const net = lineNet(l)
-      if (!p || !p.values.track_stock) { services = round2(services + net); continue }
-      if (!restock) { jl.push(side('5000', -net)); continue }
+      const tag_ = l.cc ? { cc: l.cc } : {}
+      if (!p || !p.values.track_stock) { services.push({ cc: l.cc, amount: -net }); continue }
+      if (!restock) { jl.push({ ...side('5000', -net), ...tag_ }); continue }
       // Goods sent back leave stock at the price they were bought for.
       const have = onHand(ctx.ws, p.id)
       if (have < l.qty) throw new EngineError(`Only ${have} ${p.values.name} are in stock to send back`)
@@ -1067,9 +1230,9 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
       ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -l.qty, cost: round4(net / l.qty), value: -out, doc: rec.id, ref: number, date }, rec))
       setValuation(ctx.ws, p, oldValue - out)
       jl.push(side('1300', -out))
-      if (round2(value - out)) jl.push(side('5000', round2(out - value)))
+      if (round2(value - out)) jl.push({ ...side('5000', round2(out - value)), ...tag_ })
     }
-    if (services) jl.push(side('5100', -services))
+    jl.push(...ccSides('5100', services))
   }
   journal(ctx, { date, ref: number, memo: `${sales ? 'Credit note' : 'Debit note'} ${number} for ${orig.number}: ${reason}`, doc: rec.id, lines: jl }, rec)
 
@@ -1138,7 +1301,7 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   if (!je) throw new EngineError('The payment’s journal entry is missing')
   const ref = `REV ${p.ref}`
   ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
-  journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+  journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
   refreshBalance(rec)
   log(ctx, `reversed payment ${p.ref} (${why})`, rec)
@@ -1252,7 +1415,7 @@ export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string)
     ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
     journal(ctx, {
       date, ref, memo: `Cheque ${c.no} bounced: ${why}`, doc: p.doc, cheque: { id, step: 'bounced' },
-      lines: je.lines.map((l) => ({ account: holding && l.account === '1150' ? holding : l.account, debit: l.credit, credit: l.debit })),
+      lines: je.lines.map((l) => ({ ...l, account: holding && l.account === '1150' ? holding : l.account, debit: l.credit, credit: l.debit })),
     }, rec)
     rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
     refreshBalance(rec)
@@ -1483,7 +1646,7 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
   try {
     for (const c of reopened) {
       const je = ctx.ws.data.journal.find((j) => j.id === c.entry)
-      if (je) journal(ctx, { date: je.date, ref: `REOPEN ${c.year}`, memo: `Reversal of the ${c.year} year-end close: ${why}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+      if (je) journal(ctx, { date: je.date, ref: `REOPEN ${c.year}`, memo: `Reversal of the ${c.year} year-end close: ${why}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
     }
   } finally {
     ctx.closing = false
@@ -1494,7 +1657,7 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
   try {
     for (const v of refiled) {
       const je = ctx.ws.data.journal.find((j) => j.id === v.entry)
-      if (je) journal(ctx, { date: je.date, ref: `VAT REOPEN ${v.month}`, memo: `Reversal of the ${v.month} VAT settlement: ${why}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+      if (je) journal(ctx, { date: je.date, ref: `VAT REOPEN ${v.month}`, memo: `Reversal of the ${v.month} VAT settlement: ${why}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
     }
   } finally {
     ctx.closing = false
@@ -1738,6 +1901,8 @@ export interface VoucherLine {
   debit: number
   credit: number
   note?: string
+  /** the cost center of an income or expense line */
+  cc?: string
 }
 
 /** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
@@ -1748,7 +1913,7 @@ export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: 
   const memo = String(v.memo ?? '').trim()
   if (!ISO_DATE.test(date)) throw new EngineError('Choose the date of the entry')
   if (memo.length < 3) throw new EngineError('Describe the entry (what it is for)')
-  const lines = (v.lines ?? []).map((l) => ({ account: String(l.account), debit: round2(Number(l.debit) || 0), credit: round2(Number(l.credit) || 0), note: l.note?.trim() || undefined }))
+  const lines = (v.lines ?? []).map((l) => ({ account: String(l.account), debit: round2(Number(l.debit) || 0), credit: round2(Number(l.credit) || 0), note: l.note?.trim() || undefined, ...(l.cc ? { cc: activeCostCenter(ctx, String(l.cc)) } : {}) }))
     .filter((l) => l.debit !== 0 || l.credit !== 0)
   if (lines.length < 2) throw new EngineError('A journal entry needs at least two lines')
   for (const l of lines) {
@@ -1774,7 +1939,7 @@ export function reverseJournal(ctx: Ctx, id: string, date = todayISO()) {
   if (je.reverses) throw new EngineError('This entry is itself a reversal')
   if (ctx.ws.data.journal.some((j) => j.reverses === id)) throw new EngineError('This entry was already reversed')
   if (!ISO_DATE.test(date) || date < je.date) throw new EngineError('The reversal can’t be dated before the entry')
-  journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Reversal of ${je.ref}: ${je.memo}`, manual: true, reverses: id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit, note: l.note })) }, je)
+  journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Reversal of ${je.ref}: ${je.memo}`, manual: true, reverses: id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, je)
   logLedger(ctx, `reversed journal voucher ${je.ref}`)
 }
 
@@ -1794,7 +1959,7 @@ export function openingBalance(ctx: Ctx, o: { kind: 'customer' | 'supplier'; par
   const party = findRecord(ctx.ws, o.party)
   if (!party) throw new EngineError(`Choose the ${o.kind}`)
   const rec = createRecord(ctx, mod.id, { [field]: party.id, date: o.date, due_date: o.date }, {
-    silent: true,
+    silent: true, ownCc: true,
     lines: [{ id: uid('l'), description: o.ref?.trim() ? `Opening balance (${o.ref.trim()})` : 'Opening balance', qty: 1, price: amount, discount: 0, vat: 0 }],
   })
   const number = nextNumber(ctx, 'OB', o.date, Boolean(ctx.sample))
@@ -2997,7 +3162,7 @@ export function clearOpeningStep(ctx: Ctx, key: string) {
   }
   for (const id of s.entries) {
     const je = ctx.ws.data.journal.find((j) => j.id === id)
-    if (je) journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+    if (je) journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
   }
   if (s.recon && ctx.ws.books?.reconciliations) ctx.ws.books.reconciliations = ctx.ws.books.reconciliations.filter((r) => !(r.account === s.recon && r.date === date && r.at === s.at))
   if (key === 'tb') delete o.tb
@@ -3020,7 +3185,7 @@ function voidOpeningDoc(ctx: Ctx, rec: Rec, date: string, look: OpeningLookup) {
   if ((look.paid.get(rec.id) ?? 0) !== 0) throw new EngineError(`${rec.number} has payments in Bonyan. Reverse them first.`)
   if (look.credited.has(rec.id)) throw new EngineError('This document has credit notes. Void them first.')
   for (const je of (look.entries.get(rec.id) ?? []).filter((j) => j.ref === rec.number)) {
-    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) }, rec)
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
   }
   rec.status = 'void'
   rec.values.balance = 0
@@ -3222,7 +3387,7 @@ function clearEarlierPeriods(ctx: Ctx, o: OpeningBooks, s: OpeningStep) {
       const je = ctx.ws.data.journal.find((j) => j.id === id)
       if (!je) continue
       const ref = je.ref.startsWith('CLOSE ') ? `REOPEN ${je.ref.slice(6)}` : `REV ${je.ref}`
-      journal(ctx, { date: je.date, ref, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+      journal(ctx, { date: je.date, ref, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
     }
   } finally {
     ctx.closing = false
@@ -3257,7 +3422,7 @@ function openingDoc(ctx: Ctx, sales: boolean, d: { party: string; number?: strin
   const vat = !credit && d.subtotal ? round2(((d.total - d.subtotal) / d.subtotal) * 100) : 0
   const what = credit ? (sales ? 'Opening credit' : 'Opening advance') : 'Opening balance'
   const rec = createRecord(ctx, mod.id, { [partyKey]: d.party, date: d.date, due_date: d.due }, {
-    silent: true, quiet: true,
+    silent: true, quiet: true, ownCc: true,
     lines: [{ id: uid('l'), description: d.number ? `${what} (old no. ${d.number})` : what, qty: 1, price: base, discount: 0, vat }],
   })
   const number = nextNumber(ctx, 'OB', date)

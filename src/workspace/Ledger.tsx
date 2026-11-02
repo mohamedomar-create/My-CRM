@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, booksHealth, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
+import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { taxCode } from '../lib/tax'
 import { TYPE_LABEL, typeLabel, whtLabel } from './labels'
 import { chartOf, debitNormal, type AccountType } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
+import { CostCenterSelect } from './CostCenters'
 
 
 
@@ -22,7 +23,7 @@ function num(v: string) {
 
 /* ---------------- journal voucher ---------------- */
 
-interface Row { account: string; debit: string; credit: string; note: string }
+interface Row { account: string; debit: string; credit: string; note: string; cc?: string }
 const emptyRow = (): Row => ({ account: '', debit: '', credit: '', note: '' })
 
 export function JournalVoucher() {
@@ -35,9 +36,12 @@ export function JournalVoucher() {
   const dr = round2(rows.reduce((s, r) => s + num(r.debit), 0))
   const cr = round2(rows.reduce((s, r) => s + num(r.credit), 0))
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  // Cost centers (P1) tag income and expense lines only.
+  const withCc = costCenters(ws).some((c) => c.active)
+  const pl = (code: string) => ['income', 'expense'].includes(accounts.find((a) => a.code === code)?.type ?? '')
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note }))
+    const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
     const out = act<{ ref: string }>('journal.manual', { date, memo, lines }, tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
@@ -54,19 +58,20 @@ export function JournalVoucher() {
       </div>
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th><th>{tr('Note')}</th><th /></tr></thead>
+          <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th>{withCc && <th>{tr('Cost center')}</th>}<th>{tr('Note')}</th><th /></tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} style={{ cursor: 'default' }}>
                 <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}</select></td>
                 <td><input inputMode="decimal" value={r.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? '' : r.credit })} style={{ textAlign: 'end' }} /></td>
                 <td><input inputMode="decimal" value={r.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? '' : r.debit })} style={{ textAlign: 'end' }} /></td>
+                {withCc && <td>{pl(r.account) ? <CostCenterSelect value={r.cc} onChange={(v) => set(i, { cc: v })} style={{ width: 160 }} /> : <span className="tiny muted">{r.account ? tr('company-wide') : ''}</span>}</td>}
                 <td><input value={r.note} onChange={(e) => set(i, { note: e.target.value })} /></td>
                 <td>{rows.length > 2 && <button type="button" className="ghost icon" aria-label={tr('Remove line')} onClick={() => setRows(rows.filter((_, j) => j !== i))}><Trash2 size={14} /></button>}</td>
               </tr>
             ))}
           </tbody>
-          <tfoot><tr><td><button type="button" className="ghost small" onClick={() => setRows([...rows, emptyRow()])}><Plus size={14} /> {tr('Line')}</button></td><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td colSpan={2} className={dr === cr ? 'tiny muted' : 'tiny'} style={dr === cr ? undefined : { color: 'var(--danger)' }}>{dr === cr ? (dr ? tr('Balanced') : '') : tr('Difference {amount}', { amount: money(Math.abs(round2(dr - cr)), cur) })}</td></tr></tfoot>
+          <tfoot><tr><td><button type="button" className="ghost small" onClick={() => setRows([...rows, emptyRow()])}><Plus size={14} /> {tr('Line')}</button></td><td className="num">{money(dr, cur)}</td><td className="num">{money(cr, cur)}</td><td colSpan={withCc ? 3 : 2} className={dr === cr ? 'tiny muted' : 'tiny'} style={dr === cr ? undefined : { color: 'var(--danger)' }}>{dr === cr ? (dr ? tr('Balanced') : '') : tr('Difference {amount}', { amount: money(Math.abs(round2(dr - cr)), cur) })}</td></tr></tfoot>
         </table>
       </div>
       <button disabled={!dr || dr !== cr}>{tr('Post journal voucher')}</button>
