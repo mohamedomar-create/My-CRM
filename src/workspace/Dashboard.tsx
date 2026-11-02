@@ -3,7 +3,8 @@ import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-re
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
 import { runReport } from '../lib/reports'
-import { can, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
+import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
+import { activeBudget, budgetVsActual, offBudget } from '../lib/budget'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { useLang } from '../lib/i18n'
 
@@ -35,6 +36,7 @@ export default function Dashboard() {
       )}
 
       <SalesHistory />
+      <BudgetCard />
 
       {reports.length === 0 && (
         <div className="card empty">
@@ -119,6 +121,39 @@ function SalesHistory() {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+/** This year's approved budget against the books (finance): profit so far, and the lines furthest off budget. */
+function BudgetCard() {
+  const { ws, schema, user } = useApp()
+  const { tr } = useLang()
+  if (!canPost({ schema, user })) return null
+  const today = todayISO()
+  const b = activeBudget(ws, Number(today.slice(0, 4)))
+  if (!b) return null
+  const month = Number(today.slice(5, 7))
+  const v = budgetVsActual(ws, b, month)
+  const off = offBudget(ws, b, month).slice(0, 4)
+  const cur = schema.company.currency
+  const gap = Math.round((v.profit.actualYtd - v.profit.budgetYtd) * 100) / 100
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{tr('Budget this year')}</h2>
+        <Link to="/app/accounting" className="small">{tr('Budget against actual')}</Link>
+      </div>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>
+        <span className="pill">{tr('Profit so far: {amount}', { amount: money(v.profit.actualYtd, cur) })}</span>
+        <span className="pill">{tr('Budget so far: {amount}', { amount: money(v.profit.budgetYtd, cur) })}</span>
+        <span className={`pill ${gap < 0 ? 'red' : 'green'}`}>{gap < 0 ? tr('{amount} behind', { amount: money(-gap, cur) }) : tr('{amount} ahead', { amount: money(gap, cur) })}</span>
+      </div>
+      {off.length > 0 ? (
+        <ul className="small" style={{ margin: 0, paddingInlineStart: 18 }}>
+          {off.map((r) => <li key={r.account}><b>{r.name}</b>: {r.type === 'expense' ? tr('{pct}% of budget so far', { pct: r.used }) : tr('{pct}% of the income budgeted so far', { pct: r.used })} ({money(Math.abs(r.varianceYtd), cur)})</li>)}
+        </ul>
+      ) : <p className="small muted" style={{ margin: 0 }}>{tr('Every line is within 10% of its budget so far.')}</p>}
     </div>
   )
 }

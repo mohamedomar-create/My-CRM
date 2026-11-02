@@ -9,13 +9,14 @@ import Treasury from './Treasury'
 import Statements from './Statements'
 import GoLive from './GoLive'
 import CostCenters from './CostCenters'
+import Budgets from './Budgets'
 import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
+  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">{tr('Only Admin and finance roles can see accounting.')}</div>
   const cur = schema.company.currency
@@ -57,6 +58,7 @@ export default function Accounting() {
         <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>{tr('New journal voucher')}</button>
         <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>{tr('Chart of accounts')}</button>
         <button className={tab === 'cc' ? 'on' : ''} onClick={() => setTab('cc')}>{tr('Cost centers')}</button>
+        <button className={tab === 'budget' ? 'on' : ''} onClick={() => setTab('budget')}>{tr('Budgets')}</button>
         <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>{tr('Opening balances')}</button>
         <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>{tr('Payments')}</button>
         <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>{tr('Bank & cash')}</button>
@@ -114,6 +116,7 @@ export default function Accounting() {
       {tab === 'voucher' && <JournalVoucher />}
       {tab === 'chart' && <ChartOfAccounts />}
       {tab === 'cc' && <CostCenters />}
+      {tab === 'budget' && <Budgets />}
       {tab === 'opening' && (
         <div className="stack">
           <GoLive />

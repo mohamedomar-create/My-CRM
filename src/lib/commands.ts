@@ -5,7 +5,8 @@
 import type { Answers } from './recommend'
 import type { AppSchema } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
-import type { Line, User, Workspace } from './types'
+import type { BudgetLine, Line, User, Workspace } from './types'
+import { approveBudget, createBudget, deleteBudget, rejectBudget, reviseBudget, setBudgetLines, submitBudget } from './budget'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
@@ -61,6 +62,13 @@ export interface CommandArgs {
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
+  'budget.create': { year: number; name?: string; from?: 'empty' | 'actuals'; growthIncome?: number; growthExpense?: number }
+  'budget.setLines': { id: string; lines: BudgetLine[]; name?: string }
+  'budget.submit': { id: string }
+  'budget.approve': { id: string; reason?: string }
+  'budget.reject': { id: string; note: string }
+  'budget.revise': { id: string }
+  'budget.delete': { id: string }
   'journal.reverse': { id: string; date?: string }
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'opening.setGoLive': { date: string }
@@ -282,6 +290,13 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       ...(a.active !== undefined ? { active: a.active === true } : {}),
     }),
   },
+  'budget.create': { run: (ws, u, a) => createBudget(ctx(ws, u), { year: Number(a.year), name: a.name === undefined ? undefined : String(a.name), from: a.from === 'actuals' ? 'actuals' : 'empty', growthIncome: Number(a.growthIncome ?? 0), growthExpense: Number(a.growthExpense ?? 0) }) },
+  'budget.setLines': { run: (ws, u, a) => void setBudgetLines(ctx(ws, u), String(a.id ?? ''), a.lines, a.name === undefined ? undefined : String(a.name)) },
+  'budget.submit': { run: (ws, u, a) => void submitBudget(ctx(ws, u), String(a.id ?? '')) },
+  'budget.approve': { run: (ws, u, a) => void approveBudget(ctx(ws, u), String(a.id ?? ''), a.reason === undefined ? undefined : String(a.reason)) },
+  'budget.reject': { run: (ws, u, a) => void rejectBudget(ctx(ws, u), String(a.id ?? ''), String(a.note ?? '')) },
+  'budget.revise': { run: (ws, u, a) => reviseBudget(ctx(ws, u), String(a.id ?? '')) },
+  'budget.delete': { run: (ws, u, a) => void deleteBudget(ctx(ws, u), String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },

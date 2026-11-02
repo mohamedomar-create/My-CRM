@@ -46,7 +46,7 @@ function tag<T extends object>(ctx: Ctx, item: T, from?: { sample?: boolean }): 
   if (ctx.sample || from?.sample) (item as { sample?: boolean }).sample = true
   return item
 }
-const nowISO = () => new Date().toISOString()
+export const nowISO = () => new Date().toISOString()
 const addDays = (iso: string, days: number) => {
   const d = new Date(iso + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
@@ -1845,7 +1845,7 @@ export function form41Csv(ws: Workspace, year: number, quarter: 1 | 2 | 3 | 4) {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const TYPES: AccountType[] = ['asset', 'liability', 'equity', 'income', 'expense']
 
-function needFinance(ctx: Ctx, what: string) {
+export function needFinance(ctx: Ctx, what: string) {
   if (!canPost(ctx)) throw new EngineError(`Only Admin and finance roles can ${what}`)
 }
 
@@ -2049,7 +2049,7 @@ export function countStock(ctx: Ctx, c: { date: string; counts: { product: strin
   return { ref, adjusted }
 }
 
-function logLedger(ctx: Ctx, text: string) {
+export function logLedger(ctx: Ctx, text: string) {
   ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: ctx.user.name, text }))
 }
 
@@ -2514,7 +2514,7 @@ function convert(ctx: Ctx, f: FieldDef, raw: string, map: Record<string, string>
 /** What an import left in a record (values, lines, stage, old-system details), to see whether it changed since. */
 const importSum = (r: Rec) => fingerprint({ values: { ...r.values, '\u0000stage': r.stage ?? null, '\u0000legacy': r.legacy ?? null }, lines: r.lines })
 
-const isAdmin = (ctx: Ctx) => Boolean(ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin)
+export const isAdmin = (ctx: Ctx) => Boolean(ctx.schema.roles.find((r) => r.id === ctx.user.roleId)?.admin)
 
 /**
  * Imports spreadsheet rows. Each row is checked like a form save: good rows are kept, bad rows are reported with the
