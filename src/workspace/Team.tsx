@@ -6,7 +6,8 @@ import { inviteMember, listInvitations, listMembers, removeMember, revokeInvitat
 import { uid } from '../lib/schema'
 import type { User } from '../lib/types'
 import { tr } from '../lib/i18n'
-import { list } from '../lib/engine'
+import { costCenters, list } from '../lib/engine'
+import { CostCenterSelect } from './CostCenters'
 
 export default function Team() {
   const { ws, schema, user, act } = useApp()
@@ -108,6 +109,8 @@ export default function Team() {
     showToast({ kind: 'ok', text: tr('{name} is now the owner', { name: u.name }) })
   }
   const admins = ws.users.filter((u) => roleIsAdmin(u.roleId)).length
+  // Each member's own cost center (P1): the lines they enter start with it.
+  const withCc = costCenters(ws).some((c) => c.active)
   function access(u: User) {
     if (u.demo) return <span className="pill gray tiny">{tr('sample')}</span>
     if (member(u)) return <span className="pill green tiny">{tr('Joined')}</span>
@@ -124,7 +127,7 @@ export default function Team() {
       <div className="record-grid">
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>{tr('Name')}</th><th>{tr('E-mail')}</th><th>{tr('Role')}</th><th>{tr('Access')}</th><th /></tr></thead>
+            <thead><tr><th>{tr('Name')}</th><th>{tr('E-mail')}</th><th>{tr('Role')}</th>{withCc && <th>{tr('Cost center')}</th>}<th>{tr('Access')}</th><th /></tr></thead>
             <tbody>
               {ws.users.filter((u) => !u.former).map((u) => {
                 const isOwner = Boolean(member(u)?.is_owner)
@@ -137,6 +140,7 @@ export default function Team() {
                         {schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
                     </td>
+                    {withCc && <td><CostCenterSelect value={u.costCenter} onChange={(v) => act('team.setCostCenter', { userId: u.id, code: v }, tr('Saved'))} style={{ width: 'auto', maxWidth: 200 }} /></td>}
                     <td>{access(u)}</td>
                     <td className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                       {!u.demo && !member(u) && <button className="ghost small" onClick={() => void newLink(u)} title={tr('Make a new invitation link (the old one stops working)')}><Link2 size={14} /> {tr('New link')}</button>}

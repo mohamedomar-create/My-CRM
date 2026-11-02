@@ -42,6 +42,8 @@ const DONE = [
   'src/workspace/HistoryImport.tsx',
   'src/workspace/PartyHistory.tsx',
   'src/workspace/SalesAnalysis.tsx',
+  'src/workspace/CostCenters.tsx',
+  'src/workspace/GroupCard.tsx',
   'src/builder/Builder.tsx',
   'src/builder/ModulesTab.tsx',
   'src/builder/PipelinesTab.tsx',

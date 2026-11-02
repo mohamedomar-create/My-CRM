@@ -5,7 +5,7 @@ import { methodLabel, statusLabel, useApp } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import {
-  can, canPost, creditNotesOf, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, costCenters, creditNotesOf, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -17,6 +17,7 @@ import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
 import { GroupCard } from './GroupCard'
+import { CostCenterSelect } from './CostCenters'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -350,6 +351,10 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
 }
 
 function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema }) {
+  const { user } = useApp()
+  // Cost centers (P1): each line's income or cost goes to one; a new line starts with the person's own.
+  const withCc = costCenters(ws).some((c) => c.active) || lines.some((l) => l.cc)
+  const myCc = user.costCenter && costCenters(ws).find((c) => c.code === user.costCenter && c.active) ? user.costCenter : undefined
   const products = moduleByRole(schema, 'products')
   const items = products ? list(ws, products.id) : []
   const t = totals(lines)
@@ -364,12 +369,17 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
   }
   return (
     <div className="card">
-      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate) }])}><Plus size={15} /> {tr('Add line')}</button>}</div>
+      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate), ...((lines.at(-1)?.cc ?? myCc) ? { cc: lines.at(-1)?.cc ?? myCc } : {}) }])}><Plus size={15} /> {tr('Add line')}</button>}</div>
+      {withCc && !disabled && lines.length > 0 && (
+        <label className="row small" style={{ gap: 6, margin: '8px 0' }}>{tr('Cost center for every line')}
+          <CostCenterSelect value={lines.every((l) => l.cc === lines[0].cc) ? lines[0].cc : undefined} onChange={(v) => onChange(lines.map((l) => { const { cc: _c, ...rest } = l; return v ? { ...rest, cc: v } : rest }))} empty={lines.every((l) => l.cc === lines[0].cc) ? '—' : tr('(mixed)')} style={{ width: 'auto' }} />
+        </label>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table className="lines">
-          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Tax code')}</th><th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
+          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
           <tbody>
-            {lines.length === 0 && <tr><td colSpan={8} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={withCc ? 9 : 8} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
             {lines.map((l, i) => {
               const p = items.find((x) => x.id === l.product)
               const stock = p?.values.track_stock ? onHand(ws, p.id) : undefined
@@ -392,6 +402,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema }: { mod: Modu
                       {TAX_CODES.map((t) => <option key={t.code} value={t.code}>{getLang() === 'ar' ? t.nameAr : t.name}</option>)}
                     </select>
                   </td>
+                  {withCc && <td><CostCenterSelect value={l.cc} onChange={(v) => { const { cc: _c, ...rest } = l; onChange(lines.map((x, j) => (j === i ? (v ? { ...rest, cc: v } : rest) : x))) }} disabled={disabled} style={{ width: 150 }} /></td>}
                   <td className="num">{lineNet(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td className="num">{lineTax(l).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td>{!disabled && <button className="ghost icon" onClick={() => onChange(lines.filter((_, j) => j !== i))}><X size={14} /></button>}</td>

@@ -605,6 +605,16 @@ A smaller team stretches the timeline roughly in proportion.
 - Profit and loss by cost center, and every report filtered by one.
 - *Done when:* the profit and loss of all cost centers adds up to the company's, to the pound.
 
+> **Progress (P1 done).**
+> - **Accounting → Cost centers:** add branches, departments, projects or vans (code, name, Arabic name), each optionally under another (up to 6 layers); rename, move, turn off (a cost center turned off takes no new postings and stays on what was posted with it).
+> - **Where they are set:**
+>   - each line of an invoice, bill or quotation, with "Cost center for every line" to set them all at once;
+>   - each income or expense line of a journal voucher (cash, bank and other balance-sheet lines stay company-wide);
+>   - each team member's own cost center (Team): the lines they enter start with it.
+> - **In the books:** income and expenses (sales, cost of goods sold, purchased services, price differences, credit and debit notes, rent and other vouchers) are posted per cost center; credit notes and voids follow the original line's cost center; checked on the server.
+> - **Reports:** the profit and loss for one cost center (with those under it) or for "No cost center", and "By cost center": the top cost centers side by side (or those inside one), with "No cost center" and the total, every account drilling down to its ledger, exported to Excel. The columns always add up to the company's profit and loss (tested).
+> - **Not yet:** defaults per customer or product (P2 may add them with budgets), and cost centers in the report builder.
+
 **P2. Budget (M)**
 - A yearly budget per account and month, optionally per cost center.
 - Three ways to fill it:
