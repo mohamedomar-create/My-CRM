@@ -179,6 +179,7 @@ export function systemFields(role: ModuleRole, vatRate: number): FieldDef[] {
         sys(f('Owner', 'user', { inList: true })),
         f('Phone', 'phone', { inList: true }),
         f('E-mail', 'email', { key: 'email' }),
+        f('Belongs to', 'relation', { key: 'parent', target: MODULE_IDS.accounts, help: 'The group, head office or authority this customer is under (each of those can be under another)' }),
       ]
     case 'contacts':
       return [

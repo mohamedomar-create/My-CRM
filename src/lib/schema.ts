@@ -134,7 +134,7 @@ export interface ApprovalRule {
 
 export type Aggregate = 'count' | 'sum' | 'avg' | 'min' | 'max'
 export type ChartType = 'kpi' | 'bar' | 'hbar' | 'line' | 'pie' | 'funnel' | 'table'
-export type FilterOp = 'eq' | 'neq' | 'gt' | 'lt' | 'contains' | 'empty' | 'notempty'
+export type FilterOp = 'eq' | 'neq' | 'gt' | 'lt' | 'contains' | 'empty' | 'notempty' | 'under'
 
 export interface Filter {
   field: string

@@ -262,6 +262,82 @@ export function money(n: number, currency = 'EGP') {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const PHONE = /^\+?[0-9 ()-]{7,20}$/
 
+/* ---------------- layers: a record under another of the same list ---------------- */
+
+/** How many layers a list can have (a hospital under a university, under a sector, under a ministry, under an authority…). */
+export const MAX_LAYERS = 12
+
+/**
+ * The field that puts a record under another record of the same list: a customer under its group, head office or
+ * authority, a supplier under its group. Any link from a list to itself is one; the first is used.
+ */
+export function parentField(mod: ModuleDef | undefined) {
+  return mod?.fields.find((f) => f.type === 'relation' && f.target === mod.id)
+}
+
+/** The records above this one, nearest first, up to the top (a broken loop stops). */
+export function ancestors(ws: Workspace, mod: ModuleDef, rec: Rec): Rec[] {
+  const pf = parentField(mod)
+  if (!pf) return []
+  const byId = new Map(list(ws, mod.id).map((r) => [r.id, r]))
+  const out: Rec[] = []
+  const seen = new Set([rec.id])
+  let next = byId.get(String(rec.values[pf.key] ?? ''))
+  while (next && !seen.has(next.id) && out.length < MAX_LAYERS * 2) {
+    out.push(next)
+    seen.add(next.id)
+    next = byId.get(String(next.values[pf.key] ?? ''))
+  }
+  return out
+}
+
+/** Every record of the list by the record it is under. */
+export function childrenIndex(ws: Workspace, mod: ModuleDef) {
+  const pf = parentField(mod)
+  const out = new Map<string, Rec[]>()
+  if (!pf) return out
+  for (const r of list(ws, mod.id)) {
+    const p = r.values[pf.key]
+    if (typeof p === 'string' && p) out.set(p, [...(out.get(p) ?? []), r])
+  }
+  return out
+}
+
+/** Everything under a record, at every layer, with how deep it is (1 = directly under). */
+export function descendants(ws: Workspace, mod: ModuleDef, id: string, index = childrenIndex(ws, mod)): { rec: Rec; depth: number }[] {
+  const out: { rec: Rec; depth: number }[] = []
+  const seen = new Set([id])
+  let layer = [id]
+  for (let depth = 1; layer.length && depth <= MAX_LAYERS * 2; depth++) {
+    const next: string[] = []
+    for (const p of layer) for (const c of index.get(p) ?? []) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      out.push({ rec: c, depth })
+      next.push(c.id)
+    }
+    layer = next
+  }
+  return out
+}
+
+/** A record and everything under it: the ids of a group. */
+export function groupIds(ws: Workspace, mod: ModuleDef, id: string, index?: Map<string, Rec[]>) {
+  return new Set([id, ...descendants(ws, mod, id, index).map((d) => d.rec.id)])
+}
+
+/** Why a record can't be put under another (itself, one of its own, too many layers), or nothing when it can. */
+function parentProblem(ws: Workspace, schema: AppSchema, mod: ModuleDef, parentId: string, selfId?: string) {
+  const parent = list(ws, mod.id).find((r) => r.id === parentId)
+  if (!parent) return `choose a ${mod.singular.toLowerCase()} from this list`
+  if (selfId && parentId === selfId) return 'a record can’t be under itself'
+  const above = ancestors(ws, mod, parent)
+  if (selfId && above.some((r) => r.id === selfId)) return `“${recordTitle(ws, schema, parent)}” is already under this record`
+  const below = selfId ? Math.max(0, ...descendants(ws, mod, selfId).map((d) => d.depth)) : 0
+  if (above.length + 2 + below > MAX_LAYERS) return `up to ${MAX_LAYERS} layers`
+  return undefined
+}
+
 function cleanValues(ctx: Ctx, mod: ModuleDef, input: Record<string, unknown>, existing?: Rec) {
   const out: Record<string, unknown> = { ...(existing?.values ?? {}) }
   for (const f of mod.fields) {
@@ -293,6 +369,10 @@ function cleanValues(ctx: Ctx, mod: ModuleDef, input: Record<string, unknown>, e
     }
     if (f.type === 'select' && !f.options?.some((o) => o.value === v)) errors.push(`${f.label}: “${v}” is not one of the options`)
     if (f.type === 'relation' && !findRecord(ctx.ws, String(v))) errors.push(`${f.label}: the linked record no longer exists`)
+    else if (f.type === 'relation' && f.target === mod.id) {
+      const problem = parentProblem(ctx.ws, ctx.schema, mod, String(v), existing?.id)
+      if (problem) errors.push(`${f.label}: ${problem}`)
+    }
     if (f.unique) {
       const clash = list(ctx.ws, mod.id).find((r) => r.id !== existing?.id && String(r.values[f.key] ?? '').toLowerCase() === String(v).toLowerCase())
       if (clash) errors.push(`${f.label} “${v}” is already used`)
@@ -1838,7 +1918,23 @@ export function pseudoValue(schema: AppSchema, rec: Rec, key: string, ws?: Works
 }
 
 export function matches(schema: AppSchema, rec: Rec, filters: Filter[], ws?: Workspace) {
-  return filters.every((fl) => compare(pseudoValue(schema, rec, fl.field, ws), fl))
+  return filters.every((fl) => (fl.op === 'under' ? isUnder(schema, rec, fl, ws) : compare(pseudoValue(schema, rec, fl.field, ws), fl)))
+}
+
+/**
+ * "Is or is under": the record a link field points to is the one chosen or anywhere under it. On the list's own
+ * parent field, the record itself counts too (a group and its members).
+ */
+function isUnder(schema: AppSchema, rec: Rec, fl: Filter, ws?: Workspace) {
+  if (!ws || !fl.value) return false
+  const mod = moduleById(schema, rec.module)
+  const f = mod && fieldByKey(mod, fl.field)
+  if (!mod || !f || f.type !== 'relation') return false
+  const target = moduleById(schema, f.target ?? '')
+  if (!target) return false
+  const start = target.id === mod.id ? rec : findRecord(ws, String(rec.values[f.key] ?? ''))
+  if (!start) return false
+  return start.id === fl.value || ancestors(ws, target, start).some((r) => r.id === fl.value)
 }
 
 /** Compares one value against a filter condition. */
@@ -1861,6 +1957,8 @@ export function compare(v: unknown, fl: Filter) {
       return s === ''
     case 'notempty':
       return s !== ''
+    case 'under':
+      return s === t
   }
 }
 
@@ -2122,6 +2220,8 @@ export interface ImportOptions {
   values?: Record<string, Record<string, string>>
   /** the file's row number of the first row sent (a file sent in parts keeps its own row numbers); 2 by default */
   firstRow?: number
+  /** the file's row number of each row sent, when they are sent in another order (parents before the records under them) */
+  rowNumbers?: number[]
 }
 
 export interface ImportRowResult {
@@ -2306,9 +2406,13 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
 
   const link = linker(ctx)
   const result: ImportResult = { batch: batchId, created: 0, updated: 0, skipped: 0, errors: [], rows: [] }
+  // Links to a record of the same list (a customer under its group) are set after every row is in, so a group
+  // further down the file, or in this part, is found too.
+  const deferred: { rec: Rec; key: string; raw: string; column: string; row: number; created: boolean }[] = []
   rows.forEach((row, i) => {
-    const rowNo = (opts.firstRow ?? 2) + i
+    const rowNo = opts.rowNumbers?.[i] ?? (opts.firstRow ?? 2) + i
     let column: string | undefined
+    let selfLink: { key: string; raw: string; column: string } | undefined
     try {
       const values: Record<string, unknown> = {}
       const legacy: NonNullable<Rec['legacy']> = {}
@@ -2348,6 +2452,10 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
         } else {
           const f = fieldByKey(mod, key)
           if (!f || f.readOnly || ['formula', 'lookup', 'rollup'].includes(f.type)) continue
+          if (f.type === 'relation' && f.target === moduleId) {
+            selfLink = { key, raw, column: col }
+            continue
+          }
           const v = convert(ctx, f, raw, opts.values && Object.hasOwn(opts.values, key) ? opts.values[key] : undefined, link)
           if (v !== undefined) values[key] = v
         }
@@ -2384,6 +2492,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
         rec.imports = [...(rec.imports ?? []), { batch: batchId, at, sum: importSum(rec), before }]
         result.updated++
         result.rows.push({ row: rowNo, action: 'update', id: rec.id })
+        if (selfLink) deferred.push({ rec, ...selfLink, row: rowNo, created: false })
         return
       }
       if (opts.match && opts.onlyUpdate) {
@@ -2406,10 +2515,12 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       remember(rec)
       result.created++
       result.rows.push({ row: rowNo, action: 'create', id: rec.id, similar: like })
+      if (selfLink) deferred.push({ rec, ...selfLink, row: rowNo, created: true })
     } catch (e) {
       result.errors.push({ row: rowNo, message: (e as Error).message, column })
     }
   })
+  if (deferred.length) linkParents(ctx, mod, deferred, result, opts)
   result.skipped += result.errors.length
   batch.parts++
   batch.created += result.created
@@ -2419,6 +2530,85 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
   const what = result.updated ? `imported ${result.created} and updated ${result.updated} ${name}` : `imported ${result.created} ${name}`
   if (result.created || result.updated) log(ctx, result.errors.length ? `${what} (${result.errors.length} rows skipped)` : what)
   return result
+}
+
+/**
+ * Sets the links of an import's rows to records of the same list, now that every row is in. A row whose link can't
+ * be set is taken out whole (a record it created is removed, one it updated gets its earlier values back), and so
+ * are the rows under it.
+ */
+function linkParents(ctx: Ctx, mod: ModuleDef, deferred: { rec: Rec; key: string; raw: string; column: string; row: number; created: boolean }[], result: ImportResult, opts: ImportOptions) {
+  const link = linker(ctx)
+  const removed = new Set<string>()
+  const failed = new Set<(typeof deferred)[number]>()
+  const fail = (d: (typeof deferred)[number], message: string) => {
+    if (failed.has(d)) return
+    failed.add(d)
+    result.errors.push({ row: d.row, message, column: d.column })
+    result.rows = result.rows.filter((r) => r.id !== d.rec.id)
+    if (d.created) {
+      ctx.ws.data.records[mod.id] = list(ctx.ws, mod.id).filter((r) => r.id !== d.rec.id)
+      removed.add(d.rec.id)
+      result.created--
+    } else {
+      const last = d.rec.imports?.at(-1)
+      if (last?.before) Object.assign(d.rec, { values: last.before.values, stage: last.before.stage, stageHistory: last.before.stageHistory, legacy: last.before.legacy, updatedAt: last.before.updatedAt })
+      d.rec.imports = d.rec.imports?.slice(0, -1)
+      result.updated--
+    }
+  }
+  const resolved = deferred.map((d) => {
+    const f = fieldByKey(mod, d.key)!
+    try {
+      return { d, f, id: String(convert(ctx, f, d.raw, opts.values && Object.hasOwn(opts.values, d.key) ? opts.values[d.key] : undefined, link) ?? '') }
+    } catch (e) {
+      fail(d, (e as Error).message)
+      return { d, f, id: '' }
+    }
+  })
+  for (const r of resolved) {
+    if (failed.has(r.d) || !r.id) continue
+    if (removed.has(r.id)) { fail(r.d, `${r.f.label}: “${r.d.raw}” has a problem in its own row`); continue }
+    const problem = parentProblem(ctx.ws, ctx.schema, mod, r.id, r.d.rec.id)
+    if (problem) { fail(r.d, `${r.f.label}: ${problem}`); continue }
+    r.d.rec.values[r.d.key] = r.id
+  }
+  // Rows under a row that was taken out go too.
+  for (let again = true; again;) {
+    again = false
+    for (const r of resolved) if (!failed.has(r.d) && removed.has(r.id)) { fail(r.d, `${r.f.label}: “${r.d.raw}” has a problem in its own row`); again = true }
+  }
+  for (const r of resolved) {
+    if (failed.has(r.d)) continue
+    const last = r.d.rec.imports?.at(-1)
+    if (last) last.sum = importSum(r.d.rec)
+  }
+}
+
+/**
+ * The order to send an import's rows in so that a record comes before the records under it (a file sent in parts
+ * then always finds the group in an earlier part). Rows are found by their old system id or their title.
+ */
+export function parentsFirst(mod: ModuleDef, rows: Record<string, string>[], mapping: Record<string, string>): number[] {
+  const pf = parentField(mod)
+  const col = (key: string) => Object.entries(mapping).find(([, k]) => k === key)?.[0]
+  const parentCol = pf ? col(pf.key) : undefined
+  if (!parentCol) return rows.map((_, i) => i)
+  const ids = [col('__legacy_id'), col(mod.titleField ?? 'name')].filter((c): c is string => Boolean(c))
+  const byKey = new Map<string, number>()
+  rows.forEach((r, i) => { for (const c of ids) { const k = importKey(String(r[c] ?? '')); if (k && !byKey.has(k)) byKey.set(k, i) } })
+  const order: number[] = []
+  const state = new Map<number, 1 | 2>()
+  const visit = (i: number) => {
+    if (state.get(i)) return
+    state.set(i, 1)
+    const p = byKey.get(importKey(String(rows[i][parentCol] ?? '')))
+    if (p !== undefined && p !== i && !state.get(p)) visit(p)
+    state.set(i, 2)
+    order.push(i)
+  }
+  rows.forEach((_, i) => visit(i))
+  return order
 }
 
 /**
