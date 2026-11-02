@@ -3007,6 +3007,7 @@ export const AR: Record<string, string> = {
   '{amount} of it is left: use it on an invoice or bill below, or refund it.': 'المتبقي منها {amount}: استخدمه في فاتورة أدناه أو رُدّه.',
   '{a} only has {b} left to pay': 'المتبقي للسداد على {a} هو {b} فقط',
   'Something went wrong on this screen': 'حدث خطأ في هذه الشاشة',
+  'A new version of Bonyan is out. Reload the page to use it; your saved work is safe on the server. If it still fails, check your internet connection.': 'صدر إصدار جديد من بنيان. أعد تحميل الصفحة لاستخدامه؛ عملك المحفوظ آمن على الخادم. إن استمرت المشكلة فتحقق من اتصالك بالإنترنت.',
   'Your saved work is safe on the server. Go back or reload the page; if it happens again, copy the details and send them to support.': 'عملك المحفوظ آمن على الخادم. ارجع أو أعد تحميل الصفحة؛ وإذا تكرر ذلك فانسخ التفاصيل وأرسلها للدعم.',
   'Reload the page': 'إعادة تحميل الصفحة',
   'Copied': 'تم النسخ',
