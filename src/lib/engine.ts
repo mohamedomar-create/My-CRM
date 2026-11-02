@@ -3,7 +3,7 @@
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, ActivityKind, Approval, JournalEntry, Line, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
+import type { AccountCode, ActivityKind, Approval, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
 import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
@@ -1281,7 +1281,7 @@ export function vatForPeriod(ws: Workspace, from: string, to: string) {
   let output = 0
   let input = 0
   for (const j of ws.data.journal) {
-    if (j.date < from || j.date > to || j.ref.startsWith('VAT ')) continue
+    if (j.date < from || j.date > to || j.ref.startsWith('VAT ') || isHistoryEntry(j)) continue
     for (const l of j.lines) {
       if (l.account === '2200') output += l.credit - l.debit
       if (l.account === '1400') input += l.debit - l.credit
@@ -2709,7 +2709,7 @@ export class RowsError extends EngineError {
 export const openingDateOf = (goLive: string) => addDays(goLive, -1)
 
 /** Names of the steps, for the activity log. */
-const STEP_NAME: Record<string, string> = { tb: 'trial balance', customers: 'customer balances', suppliers: 'supplier balances', cheques: 'cheques', stock: 'stock', wht: 'withholding tax' }
+const STEP_NAME: Record<string, string> = { tb: 'trial balance', customers: 'customer balances', suppliers: 'supplier balances', cheques: 'cheques', stock: 'stock', wht: 'withholding tax', earlier: 'earlier periods' }
 const stepName = (key: string) => STEP_NAME[key] ?? (key.startsWith('money:') ? `balance of ${key.slice(6)}` : key)
 
 /** An amount from a sheet: Arabic digits, thousands separators and (1,200) for a negative all read. */
@@ -2776,6 +2776,8 @@ export function clearOpeningStep(ctx: Ctx, key: string) {
   const o = openingBooks(ctx)
   const s = o.steps[key]
   if (!s) return
+  if (key === 'earlier') return clearEarlierPeriods(ctx, o, s)
+  if (key === 'tb' && o.steps.earlier) throw new EngineError('Take the earlier periods out first: they lead up to this trial balance. Bring them in again after it.')
   const date = openingDateOf(o.goLive)
   const at: Ctx = { ...ctx, today: date }
   for (const id of s.cheques) {
@@ -2893,6 +2895,151 @@ export function openingTrialBalance(ctx: Ctx, input: unknown) {
   o.steps.tb = step
   logLedger(ctx, `entered the opening ${stepName('tb')} (${rows.length} lines)`)
   return { posted: posted.length, fromSteps: [...sums.keys()].filter((c) => detailStep(ctx.ws, ctx.schema, c)) }
+}
+
+/* ---------------- Phase H6: earlier periods in the books ---------------- */
+
+/** A history entry (an earlier period, its hand-over to the opening balances, or their reversal): not trading of the live books. */
+export const isHistoryEntry = (j: { ref: string }) => j.ref.startsWith('HIST ') || j.ref.startsWith('REV HIST ')
+/** The history's starting point and its hand-over: balances brought in or handed on, not money that moved. */
+export const isHistoryBalance = (j: { ref: string }) => /^(REV )?HIST (START|HANDOVER)/.test(j.ref)
+
+/** The month a row is about: 2025-03, 03/2025, 3-2025 or any date in it (31/03/2025, 2025-03-31). */
+function periodOf(raw: unknown) {
+  const t = asciiDigits(text(raw))
+  let m = t.match(/^(\d{4})[-/.](\d{1,2})$/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}`
+  m = t.match(/^(\d{1,2})[-/.](\d{4})$/)
+  if (m) return `${m[2]}-${m[1].padStart(2, '0')}`
+  return parseDate('Month', t).slice(0, 7)
+}
+
+/**
+ * The old system's trial balances at the end of earlier months (one or two years, or more), so the profit and loss,
+ * the balance sheet and "compare with last year" cover the time before Bonyan. One row per account per month: the
+ * month, the account (already put on this chart) and its debit or credit balance at the month's end, the profit and
+ * loss for the year so far as trial balances show it. The first month is the starting point; each later one is posted
+ * as one summary entry of the month's movements, on its last day, and every year before the opening date is closed
+ * on 31 December (its December must be among the months). On the opening date the history is handed over to the
+ * opening balances: the books from the opening date on are exactly what they are without it, and 3900 is not touched.
+ */
+export function openingEarlierPeriods(ctx: Ctx, input: unknown) {
+  needFinance(ctx, 'set up the opening balances')
+  const o = openingBooks(ctx)
+  noRealPostingOverSamples(ctx)
+  if (!o.tb) throw new EngineError('Bring in the trial balance on the opening date first: the earlier periods lead up to it')
+  const rows = rowsOf(input)
+  if (!rows.length) throw new EngineError('The sheet has no lines')
+  const date = openingDateOf(o.goLive)
+  const months = new Map<string, Map<string, number>>()
+  eachRow(rows, (r) => {
+    const month = periodOf(r.period)
+    if (monthEnd(month) > date) throw new EngineError(`Month: ${month} isn’t before the opening date (${date})`)
+    const code = text(r.account)
+    const a = findAccount(ctx.ws, code)
+    if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
+    if (!a.active) throw new EngineError(`Account ${a.code} ${a.name} is turned off`)
+    if (code === '3900') throw new EngineError('Account 3900 is filled by Bonyan itself: put the old system’s opening-balance line under capital or retained earnings')
+    const d = amountOf('Debit', r.debit, false)
+    const c = amountOf('Credit', r.credit, false)
+    if (d < 0 || c < 0) throw new EngineError('Amounts can’t be negative: use the other column')
+    const tb = months.get(month) ?? new Map<string, number>()
+    tb.set(code, round2((tb.get(code) ?? 0) + d - c))
+    months.set(month, tb)
+  })
+  const order = [...months.keys()].sort()
+  if (order.length > 72) throw new EngineError('Bring in up to 72 months (6 years)')
+  const cur = ctx.schema.company.currency
+  for (const m of order) {
+    const net = round2([...months.get(m)!.values()].reduce((t, v) => t + v, 0))
+    if (net !== 0) throw new EngineError(`The trial balance of ${m} doesn’t balance: debits and credits differ by ${money(Math.abs(net), cur)}`)
+  }
+  // Every year that ends before the opening date is closed from its December.
+  const first = Number(order[0].slice(0, 4))
+  for (let y = first; `${y}-12-31` < date; y++) {
+    if (`${y}-12` >= order[0] && !months.has(`${y}-12`)) throw new EngineError(`Add the trial balance of December ${y}: the year is closed from it`)
+  }
+  const target = new Map(o.tb.map((r) => [r.account, r.amount]))
+  const last = order.at(-1)!
+  if (monthEnd(last) === date) {
+    const tb = months.get(last)!
+    const off = [...new Set([...tb.keys(), ...target.keys()])].filter((code) => round2((tb.get(code) ?? 0) - (target.get(code) ?? 0)) !== 0)
+    if (off.length) throw new EngineError(`The trial balance of ${last} must be the one on the opening date; it differs on ${off.slice(0, 5).join(', ')}${off.length > 5 ? '…' : ''}`)
+  }
+  const pl = (code: string) => ['income', 'expense'].includes(findAccount(ctx.ws, code)?.type ?? '')
+  clearOpeningStep(ctx, 'earlier')
+  const closed = new Set((ctx.ws.books?.closedYears ?? []).map((c) => c.year))
+  const already = [...new Set(order.map((m) => Number(m.slice(0, 4))))].find((y) => closed.has(y))
+  if (already) throw new EngineError(`${already} is already closed in the books. An admin can reopen it first.`)
+  const step: OpeningStep = { ...newStep(ctx), count: rows.length, total: 0, years: [], from: order[0], to: last }
+  const post = (day: string, ref: string, memo: string, amounts: Map<string, number>) => {
+    const lines = [...amounts].filter(([, v]) => round2(v) !== 0).map(([code, v]) => side(code, v))
+    if (!lines.length) return
+    journal(ctx, { date: day, ref, memo, lines })
+    step.entries.push(ctx.ws.data.journal[0].id)
+  }
+  const base = new Map<string, number>()
+  const moveTo = (tb: Map<string, number>) => {
+    const out = new Map<string, number>()
+    for (const code of new Set([...tb.keys(), ...base.keys()])) {
+      const v = round2((tb.get(code) ?? 0) - (base.get(code) ?? 0))
+      if (v) out.set(code, v)
+      base.set(code, tb.get(code) ?? 0)
+    }
+    return out
+  }
+  const closeYearEnd = (year: number) => {
+    const end = `${year}-12-31`
+    const lines = new Map<string, number>()
+    let sum = 0
+    for (const [code, v] of base) if (v && pl(code)) { lines.set(code, -v); sum = round2(sum + v); base.set(code, 0) }
+    if (sum) lines.set('3100', round2((lines.get('3100') ?? 0) + sum))
+    base.set('3100', round2((base.get('3100') ?? 0) + sum))
+    const before = ctx.ws.data.journal.length
+    if (lines.size) {
+      ctx.closing = true
+      try {
+        post(end, `CLOSE ${year}`, `Year-end close ${year} (earlier periods): ${sum <= 0 ? 'profit' : 'loss'} to retained earnings`, lines)
+      } finally {
+        ctx.closing = false
+      }
+    }
+    const entry = ctx.ws.data.journal.length > before ? ctx.ws.data.journal[0].id : ''
+    ctx.ws.books = { ...ctx.ws.books, closedYears: [...(ctx.ws.books?.closedYears ?? []), { year, at: nowISO(), by: ctx.user.id, entry }] }
+    step.years!.push(year)
+  }
+  for (const [i, m] of order.entries()) {
+    const end = monthEnd(m)
+    const tb = months.get(m)!
+    post(end, i === 0 ? `HIST START ${m}` : `HIST ${m}`, i === 0 ? `Earlier periods: trial balance at the end of ${m}` : `Earlier periods: movements of ${m} (summary)`, moveTo(tb))
+    if (m.endsWith('-12') && end < date) closeYearEnd(Number(m.slice(0, 4)))
+  }
+  step.total = round2([...months.get(last)!.values()].reduce((t, v) => t + (v > 0 ? v : 0), 0))
+  // Up to the opening date, then handed over: the opening balances (H2) carry the books on from there.
+  if (monthEnd(last) < date) post(date, `HIST ${date}`, `Earlier periods: movements from ${monthEnd(last)} to the opening date`, moveTo(target))
+  post(date, 'HIST HANDOVER', 'Earlier periods handed over to the opening balances', new Map([...base].map(([code, v]) => [code, -v])))
+  o.steps.earlier = step
+  logLedger(ctx, `entered the opening ${stepName('earlier')} (${order.length} months, ${order[0]} to ${last})`)
+  return { months: order.length, from: order[0], to: last, years: step.years }
+}
+
+/** Takes the earlier periods out again: each entry reversed on its own date, the years it closed open again. */
+function clearEarlierPeriods(ctx: Ctx, o: OpeningBooks, s: OpeningStep) {
+  const years = new Set(s.years ?? [])
+  ctx.closing = true
+  try {
+    for (const id of s.entries) {
+      const je = ctx.ws.data.journal.find((j) => j.id === id)
+      if (!je) continue
+      const ref = je.ref.startsWith('CLOSE ') ? `REOPEN ${je.ref.slice(6)}` : `REV ${je.ref}`
+      journal(ctx, { date: je.date, ref, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ account: l.account, debit: l.credit, credit: l.debit })) })
+    }
+  } finally {
+    ctx.closing = false
+  }
+  if (ctx.ws.books?.closedYears) ctx.ws.books.closedYears = ctx.ws.books.closedYears.filter((c) => !years.has(c.year))
+  delete o.steps.earlier
+  logLedger(ctx, `cleared the opening ${stepName('earlier')}`)
 }
 
 /** A party (customer or supplier) named on a sheet: by the old system's id, number or name. */

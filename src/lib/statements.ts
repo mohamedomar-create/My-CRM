@@ -2,7 +2,7 @@
 // (direct method) and the general ledger they all drill down to. Pure functions, so the server and tests can use them.
 import type { JournalEntry, Workspace } from './types'
 import { account, accountName, chartOf, moneyKind, type Account } from './accounts'
-import { isClosingEntry, round2 } from './engine'
+import { isClosingEntry, isHistoryBalance, round2 } from './engine'
 import { N_ } from './i18n'
 
 export interface Row {
@@ -124,6 +124,11 @@ export function cashFlow(ws: Workspace, from: string, to: string) {
     if (j.date <= to) closing += m
     if (j.date < from) opening += m
     if (!inPeriod(j, from, to) || m === 0) continue
+    // The earlier periods' starting point and their hand-over to the opening balances (H6) are balances, not flows.
+    if (isHistoryBalance(j)) {
+      flows.set('opening', round2((flows.get('opening') ?? 0) + m))
+      continue
+    }
     for (const l of j.lines) {
       if (money.has(l.account)) continue
       const f = flowOf(ws, l.account)

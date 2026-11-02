@@ -9,7 +9,7 @@ import type { Line, User, Workspace } from './types'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
+  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -62,6 +62,7 @@ export interface CommandArgs {
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'opening.setGoLive': { date: string }
   'opening.trialBalance': { rows: SheetRow[] }
+  'opening.earlier': { rows: SheetRow[] }
   'opening.documents': { kind: 'customers' | 'suppliers'; rows: SheetRow[] }
   'opening.cheques': { rows: SheetRow[] }
   'opening.money': { account: string; balance: string | number; items?: SheetRow[] }
@@ -272,6 +273,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
   'opening.setGoLive': { run: (ws, u, a) => void setGoLive(ctx(ws, u), String(a.date)) },
   'opening.trialBalance': { run: (ws, u, a) => openingTrialBalance(ctx(ws, u), sheet(a.rows)) },
+  'opening.earlier': { run: (ws, u, a) => openingEarlierPeriods(ctx(ws, u), sheet(a.rows)) },
   'opening.documents': {
     run: (ws, u, a) => {
       if (a.kind !== 'customers' && a.kind !== 'suppliers') throw new EngineError('That setup is not valid')

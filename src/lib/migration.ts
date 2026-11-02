@@ -71,7 +71,7 @@ export function migrationSteps(schema: AppSchema): MigrationStep[] {
   // Calls, visits and notes come after the lists, so each finds its record.
   steps.push({ kind: 'activities', id: 'activities' })
   const has = (role: ModuleRole) => Boolean(moduleByRole(schema, role))
-  const books = ['tb', ...(has('invoices') ? ['customers'] : []), ...(has('purchases') ? ['suppliers'] : []), ...(has('invoices') || has('purchases') ? ['cheques'] : []), ...(has('products') ? ['stock'] : []), 'wht']
+  const books = ['tb', 'earlier', ...(has('invoices') ? ['customers'] : []), ...(has('purchases') ? ['suppliers'] : []), ...(has('invoices') || has('purchases') ? ['cheques'] : []), ...(has('products') ? ['stock'] : []), 'wht']
   for (const b of books) steps.push({ kind: 'books', id: b, step: b })
   // Past invoices and bills (Phase H5) last: they link to customers, suppliers, products and what is still owed.
   if (has('invoices')) steps.push({ kind: 'history', id: 'history-sales', side: 'sales' })

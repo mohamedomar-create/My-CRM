@@ -98,7 +98,7 @@ export default function Statements() {
     title = `${tr('Profit and loss')} ${label(period.from, period.to)}`
     body = (
       <table className="data statement">
-        {head(was ? ['', label(period.from, period.to), label(prior!.from, prior!.to), 'Change'] : ['', label(period.from, period.to)])}
+        {head(was ? ['', label(period.from, period.to), label(prior!.from, prior!.to), tr('Change')] : ['', label(period.from, period.to)])}
         {sectionTable(pl.revenue, was?.revenue)}
         {sectionTable(pl.cost, was?.cost)}
         {line(tr('Gross profit ({n}% margin)', { n: pl.grossMargin }), pl.gross, was?.gross)}
@@ -135,7 +135,7 @@ export default function Statements() {
       <>
         <p className="small muted" style={{ marginTop: 0 }}>{tr('Money in and out of the cash boxes and bank accounts, by what it was for. Cheques count when the bank clears them.')}</p>
         <table className="data statement">
-          {head(was ? ['', label(period.from, period.to), label(prior!.from, prior!.to), 'Change'] : ['', label(period.from, period.to)])}
+          {head(was ? ['', label(period.from, period.to), label(prior!.from, prior!.to), tr('Change')] : ['', label(period.from, period.to)])}
           {line(tr('Cash and bank at the start'), cf.opening, was?.opening, false)}
           {sectionTable(cf.operating, was?.operating, false)}
           {sectionTable(cf.investing, was?.investing, false)}
