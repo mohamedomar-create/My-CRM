@@ -8,6 +8,7 @@ import { moduleById, recordIds, replayIds } from './schema'
 import type { BudgetLine, Line, User, Workspace } from './types'
 import { approveBudget, budgetDigest, createBudget, deleteBudget, rejectBudget, reviseBudget, setBudgetLines, submitBudget } from './budget'
 import { removeTarget, setTarget } from './targets'
+import { createPlan, deletePlan, savePlan } from './plan'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
@@ -18,6 +19,12 @@ import type { AccountType } from './accounts'
 import type { ImportOptions } from './engine'
 import { validate } from './validate'
 import { seedSampleData } from './seed'
+
+const planLabels = (v: unknown) => {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+  const t = (x: unknown) => (typeof x === 'string' ? x.trim().slice(0, 120) : undefined)
+  return { team: t(o.team), loans: t(o.loans), other: t(o.other), lang: o.lang === 'ar' ? ('ar' as const) : ('en' as const) }
+}
 
 type Method = 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
 
@@ -72,6 +79,9 @@ export interface CommandArgs {
   'budget.delete': { id: string }
   'target.set': { year: number; kind: 'rep' | 'product' | 'customer'; key: string; months?: number[]; total?: number }
   'target.remove': { id: string }
+  'plan.create': { name?: string; startYear: number; years?: number; fromBooks?: boolean; labels?: { team?: string; loans?: string; other?: string; lang?: 'en' | 'ar' } }
+  'plan.save': { id: string; plan: Record<string, unknown> }
+  'plan.delete': { id: string }
   'journal.reverse': { id: string; date?: string }
   'opening.balance': { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }
   'opening.setGoLive': { date: string }
@@ -303,6 +313,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'budget.delete': { run: (ws, u, a) => void deleteBudget(ctx(ws, u), String(a.id ?? '')) },
   'target.set': { run: (ws, u, a) => setTarget(ctx(ws, u), { year: Number(a.year), kind: a.kind, key: String(a.key ?? ''), months: Array.isArray(a.months) ? a.months.map(Number) : undefined, total: a.total === undefined ? undefined : Number(a.total) }) },
   'target.remove': { run: (ws, u, a) => void removeTarget(ctx(ws, u), String(a.id ?? '')) },
+  'plan.create': { run: (ws, u, a) => createPlan(ctx(ws, u), { name: a.name === undefined ? undefined : String(a.name), startYear: Number(a.startYear), years: a.years === undefined ? undefined : Number(a.years), fromBooks: a.fromBooks !== false, labels: planLabels(a.labels) }) },
+  'plan.save': { run: (ws, u, a) => void savePlan(ctx(ws, u), String(a.id ?? ''), a.plan) },
+  'plan.delete': { run: (ws, u, a) => void deletePlan(ctx(ws, u), String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },

@@ -284,6 +284,8 @@ export interface Workspace {
   budgets?: Budget[]
   /** sales targets per rep, product or customer (P2) */
   targets?: SalesTarget[]
+  /** business plans (P3) */
+  plans?: import('./plan').BusinessPlan[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData
