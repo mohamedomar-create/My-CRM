@@ -20,6 +20,7 @@ import { usePrintBoth } from './usePrintBoth'
 import { StatementView } from './Statement'
 import { readableOn } from '../lib/palette'
 import { AdvanceModal, CreditsPanel } from './Credits'
+import { MoreMenu, PaperView } from './Paper'
 import { creditStanding } from '../lib/partyStatement'
 import { activityLabel } from './labels'
 import { PartyHistory } from './PartyHistory'
@@ -122,6 +123,13 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const docsMod = moduleByRole(schema, mod.role === 'suppliers' ? 'purchases' : 'invoices')
   const seesStatement = canPost({ schema, user }) || Boolean(docsMod && can({ schema, user }, docsMod.id, 'view'))
   const standing = rec && mod.role === 'accounts' && seesStatement ? creditStanding(ws, schema, rec.id) : undefined
+  // A posted document is shown as read-only paper (4.2b); drafts and quotations keep the form.
+  const paper = Boolean(mod.lines && rec && mod.role !== 'quotes' && rec.status && rec.status !== 'draft')
+  const reversePayment = (id: string) => {
+    const p = ws.data.payments.find((x) => x.id === id)
+    const why = prompt(tr('Why reverse this payment? (e.g. entered on the wrong invoice)'))
+    if (why && p) act('payment.reverse', { id: p.id, reason: why }, tr('Payment reversed'), `Reversed payment ${p.ref}`)
+  }
   const related = rec ? relatedRecords(ws, schema, rec).filter(({ m }) => can({ schema, user }, m.id, 'view')) : []
   const costs = canSeeCosts({ schema, user })
   const secret = costs ? [] : costKeys(schema)
@@ -166,11 +174,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {isCredit && rec && Number(rec.values.balance) < 0 && canPost({ schema, user }) && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> {tr('Refund')}</button>
           )}
-          {mod.lines && rec && mod.role !== 'quotes' && !isCredit && ['posted', 'partial', 'paid'].includes(rec.status ?? '') && canPost({ schema, user }) && (
-            <button className="secondary" onClick={() => setCrediting(true)}><Undo2 size={15} /> {mod.role === 'invoices' ? tr('Credit note') : tr('Debit note')}</button>
-          )}
-          {mod.lines && rec && (rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) && canPost({ schema, user }) && (
-            <button className="danger" onClick={() => confirm(tr('Void this document? Stock and journal entries will be reversed. This can’t be undone.')) && act('doc.void', { id: rec.id }, tr('Voided and reversed'))}><Ban size={15} /> {tr('Void')}</button>
+          {mod.lines && rec && canPost({ schema, user }) && (
+            <MoreMenu items={[
+              ...(mod.role !== 'quotes' && !isCredit && ['posted', 'partial', 'paid'].includes(rec.status ?? '') ? [{ label: mod.role === 'invoices' ? tr('Credit note') : tr('Debit note'), icon: <Undo2 size={15} />, onClick: () => setCrediting(true) }] : []),
+              ...((rec.status === 'posted' || (isCredit && rec.status === 'paid' && !Number(rec.values.paid))) ? [{ label: tr('Void'), icon: <Ban size={15} />, danger: true, onClick: () => { if (confirm(tr('Void this document? Stock and journal entries will be reversed. This can’t be undone.'))) act('doc.void', { id: rec.id }, tr('Voided and reversed')) } }] : []),
+            ]} />
           )}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && canPost({ schema, user }) && <button className="secondary" onClick={() => setAdvancing(true)}><Banknote size={15} /> {tr('Advance')}</button>}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && seesStatement && <button className="secondary" onClick={() => setStatement(true)}><FileText size={15} /> {tr('Statement of account')}</button>}
@@ -224,7 +232,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
 
       <div className="record-grid">
         <div className="stack">
-          <div className="card">
+          {paper && rec && <PaperView rec={rec} mod={mod} onReverse={reversePayment} />}
+          {!paper && <div className="card">
             {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? tr('This quotation was turned into an invoice.') : tr('Posted documents are locked to keep your books correct. Void it and create a new one to make changes.')}</div>}
             <div className="form-grid">
               {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && !(!costs && secret.includes(f.key)) && isVisible(mod, f, values)).map((f) => (
@@ -237,10 +246,10 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
           {mod.role === 'invoices' && (isNew || rec?.status === 'draft') && !isCredit && <CreditWarning customer={String(values.customer ?? '')} lines={lines} />}
-          {mod.lines && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
-          {payments.length > 0 && (
+          {mod.lines && !paper && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {payments.length > 0 && !paper && (
             <div className="card">
               <h2>{tr('Payments')}</h2>
               <table className="data"><tbody>{payments.map((p) => {
@@ -290,7 +299,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               </ul>
             </div>
           )}
-          {rec && can({ schema, user }, mod.id, 'delete') && (
+          {rec && can({ schema, user }, mod.id, 'delete') && !paper && (
             <button className="danger" onClick={() => confirm(tr('Delete this {what}?', { what: mod.singular.toLowerCase() })) && act('record.delete', { id: rec.id }, tr('Deleted')) && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> {tr('Delete')}</button>
           )}
         </div>
