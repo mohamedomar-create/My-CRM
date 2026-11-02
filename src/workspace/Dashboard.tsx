@@ -1,23 +1,30 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { Chart } from '../components/Chart'
-import { runReport } from '../lib/reports'
+import { drillFilters, isPeriodic, runReport, sparkline } from '../lib/reports'
 import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory, todayISO } from '../lib/engine'
 import { activeBudget, budgetVsActual, offBudget } from '../lib/budget'
 import { TargetsCard } from './Targets'
+import { OwnerCockpit, PeriodBar } from './Cockpit'
+import { useOpenList, usePeriod } from './usePeriod'
 import { moduleById, moduleByRole } from '../lib/schema'
-import { useLang } from '../lib/i18n'
+import { dateLocale, useLang } from '../lib/i18n'
 
 export default function Dashboard() {
   const { ws, user, schema, act } = useApp()
-  const { tr, msg, lang } = useLang()
+  const { tr, msg } = useLang()
   const tasks = moduleByRole(schema, 'tasks')
   const myTasks = tasks ? list(ws, tasks.id).filter((t) => !t.values.done && t.values.assignee === user.id).sort((a, b) => String(a.values.due_date).localeCompare(String(b.values.due_date))).slice(0, 8) : []
   const today = todayISO()
   const reports = schema.reports.filter((r) => can({ schema, user }, r.module, 'view') && (canSeeCosts({ schema, user }) || !costKeys(schema).includes(r.measure.field ?? '')))
   const hour = new Date().getHours()
   const role = schema.roles.find((r) => r.id === user.roleId)
+  const p = usePeriod()
+  const [tables, setTables] = useState<string[]>([])
+  const openList = useOpenList()
+  const finance = canPost({ schema, user })
 
   return (
     <div className="page">
@@ -36,6 +43,9 @@ export default function Dashboard() {
         </div>
       )}
 
+      <PeriodBar p={p} />
+      {finance && <OwnerCockpit period={p.period} before={p.before} />}
+
       <SalesHistory />
       <BudgetCard />
       <TargetsCard />
@@ -49,12 +59,19 @@ export default function Dashboard() {
       <div className="dash">
         {reports.map((r) => {
           const mod = moduleById(schema, r.module)
-          const res = runReport(ws, schema, r)
+          const periodic = isPeriodic(schema, r)
+          const res = runReport(ws, schema, r, undefined, { period: p.period })
+          const before = r.chart === 'kpi' && periodic && p.before ? runReport(ws, schema, r, undefined, { period: p.before }).total : undefined
           const currency = r.measure.op !== 'count' && mod?.fields.find((f) => f.key === r.measure.field)?.type === 'currency'
+          // Owed money, costs and complaints going up is bad news.
+          const upIsGood = !(r.measure.field === 'balance' || mod?.role === 'purchases' || mod?.role === 'tickets')
           return (
             <div key={r.id} className={`card s${Math.min(r.size, 3)}`}>
-              <h2>{r.name} <Link to={`/app/m/${r.module}`} className="tiny">{mod?.name} →</Link></h2>
-              <Chart type={r.chart} result={res} color={r.color} prefix={currency ? `${schema.company.currency} ` : ''} />
+              <h2>{r.name} <span className="row tiny" style={{ gap: 6 }}>{!periodic && <span className="pill gray tiny" title={tr('As of today, whatever the period')}>{tr('now')}</span>}<Link to={`/app/m/${r.module}`}>{mod?.name} →</Link></span></h2>
+              <Chart type={tables.includes(r.id) ? 'table' : r.chart} result={res} color={r.color} prefix={currency ? `${schema.company.currency} ` : ''} whole={r.measure.op === 'count'}
+                before={before} upIsGood={upIsGood} spark={r.chart === 'kpi' ? sparkline(ws, schema, r, p.period.to) : undefined}
+                onPick={(key) => openList(r.module, drillFilters(schema, r, key, p.period), key ? `${r.name}: ${res.rows.find((x) => x.key === key)?.label ?? ''}` : r.name)} />
+              {r.chart !== 'kpi' && r.chart !== 'table' && <button className="ghost tiny" style={{ marginTop: 6 }} aria-pressed={tables.includes(r.id)} onClick={() => setTables(tables.includes(r.id) ? tables.filter((x) => x !== r.id) : [...tables, r.id])}>{tables.includes(r.id) ? tr('View as chart') : tr('View as table')}</button>}
             </div>
           )
         })}
@@ -78,7 +95,7 @@ export default function Dashboard() {
           <h2>{tr('Recent activity')}</h2>
           <ul className="timeline">
             {ws.data.activity.filter((a) => !a.module || can({ schema, user }, a.module, 'view')).slice(0, 8).map((a) => (
-              <li key={a.id}><b>{a.user}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</span></li>
+              <li key={a.id}><b>{a.user}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>
             ))}
           </ul>
         </div>

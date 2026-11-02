@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Flame, Kanban, Plus, Table2, Upload } from 'lucide-react'
+import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Filter as FilterIcon, Flame, Kanban, Plus, Table2, Upload, X } from 'lucide-react'
 import { ImportModal } from './ImportModal'
 import { statusLabel, useApp } from './useApp'
 import { Icon } from '../components/Icon'
-import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, groupIds, list, money, parentField, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { can, canSeeCosts, costKeys, csvSafe, displayValue, fieldValue, groupIds, list, matches, money, parentField, recordTitle, rotting, score, todayISO } from '../lib/engine'
+import { filtersFromUrl } from '../lib/reports'
 import { groupChoices } from '../lib/hierarchy'
 import { addView, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
@@ -29,7 +30,11 @@ export default function ModuleView() {
 function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppSchema }) {
   const nav = useNavigate()
   const { user, act } = useApp()
-  const [view, setView] = useState<'table' | 'board' | 'calendar'>(mod.stages ? 'board' : 'table')
+  // Filters in the web address: a list opened from a figure on the dashboard (4.2c, UX-05).
+  const [params, setParams] = useSearchParams()
+  const linked = filtersFromUrl(params.get('f'))
+  const linkedLabel = params.get('label') ?? ''
+  const [view, setView] = useState<'table' | 'board' | 'calendar'>(mod.stages && !linked.length ? 'board' : 'table')
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: '__created', dir: -1 })
   const [stage, setStage] = useState('')
@@ -63,6 +68,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const groups = via ? groupChoices(ws, schema, via.target) : []
   const inGroup = group && via ? groupIds(ws, via.target, group) : undefined
   const rows = all
+    .filter((r) => !linked.length || matches(schema, r, linked, ws))
     .filter((r) => !inGroup || inGroup.has(via!.target.id === mod.id ? r.id : String(r.values[via!.field.key] ?? '')))
     .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())) || [r.legacy?.id, r.legacy?.number].some((x) => x?.toLowerCase().includes(q.toLowerCase())))
     .filter((r) => !stage || r.stage === stage || r.status === stage)
@@ -91,6 +97,13 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
 
   return (
     <div className="page">
+      {linked.length > 0 && (
+        <div className="info row" style={{ marginBottom: 12, gap: 8 }}>
+          <FilterIcon size={15} aria-hidden />
+          <span className="grow">{tr('Showing {n} of {total}: {what}', { n: rows.length, total: all.length, what: linkedLabel || tr('filtered from the dashboard') })}</span>
+          <button className="ghost small" onClick={() => setParams({}, { replace: true })}><X size={14} /> {tr('Show all')}</button>
+        </div>
+      )}
       <div className="page-head">
         <h1><span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>{mod.name} <span className="pill gray">{all.length}</span></h1>
         <div className="row">

@@ -7,7 +7,7 @@ import { showToast, useApp, useToast } from './useApp'
 import { can, canApprove, canPost, hasSampleData, list, recordTitle } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
-import { useLang } from '../lib/i18n'
+import { dateLocale, useLang } from '../lib/i18n'
 import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
 
 export default function Shell() {
@@ -101,7 +101,7 @@ export default function Shell() {
             {bell && (
               <div className="card notif">
                 {notes.length === 0 && <div className="muted">{tr('No notifications yet.')}</div>}
-                {notes.slice(0, 30).map((n) => <div key={n.id} className={isRead(n) ? '' : 'unread'} style={{ cursor: n.record ? 'pointer' : undefined }} onClick={() => { if (n.record) { setBell(false); nav(`/app/r/${n.record}`) } }}>{msg(n.message)}<br /><span className="tiny muted">{new Date(n.at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</span></div>)}
+                {notes.slice(0, 30).map((n) => <div key={n.id} className={isRead(n) ? '' : 'unread'} style={{ cursor: n.record ? 'pointer' : undefined }} onClick={() => { if (n.record) { setBell(false); nav(`/app/r/${n.record}`) } }}>{msg(n.message)}<br /><span className="tiny muted">{new Date(n.at).toLocaleString(dateLocale())}</span></div>)}
               </div>
             )}
           </div>

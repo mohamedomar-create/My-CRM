@@ -2226,6 +2226,8 @@ export function pseudoValue(schema: AppSchema, rec: Rec, key: string, ws?: Works
   if (key === '__stagetype') return mod?.stages?.find((s) => s.id === rec.stage)?.type
   if (key === '__status') return rec.status
   if (key === '__month') return (mod?.lines && rec.values.date ? String(rec.values.date) : rec.createdAt).slice(0, 7)
+  // The record's date for periods (4.2c): a document's own date, otherwise the day it was created.
+  if (key === '__date') return (mod?.lines && rec.values.date ? String(rec.values.date) : rec.createdAt).slice(0, 10)
   if (key === '__owner') return rec.createdBy
   return rec.values[key]
 }
