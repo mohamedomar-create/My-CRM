@@ -32,7 +32,10 @@ function aggregate(op: ReportDef['measure']['op'], values: number[]) {
 export function runReport(ws: Workspace, schema: AppSchema, r: ReportDef, records?: Rec[]): ReportResult {
   const mod = moduleById(schema, r.module)
   if (!mod) return { rows: [], total: 0, count: 0 }
-  const recs = (records ?? list(ws, mod.id)).filter((rec) => rec.status !== 'void' && matches(schema, rec, r.filters, ws))
+  // Opening balances (Phase H2) are what was still owed on going live, not sales or purchases of their old dates: only
+  // reports of what is owed count them.
+  const owed = r.measure.field === 'balance' || r.filters.some((f) => f.field === 'balance')
+  const recs = (records ?? list(ws, mod.id)).filter((rec) => rec.status !== 'void' && (owed || !rec.values.opening) && matches(schema, rec, r.filters, ws))
   const measure = (rec: Rec) => Number(pseudoValue(schema, rec, r.measure.field ?? '', ws) ?? 0) || 0
   const total = aggregate(r.measure.op, recs.map(measure))
   if (r.chart === 'kpi' || !r.groupBy) return { rows: [], total, count: recs.length }

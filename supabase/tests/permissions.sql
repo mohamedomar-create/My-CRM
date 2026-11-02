@@ -367,4 +367,32 @@ select pg_temp.check('others don''t', (select count(*) = 0 from public.automatio
 reset role;
 
 select pg_temp.check('snapshots of earlier versions are kept', (select count(*) >= 1 from public.workspace_versions where workspace_id='ws_test123456'));
+
+-- Phase H5: the history store (past invoices and bills): added by admins and finance, read by side, never directly.
+select set_config('request.jwt.claims', '', false);
+update public.workspaces set doc = jsonb_set(jsonb_set(doc, '{published,modules}', '[{"id":"m_inv","role":"invoices"},{"id":"m_bill","role":"purchases"}]'), '{security}', '{"requireTwoFactor": false}') where id = 'ws_books000001';
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('finance brings in past invoices, a credit note and a bill', (select public.history_add('ws_books000001', 'imp_h1', 'old.xlsx', '[{"id":"h1","side":"sales","kind":"invoice","number":"INV-1","date":"2025-03-01","party":"r_c1","partyName":"Nile","subtotal":100,"tax":14,"total":114,"lines":[{"sku":"R5","description":"Rice","qty":2,"price":50,"net":100}]},{"id":"h2","side":"sales","kind":"credit","number":"CN-1","date":"2025-03-05","party":"r_c1","subtotal":20,"tax":2.8,"total":22.8,"lines":[{"sku":"R5","description":"Rice","qty":1,"price":20,"net":20}]},{"id":"h3","side":"purchases","kind":"invoice","date":"2025-02-01","party":"r_s1","subtotal":60,"total":60}]') = 3));
+select pg_temp.check('sent again, nothing is added twice', (select public.history_add('ws_books000001', 'imp_h1', 'old.xlsx', '[{"id":"h1","side":"sales","kind":"invoice","number":"INV-1","date":"2025-03-01","party":"r_c1","partyName":"Nile","subtotal":100,"tax":14,"total":114,"lines":[{"sku":"R5","description":"Rice","qty":2,"price":50,"net":100}]},{"id":"h2","side":"sales","kind":"credit","number":"CN-1","date":"2025-03-05","party":"r_c1","subtotal":20,"tax":2.8,"total":22.8,"lines":[{"sku":"R5","description":"Rice","qty":1,"price":20,"net":20}]},{"id":"h3","side":"purchases","kind":"invoice","date":"2025-02-01","party":"r_s1","subtotal":60,"total":60}]') = 0));
+select pg_temp.blocked('a document with a bad id', $q$select public.history_add('ws_books000001', 'imp_h9', 'x', '[{"id":"../x","side":"sales","kind":"invoice","date":"2025-01-01","party":"r"}]')$q$);
+select pg_temp.check('totals by month take credit notes off', (select array_agg(amount) = array[80.00]::numeric[] from public.history_summary('ws_books000001', 'sales', '2025-01-01', '2025-12-31', 'month')));
+select pg_temp.check('totals by product count quantities', (select qty = 1 and amount = 80 from public.history_summary('ws_books000001', 'sales', '2025-01-01', '2025-12-31', 'product')));
+select pg_temp.check('a customer''s history per year', (select amount = 80 and last_date = '2025-03-01' from public.history_party_stats('ws_books000001', 'r_c1') where side = 'sales'));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"sales@test.dev","role":"authenticated"}', false);
+select pg_temp.check('a sales person reads a customer''s sales history, newest first', (select array_agg(x ->> 'number') = array['CN-1', 'INV-1'] from public.history_for_party('ws_books000001', 'r_c1') x));
+select pg_temp.check('but not purchase history', (select count(*) = 0 from public.history_for_party('ws_books000001', 'r_s1')));
+select pg_temp.blocked('a sales person totals purchase history', $q$select * from public.history_summary('ws_books000001', 'purchases', '2025-01-01', '2025-12-31', 'month')$q$);
+select pg_temp.blocked('a sales person brings in past documents', $q$select public.history_add('ws_books000001', 'imp_h2', 'x', '[]')$q$);
+select pg_temp.blocked('a sales person takes a batch out', $q$select public.history_undo('ws_books000001', 'imp_h1')$q$);
+select pg_temp.blocked('a person reads the table directly', $q$select * from public.history_docs$q$);
+select pg_temp.blocked('a person writes the table directly', $q$insert into public.history_docs (workspace_id, id, side, kind, date, party, batch, added_by) values ('ws_books000001', 'hx', 'sales', 'invoice', '2025-01-01', 'r', 'imp_x', 'x')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('someone outside the company reads its history', $q$select * from public.history_for_party('ws_books000001', 'r_c1')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('an admin lists the batches', (select docs = 3 and lines = 2 and file = 'old.xlsx' from public.history_batches('ws_books000001')));
+select pg_temp.check('and takes a batch out again', (select public.history_undo('ws_books000001', 'imp_h1') = 3));
+reset role;
+select pg_temp.check('adding and undoing are in the audit trail', (select count(*) = 3 from public.audit_events where workspace_id = 'ws_books000001' and command like 'history.%'));
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

@@ -7,6 +7,7 @@ import { useApp } from './useApp'
 import { ImportModal } from './ImportModal'
 import { ActivityImport } from './ActivityImport'
 import GoLive, { type SheetPreset } from './GoLive'
+import { HistoryImport } from './HistoryImport'
 import { can, canPost, list, money, openingStatus } from '../lib/engine'
 import { findStepSheet, migrationSteps, migrationWorkbook, stepSheetName, type MigrationStep } from '../lib/migration'
 import type { AppSchema } from '../lib/schema'
@@ -67,6 +68,8 @@ export default function Migrate() {
   const doneModules = modules.filter((s) => list(ws, s.id).length > 0).length
   const opening = steps.filter((s) => s.kind === 'books' && Boolean(o?.steps[s.id])).length
   const current = modules.find((s) => s.id === open)
+  const history = steps.filter((s): s is Extract<MigrationStep, { kind: 'history' }> => s.kind === 'history')
+  const currentHistory = history.find((s) => s.id === open)
 
   return (
     <div className="page stack">
@@ -133,6 +136,31 @@ export default function Migrate() {
         </div>
       )}
 
+      {finance && history.length > 0 && (
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>{tr('3. Past invoices and bills')}</h2>
+          <p className="small muted" style={{ margin: 0 }}>{tr('The invoices, credit notes and bills of earlier years, so each customer and supplier shows what they bought and the sales analysis covers past years. They are kept as history: the books, stock and VAT are not touched. Bring them in after the opening books, so an invoice still owed is linked to its opening balance.')}</p>
+          <table className="data">
+            <tbody>
+              {history.map((s) => {
+                const sh = sheetOf(s)
+                return (
+                  <tr key={s.id} style={{ cursor: 'default' }}>
+                    <td><b>{stepSheetName(s, (en) => tr(en))}</b></td>
+                    <td className="small">{sh ? tr('{n} rows in your workbook', { n: rowsIn(sh) }) : book ? <span className="muted">{tr('No rows in the workbook')}</span> : ''}</td>
+                    <td style={{ textAlign: 'end' }}><button className={sh ? 'glow small' : 'ghost small'} onClick={() => setOpen(s.id)}><Upload size={14} /> {sh ? tr('Import these rows') : tr('Import')}</button></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {currentHistory && (() => {
+        const sh = sheetOf(currentHistory)
+        return <HistoryImport key={currentHistory.id + (book?.file ?? '')} side={currentHistory.side} preset={sh && book ? { fileName: `${book.file} · ${sh.name}`, sheet: sh } : undefined} onClose={() => setOpen(null)} />
+      })()}
       {open === 'activities' && (() => {
         const sh = sheetOf(steps.find((s) => s.kind === 'activities')!)
         return <ActivityImport key={book?.file ?? ''} preset={sh && book ? { fileName: `${book.file} · ${sh.name}`, sheet: sh } : undefined} onClose={() => setOpen(null)} />

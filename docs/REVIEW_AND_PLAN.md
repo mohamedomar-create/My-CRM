@@ -570,7 +570,9 @@ A smaller team stretches the timeline roughly in proportion.
 >
 > **Phase H3 done (migration wizard).** "Bring your data in": a workbook made from the company's own system (instructions, a sheet per step, drop-down lists, Arabic right to left), the steps in dependency order, one upload that opens each step with its sheet (lists through the import screen, then the opening books), a summary, and problems pointing to the row and cell. With H1–H3 a new company can start with its CRM and correct opening books.
 >
-> **Phase H4 done (CRM and activity history).** Stage history from a date per stage, lost reasons, long-closed deals off the board unless asked; calls, meetings, visits, e-mails and notes on each record's timeline in date order (undoable); former members keep history and reports by person true, with hand-over of their open records; a sales history panel (win rate, sales cycle, this year against last). Next: H5, the history store and document history.
+> **Phase H4 done (CRM and activity history).** Stage history from a date per stage, lost reasons, long-closed deals off the board unless asked; calls, meetings, visits, e-mails and notes on each record's timeline in date order (undoable); former members keep history and reports by person true, with hand-over of their open records; a sales history panel (win rate, sales cycle, this year against last).
+>
+> **Phase H5 done (history store and document history).** Past invoices, credit notes, quotations and bills kept on the server, never loaded when the app opens, read a page at a time or as server totals, by side and role; a wizard step and workbook sheets for them (undoable, sent again adds nothing twice, linked to the opening balance still owed); each customer and supplier shows what they bought per year and the past documents with lines; a Sales analysis page by month, product, customer or rep with "include history". Sales reports no longer count opening balances. Next: H6, earlier periods in the books.
 
 **Work items**
 - **H1:** import engine (Excel, large files, dry run, update by key, links by old id, value mapping, original dates and owners, batches with undo, no side effects).
