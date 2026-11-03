@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ShieldCheck, Smartphone, Trash2, UserX } from 'lucide-react'
 import { Logo } from '../components/Logo'
+import { YourCompanies } from '../components/YourCompanies'
 import { deleteMyAccount, finishTwoFactorSetup, IDLE_MINUTES, myEmail, removeTwoFactor, startTwoFactorSetup, twoFactorFactors, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
@@ -85,6 +86,7 @@ export default function Security() {
         <p className="tiny muted">{tr('For your safety Bonyan also signs you out after {n} minutes without activity.', { n: IDLE_MINUTES })}</p>
         <Link to="/app">{tr('← Back to the app')}</Link>
       </div>
+      <YourCompanies />
       <DeleteLogin />
     </div>
   )

@@ -70,6 +70,7 @@ export default function Shell() {
             {companies.map((c) => <option key={c.id} value={c.id}>{c.name || tr('Unnamed company')}</option>)}
           </select>
         )}
+        <Link to="/security#companies" className="sidebar-small">{tr('Your companies')}</Link>
         <NavLink to="/app" end><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
         <div className="sect">{schema.company.name}</div>
         {visible.map((m) => (
