@@ -96,7 +96,7 @@ export default function Migrate() {
       <div className="card stack">
         <h2 style={{ margin: 0 }}>{tr('1. Your lists, in this order')}</h2>
         <p className="small muted" style={{ margin: 0 }}>{tr('Each list comes after the ones it links to, so a contact finds its company and a deal its customer. Use the old system id in links when names repeat.')}</p>
-        <table className="data">
+        <div className="table-wrap"><table className="data">
           <tbody>
             {modules.map((s, i) => {
               const sh = sheetOf(s)
@@ -126,7 +126,7 @@ export default function Migrate() {
               )
             })()}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {finance && (
@@ -140,7 +140,7 @@ export default function Migrate() {
         <div className="card stack">
           <h2 style={{ margin: 0 }}>{tr('3. Past invoices and bills')}</h2>
           <p className="small muted" style={{ margin: 0 }}>{tr('The invoices, credit notes and bills of earlier years, so each customer and supplier shows what they bought and the sales analysis covers past years. They are kept as history: the books, stock and VAT are not touched. Bring them in after the opening books, so an invoice still owed is linked to its opening balance.')}</p>
-          <table className="data">
+          <div className="table-wrap"><table className="data">
             <tbody>
               {history.map((s) => {
                 const sh = sheetOf(s)
@@ -153,7 +153,7 @@ export default function Migrate() {
                 )
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
 

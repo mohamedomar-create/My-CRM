@@ -783,7 +783,7 @@ A smaller team stretches the timeline roughly in proportion.
 **Acceptance checks**
 - [ ] 100% of the user interface is translated (automatic check).
 - [ ] The accessibility scanner (axe) reports 0 serious issues; full keyboard journeys work.
-- [ ] No horizontal scrolling at 390px width on any route.
+- [x] No horizontal scrolling at 390px width on any route. (3 Nov 2026: checked on all 22 signed-in routes and the public pages, in English and Arabic; the public pages are checked on every change by the browser test.)
 - [ ] Dashboard net sales equal the revenue account for the same period.
 - [ ] 5 Egyptian SME owners complete "how did we do this month vs last?" in under 30 seconds in usability tests.
 

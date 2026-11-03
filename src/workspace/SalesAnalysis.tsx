@@ -97,7 +97,7 @@ export default function SalesAnalysis() {
           <span className="small muted">{loading ? tr('Loading the history…') : tr('Credit notes are taken off; opening balances are not sales and are left out.')}</span>
         </div>
         {rows.length === 0 ? <p className="muted small" style={{ margin: 0 }}>{tr('Nothing in {year}', { year })}</p> : (
-          <table className="data">
+          <div className="table-wrap"><table className="data">
             <thead><tr><th>{by === 'month' ? tr('Month') : by === 'product' ? tr('Product') : view === 'top' ? tr('Group') : by === 'party' ? (side === 'sales' ? tr('Customer') : tr('Supplier')) : tr('Sales rep')}</th><th className="num">{tr('Documents')}</th>{by === 'product' && <th className="num">{tr('Quantity')}</th>}<th className="num">{tr('Before VAT')}</th><th style={{ width: '30%' }} /></tr></thead>
             <tbody>
               {rows.slice(0, 200).map((r) => (
@@ -110,7 +110,7 @@ export default function SalesAnalysis() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
       {side === 'sales' && <SalesTargets year={year} />}

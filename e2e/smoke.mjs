@@ -51,6 +51,20 @@ try {
   const redirected = page.url().endsWith('/signin')
   if (!redirected) failed++
   console.log(`${redirected ? 'ok  ' : 'FAIL'} /security without signing in → /signin`)
+  // On a phone (390px wide) no page scrolls sideways, in English or Arabic.
+  await page.setViewportSize({ width: 390, height: 844 })
+  for (const lang of ['en', 'ar']) {
+    await page.goto(BASE + '/signin')
+    await page.evaluate((l) => localStorage.setItem('bonyan.lang', l), lang)
+    for (const [path] of PAGES) {
+      await page.goto(BASE + path, { waitUntil: 'domcontentloaded' })
+      await page.locator('h1').first().waitFor({ timeout: 8000 }).catch(() => undefined)
+      const [sw, w] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
+      const fits = sw <= w
+      if (!fits) failed++
+      console.log(`${fits ? 'ok  ' : 'FAIL'} ${path} fits a phone (${lang})${fits ? '' : `: ${sw}px wide on a ${w}px screen`}`)
+    }
+  }
   await browser.close()
 } finally {
   stop()
