@@ -3337,4 +3337,6 @@ export const AR: Record<string, string> = {
   'Erased on {date}': 'تُمحى في {date}',
   'Delete…': 'حذف…',
   'Only the owner can delete this company.': 'المالك وحده يمكنه حذف هذه الشركة.',
+  'Nothing after a few minutes? Look in the spam folder. If you were invited to a company but never opened the invitation, you have no login yet: ask the company’s admin for a new invitation link (Team page) and choose your password there.': 'لم يصل شيء بعد بضع دقائق؟ ابحث في مجلد الرسائل غير المرغوب فيها. إن كنت مدعوًّا إلى شركة ولم تفتح الدعوة، فليس لديك حساب دخول بعد: اطلب من مسؤول الشركة رابط دعوة جديدًا (صفحة الفريق) واختر كلمة المرور من خلاله.',
+  'Or create a new account': 'أو أنشئ حسابًا جديدًا',
 }
