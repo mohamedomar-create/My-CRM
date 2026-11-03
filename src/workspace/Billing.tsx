@@ -55,7 +55,7 @@ export default function Billing() {
       case 'free': return { tone: 'info', text: tr('The Free plan: up to 2 people and the CRM. Invoices, bills, stock and the books come with Growth or Pro.') }
       case 'active': return { tone: 'ok-box', text: tr('{plan}, {n} seats, paid until {date}.', { plan: planName(b.plan, ar ? 'ar' : 'en', prices.plans), n: b.seats, date: day(b.paid_until) }) }
       case 'past_due': return { tone: 'warn-box', text: tr('The paid period ended on {date}. Pay within {n} days, or the company becomes read-only.', { date: day(b.paid_until), n: b.days_left ?? 0 }) }
-      default: return { tone: 'error-box', text: b.reason === 'trial_ended' ? tr('The free trial has ended, so the company is read-only: everything can be seen and exported, nothing changed. Choose a plan to carry on.') : tr('The subscription is unpaid, so the company is read-only: everything can be seen and exported, nothing changed. Pay to carry on.') }
+      default: return { tone: 'error-box', text: b.reason === 'deleting' ? tr('The owner asked to delete this company, so it is read-only. The owner can keep it in the builder (Company tab) until it is erased.') : b.reason === 'trial_ended' ? tr('The free trial has ended, so the company is read-only: everything can be seen and exported, nothing changed. Choose a plan to carry on.') : tr('The subscription is unpaid, so the company is read-only: everything can be seen and exported, nothing changed. Pay to carry on.') }
     }
   })()
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
-import { ShieldCheck, Smartphone, Trash2 } from 'lucide-react'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { ShieldCheck, Smartphone, Trash2, UserX } from 'lucide-react'
 import { Logo } from '../components/Logo'
-import { finishTwoFactorSetup, IDLE_MINUTES, removeTwoFactor, startTwoFactorSetup, twoFactorFactors, useStore } from '../lib/store'
+import { deleteMyAccount, finishTwoFactorSetup, IDLE_MINUTES, myEmail, removeTwoFactor, startTwoFactorSetup, twoFactorFactors, useStore } from '../lib/store'
 import { useLang } from '../lib/i18n'
 
 /** Two-factor login for this person: set up an authenticator app, or turn it off. Works even before a workspace opens. */
@@ -85,6 +85,45 @@ export default function Security() {
         <p className="tiny muted">{tr('For your safety Bonyan also signs you out after {n} minutes without activity.', { n: IDLE_MINUTES })}</p>
         <Link to="/app">{tr('← Back to the app')}</Link>
       </div>
+      <DeleteLogin />
+    </div>
+  )
+}
+
+/** Deleting your own login: you leave every company at once. An owner first hands the company over or deletes it. */
+function DeleteLogin() {
+  const { tr, msg } = useLang()
+  const nav = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [email, setEmail] = useState('')
+  const [mine, setMine] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (open) void myEmail().then(setMine) }, [open])
+  async function go(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (!confirm(tr('Delete your login now? You leave every company you are in and can’t sign in again with it. This can’t be undone.'))) return
+    setBusy(true)
+    try {
+      await deleteMyAccount(email)
+      nav('/', { replace: true })
+    } catch (err) {
+      setBusy(false)
+      setError((err as Error).message)
+    }
+  }
+  return (
+    <div className="card stack" style={{ marginTop: 16 }}>
+      <h2 style={{ margin: 0 }}><UserX size={18} aria-hidden /> {tr('Delete my login')}</h2>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Your login is deleted and you leave every company you are in. The records you entered stay with each company (they belong to it); your name stays on them. If you own a company, hand it to another admin on the Team page, or delete the company, first.')}</p>
+      {!open ? <div><button className="secondary" onClick={() => setOpen(true)}>{tr('Delete my login…')}</button></div> : (
+        <form className="stack" onSubmit={go}>
+          <label className="field">{tr('Type your e-mail to confirm')}{mine && <span className="tiny muted" dir="ltr">{mine}</span>}<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" /></label>
+          <div className="row"><button className="danger" disabled={busy || !email.trim()}>{busy ? tr('Deleting…') : tr('Delete my login')}</button><button type="button" className="ghost" onClick={() => { setOpen(false); setError('') }}>{tr('Cancel')}</button></div>
+        </form>
+      )}
+      {error && <div className="error-box">{msg(error)}</div>}
     </div>
   )
 }
