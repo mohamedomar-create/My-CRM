@@ -86,11 +86,16 @@ export interface PlanPeriod {
   investing: number
   financing: number
   netCash: number
+  /** inside the cash flow: investments bought, loans drawn and repaid, capital put in */
+  capex: number
+  draws: number
+  principal: number
+  capitalIn: number
   /** assets less liabilities and equity: 0 when the statements agree */
   check: number
 }
 
-const FLOWS = ['revenue', 'cogs', 'gross', 'staff', 'overheads', 'ebitda', 'depreciation', 'ebit', 'interest', 'ebt', 'tax', 'net', 'operating', 'investing', 'financing', 'netCash'] as const
+const FLOWS = ['revenue', 'cogs', 'gross', 'staff', 'overheads', 'ebitda', 'depreciation', 'ebit', 'interest', 'ebt', 'tax', 'net', 'operating', 'investing', 'financing', 'netCash', 'capex', 'draws', 'principal', 'capitalIn'] as const
 const STOCKS = ['cash', 'receivables', 'inventory', 'fixedAssets', 'otherAssets', 'assets', 'payables', 'taxPayable', 'loans', 'otherLiabilities', 'liabilities', 'equity', 'check'] as const
 
 /** The plan in one scenario, month by month (every month of every year). */
@@ -198,6 +203,7 @@ export function projectMonths(p: BusinessPlan, scenario: ScenarioName = 'base'):
       cash, receivables: ar, inventory: inv, fixedAssets: fa, otherAssets: o.otherAssets, assets,
       payables: ap, taxPayable: taxPay, loans, otherLiabilities: o.otherLiabilities, liabilities, equity,
       operating, investing, financing, netCash: operating + investing + financing,
+      capex, draws, principal, capitalIn: injected,
       check: assets - liabilities - equity,
     })
   }
@@ -229,6 +235,8 @@ export interface PlanIndicators {
   /** the lowest month-end cash, and when */
   minCash: number
   minCashMonth: string
+  /** the first month (1 = the plan's first) whose cash is below zero, if any */
+  firstShortMonth: number | null
   /** what the company would have to find so cash never goes below zero */
   fundingNeeded: number
   /** the first year's sales at which profit is zero (fixed costs ÷ contribution margin) */
@@ -282,8 +290,9 @@ export function indicators(p: BusinessPlan, months: PlanPeriod[]): PlanIndicator
     if (wasNegative && sum >= 0 && before < 0) { payback = Math.round((i + -before / freeCash[i]) * 10) / 10; break }
   }
   if (!wasNegative) payback = 0
+  const short = months.findIndex((m) => m.cash < -0.005)
   return {
-    minCash: low.cash, minCashMonth: low.label, fundingNeeded: round2(Math.max(0, -low.cash)),
+    minCash: low.cash, minCashMonth: low.label, firstShortMonth: short < 0 ? null : short + 1, fundingNeeded: round2(Math.max(0, -low.cash)),
     breakEven: cm > 0 ? round2(fixed / cm) : null, firstProfitMonth, freeCash, npv, irr: irrOf(freeCash), payback,
   }
 }
@@ -476,3 +485,169 @@ export function planRows(p: BusinessPlan, scenario: ScenarioName, t: (en: string
   ]
 }
 
+
+/* ---------------- analysis: ratios, sales by line, checks, sensitivity ---------------- */
+
+// Marks texts for translation without bringing the dictionary into the server functions.
+const N_ = <T extends string>(en: T) => en
+
+export interface PlanRatios {
+  label: string
+  /** sales growth on the year before, % (none for the first year) */
+  growth: number | null
+  grossMargin: number | null
+  ebitdaMargin: number | null
+  netMargin: number | null
+  /** current assets ÷ current liabilities, × */
+  currentRatio: number | null
+  /** loans ÷ equity, × */
+  debtToEquity: number | null
+  /** (EBITDA less tax) ÷ (interest and repayments), ×: what banks call debt service cover */
+  dscr: number | null
+  /** net profit ÷ equity at the year's end, % */
+  roe: number | null
+}
+
+const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null)
+const times = (a: number, b: number) => (b > 0.005 ? Math.round((a / b) * 100) / 100 : null)
+
+/** The ratios a bank reads, per year. */
+export function ratiosOf(years: PlanPeriod[]): PlanRatios[] {
+  return years.map((y, i) => ({
+    label: y.label,
+    growth: i > 0 && years[i - 1].revenue > 0 ? pct(y.revenue - years[i - 1].revenue, years[i - 1].revenue) : null,
+    grossMargin: pct(y.gross, y.revenue),
+    ebitdaMargin: pct(y.ebitda, y.revenue),
+    netMargin: pct(y.net, y.revenue),
+    currentRatio: times(y.cash + y.receivables + y.inventory + y.otherAssets, y.payables + y.taxPayable + y.otherLiabilities),
+    debtToEquity: y.equity > 0 ? Math.round((y.loans / y.equity) * 100) / 100 : null,
+    dscr: times(y.ebitda - y.tax, y.interest + y.principal),
+    roe: y.equity > 0 ? pct(y.net, y.equity) : null,
+  }))
+}
+
+/** Each product line's sales per year, in one scenario (they add up to the plan's sales). */
+export function lineSales(p: BusinessPlan, scenario: ScenarioName = 'base'): { id: string; name: string; years: number[] }[] {
+  const sc: PlanScenario = scenario === 'base' ? { units: 0, price: 0, cost: 0, expenses: 0 } : p.scenarios[scenario]
+  const f = (x: number) => 1 + x / 100
+  return p.lines.map((l) => ({
+    id: l.id, name: l.name,
+    years: Array.from({ length: p.years }, (_, y) => round2(l.units * Math.pow(f(l.growthUnits), y) * f(sc.units) * l.price * Math.pow(f(l.growthPrice), y) * f(sc.price))),
+  }))
+}
+
+/** A loan's monthly instalment once its grace is over (interest and repayment). */
+export function loanPayment(l: Pick<PlanLoan, 'amount' | 'rate' | 'termMonths'>) {
+  const r = l.rate / 100 / 12
+  return round2(r ? (l.amount * r) / (1 - Math.pow(1 + r, -l.termMonths)) : l.amount / Math.max(1, l.termMonths))
+}
+
+/** Growth per year from the first year's sales to the last's, %. */
+export function cagr(first: number, last: number, years: number) {
+  if (first <= 0 || last <= 0 || years < 2) return null
+  return Math.round((Math.pow(last / first, 1 / (years - 1)) - 1) * 1000) / 10
+}
+
+/** Where the money comes from and where it goes over the whole plan (the two always add up to the same). */
+export function sourcesAndUses(p: BusinessPlan, months: PlanPeriod[]) {
+  const sum = (k: keyof PlanPeriod) => round2(months.reduce((s, m) => s + Number(m[k]), 0))
+  const operating = sum('operating')
+  const sources = [
+    { key: 'opening', label: N_('Cash when the plan starts'), value: round2(Math.max(0, p.opening.cash)) },
+    { key: 'operating', label: N_('Cash from operations'), value: Math.max(0, operating) },
+    { key: 'loans', label: N_('New loans'), value: sum('draws') },
+    { key: 'capital', label: N_('Capital put in'), value: sum('capitalIn') },
+    // what the plan still has to find when its cash ends below zero
+    { key: 'short', label: N_('Cash still to be found'), value: round2(Math.max(0, -(months.at(-1)?.cash ?? 0))) },
+  ]
+  const uses = [
+    { key: 'capex', label: N_('Investments'), value: sum('capex') },
+    { key: 'repaid', label: N_('Loans repaid'), value: sum('principal') },
+    { key: 'operating', label: N_('Cash used by operations'), value: Math.max(0, -operating) },
+    { key: 'closing', label: N_('Cash when the plan ends'), value: round2(Math.max(0, months.at(-1)?.cash ?? 0)) },
+    { key: 'overdraft', label: N_('Overdraft at the start'), value: round2(Math.max(0, -p.opening.cash)) },
+  ]
+  return { sources, uses }
+}
+
+export type CheckLevel = 'good' | 'warning' | 'critical'
+/** One finding of the plan check: a sentence (in English, to translate) with its values, and a fix when there is one. */
+export interface PlanCheck { id: string; level: CheckLevel; text: string; vars?: Record<string, string | number>; fix?: 'fund' }
+
+/** Reads the plan as a banker would: the warnings first. Amounts are given as numbers (the screen formats them). */
+export function planChecks(p: BusinessPlan, months: PlanPeriod[]): PlanCheck[] {
+  const years = byYear(months)
+  const ind = indicators(p, months)
+  const ratios = ratiosOf(years)
+  const out: PlanCheck[] = []
+  if (!months.every((m) => Math.abs(m.check) < 0.05)) out.push({ id: 'agree', level: 'critical', text: N_('The statements don’t agree') })
+  if (ind.fundingNeeded > 0) out.push({ id: 'cash', level: 'critical', text: N_('Cash runs out in {month}: {amount} more is needed by {low}'), vars: { month: months[(ind.firstShortMonth ?? 1) - 1].label, amount: ind.fundingNeeded, low: ind.minCashMonth }, fix: 'fund' })
+  else out.push({ id: 'cash', level: 'good', text: N_('Cash stays above zero all through the plan (lowest {amount} in {month})'), vars: { amount: ind.minCash, month: ind.minCashMonth } })
+  const firstProfit = years.findIndex((y) => y.net > 0)
+  if (firstProfit < 0) out.push({ id: 'profit', level: 'critical', text: N_('No year of the plan makes a profit') })
+  else if (firstProfit === 0) out.push({ id: 'profit', level: 'good', text: N_('Profitable from the first year') })
+  else out.push({ id: 'profit', level: 'warning', text: N_('Losses until {year}; profitable from {next}'), vars: { year: years[firstProfit - 1].label, next: years[firstProfit].label } })
+  const gm = ratios[0]?.grossMargin
+  if (gm !== null && gm !== undefined && years[0].revenue > 0) {
+    if (gm < 20) out.push({ id: 'margin', level: 'warning', text: N_('The gross margin is only {pct}% in {year}: little is left for staff and overheads'), vars: { pct: gm, year: years[0].label } })
+    else out.push({ id: 'margin', level: 'good', text: N_('Gross margin {pct}% in {year}'), vars: { pct: gm, year: years[0].label } })
+  }
+  const covers = ratios.filter((r) => r.dscr !== null)
+  if (covers.length) {
+    const low = covers.reduce((a, b) => (b.dscr! < a.dscr! ? b : a))
+    if (low.dscr! < 1.25) out.push({ id: 'dscr', level: low.dscr! < 1 ? 'critical' : 'warning', text: N_('Debt service cover falls to {x}× in {year}: banks usually ask for 1.25× or more'), vars: { x: low.dscr!, year: low.label } })
+    else out.push({ id: 'dscr', level: 'good', text: N_('The loans are covered: debt service cover at least {x}×'), vars: { x: low.dscr! } })
+  }
+  if (ind.irr !== null && ind.irr < p.discountRate) out.push({ id: 'irr', level: 'warning', text: N_('The return ({irr}%) is below the discount rate ({rate}%)'), vars: { irr: ind.irr, rate: p.discountRate } })
+  else if (ind.npv > 0) out.push({ id: 'npv', level: 'good', text: N_('Worth more than it costs: net present value {amount} at {rate}%'), vars: { amount: ind.npv, rate: p.discountRate } })
+  if (p.receivableDays > 90) out.push({ id: 'days', level: 'warning', text: N_('Customers take {n} days to pay: much of the cash is tied up with them'), vars: { n: p.receivableDays } })
+  const g = cagr(years[0]?.revenue ?? 0, years.at(-1)?.revenue ?? 0, years.length)
+  if (g !== null && g > 60) out.push({ id: 'growth', level: 'warning', text: N_('Sales grow {pct}% a year: be ready to show a bank why'), vars: { pct: g } })
+  const order: Record<CheckLevel, number> = { critical: 0, warning: 1, good: 2 }
+  return out.sort((a, b) => order[a.level] - order[b.level])
+}
+
+/** The capital that covers the cash gap: rounded up, put in the month the cash first goes below zero. */
+export function fundingFix(months: PlanPeriod[], ind: Pick<PlanIndicators, 'fundingNeeded' | 'firstShortMonth'>) {
+  if (ind.fundingNeeded <= 0 || !ind.firstShortMonth) return null
+  const step = Math.pow(10, Math.max(3, Math.floor(Math.log10(ind.fundingNeeded)) - 1))
+  return { amount: Math.ceil((ind.fundingNeeded * 1.05) / step) * step, month: ind.firstShortMonth, label: months[ind.firstShortMonth - 1]?.label ?? '' }
+}
+
+export type Driver = 'units' | 'price' | 'cost' | 'staff' | 'overheads' | 'receivableDays' | 'capex'
+export type Metric = 'npv' | 'profit' | 'cash'
+export const DRIVERS: { id: Driver; label: string }[] = [
+  { id: 'units', label: N_('Units sold') }, { id: 'price', label: N_('Prices') }, { id: 'cost', label: N_('Cost per unit') },
+  { id: 'staff', label: N_('Salaries') }, { id: 'overheads', label: N_('Overheads') }, { id: 'receivableDays', label: N_('Days customers take to pay') }, { id: 'capex', label: N_('Investments') },
+]
+
+/** The plan with one driver moved by a share (+0.1 = 10% more). */
+export function moved(p: BusinessPlan, d: Driver, share: number): BusinessPlan {
+  const k = 1 + share
+  const q: BusinessPlan = structuredClone(p)
+  if (d === 'units') q.lines = q.lines.map((l) => ({ ...l, units: l.units * k }))
+  if (d === 'price') q.lines = q.lines.map((l) => ({ ...l, price: l.price * k }))
+  if (d === 'cost') q.lines = q.lines.map((l) => ({ ...l, unitCost: l.unitCost * k }))
+  if (d === 'staff') q.staff = q.staff.map((s) => ({ ...s, salary: s.salary * k }))
+  if (d === 'overheads') q.expenses = q.expenses.map((e) => ({ ...e, monthly: e.monthly * k }))
+  if (d === 'receivableDays') q.receivableDays = Math.max(0, q.receivableDays * k)
+  if (d === 'capex') q.capex = q.capex.map((c) => ({ ...c, amount: c.amount * k }))
+  return q
+}
+
+/** One number of the plan: its value (NPV), the net profit over all its years, or its lowest cash. */
+export function metricOf(p: BusinessPlan, m: Metric, months = projectMonths(p)) {
+  if (m === 'profit') return round2(months.reduce((s, x) => s + x.net, 0))
+  if (m === 'cash') return round2(Math.min(...months.map((x) => x.cash)))
+  return indicators(p, months).npv
+}
+
+/** What moves the plan most: each driver down and up by a share, biggest effect first (the tornado). */
+export function sensitivity(p: BusinessPlan, m: Metric, share = 0.1) {
+  const base = metricOf(p, m)
+  return DRIVERS.map((d) => ({ ...d, low: metricOf(moved(p, d.id, -share), m), high: metricOf(moved(p, d.id, share), m) }))
+    .map((r) => ({ ...r, spread: Math.abs(r.high - r.low) }))
+    .filter((r) => r.spread > 0.005)
+    .sort((a, b) => b.spread - a.spread)
+    .map((r) => ({ ...r, base }))
+}

@@ -940,6 +940,14 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >
 > To try several people with one inbox, invite `name+sales@hotmail.com` and open the link in a private window. To add someone to the team, run `insert into private.platform_staff (email) values ('…');` in the SQL editor.
 
+> **Business plan, redesigned (3 Nov 2026).** The plan is now a workspace in seven steps: Overview, Sales, Costs, Funding, Statements, Scenarios & risks, Report.
+> - **Overview:** the headline figures (sales, net profit, EBITDA, funding needed or lowest cash, NPV and IRR, payback and break-even) with trends; a plan check that reads it like a banker (cash, profit, gross margin, debt service cover, return against the discount rate, customer days, growth) and covers a cash gap in one click; charts of sales and profit, cash month by month, sales to net profit, sales by product line, and where the money comes from and goes.
+> - **Sales, Costs, Funding:** edited like a spreadsheet, with each line's result worked out (margin, first-year sales and share, yearly cost, depreciation, monthly loan instalment), seasons with presets, and the headline figures in view with how far this session's changes moved them.
+> - **Statements:** profit and loss, balance sheet, cash flow and ratios (growth, margins, current ratio, debt to equity, debt service cover, return on equity), by year with trends or month by month for any year.
+> - **Scenarios & risks:** the three cases set with sliders, side by side, and what moves the plan most (each assumption ±5/10/20%, on NPV, net profit or lowest cash).
+> - **Report:** the feasibility study with its charts, ready to print or save as PDF.
+> - Changes save by themselves. A plan can be copied. Charts have a table view, a tooltip and keyboard access, in a colour order checked for colour-blind readers in light and dark.
+
 > **Handmade products & design houses (3 Nov 2026).** A new industry at setup, for makers and design houses that sell direct, wholesale and on consignment (concept stores, museum shops, galleries, hotel boutiques):
 > - **Stockists & customers** carry the channel, the terms (consignment, outright, sale or return, direct), the commission % and how often the stockist reports sales.
 > - **Pieces & collections** carry the collection, maker, material, technique, edition and wholesale price.

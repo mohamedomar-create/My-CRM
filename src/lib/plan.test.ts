@@ -5,7 +5,7 @@ import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
 import { createRecord, manualJournal, postDocument, type Ctx } from './engine'
 import { moduleByRole, uid } from './schema'
-import { byYear, cleanPlan, createPlan, deletePlan, indicators, irrOf, planFromBooks, plans, projectMonths, savePlan, type BusinessPlan } from './plan'
+import { byYear, cagr, cleanPlan, createPlan, deletePlan, fundingFix, indicators, irrOf, lineSales, loanPayment, metricOf, moved, planChecks, planFromBooks, plans, projectMonths, ratiosOf, savePlan, sensitivity, sourcesAndUses, type BusinessPlan } from './plan'
 import { applyCommand } from './commands'
 
 const mona: User = { id: 'u_admin', name: 'Mona', email: 'mona@co.eg', roleId: 'role_admin' }
@@ -145,3 +145,89 @@ describe('the business plan', () => {
 function round(n: number) {
   return Math.round(n * 100) / 100
 }
+
+describe('reading the plan: ratios, checks, sensitivity', () => {
+  const full = () => simple({
+    years: 5, receivableDays: 45, payableDays: 30, stockDays: 60, taxRate: 22.5, openingAssetLife: 5,
+    opening: { cash: 50000, receivables: 20000, inventory: 30000, fixedAssets: 60000, otherAssets: 5000, payables: 15000, otherLiabilities: 4000, loans: 0 },
+    lines: [{ id: 'a', name: 'A', units: 1000, price: 200, unitCost: 120, growthUnits: 15, growthPrice: 10 }, { id: 'b', name: 'B', units: 50, price: 3000, unitCost: 0, growthUnits: 5, growthPrice: 8 }],
+    staff: [{ id: 's', name: 'Team', count: 4, salary: 9000, raise: 12, fromMonth: 1 }],
+    expenses: [{ id: 'e', name: 'Rent', monthly: 6000, growth: 10 }],
+    capex: [{ id: 'c', name: 'Van', amount: 400000, month: 3, lifeYears: 5 }],
+    loans: [{ id: 'l1', name: 'Bank loan', amount: 300000, month: 3, rate: 20, termMonths: 36, graceMonths: 6 }],
+    equity: [{ id: 'q', name: 'Partners', amount: 100000, month: 2 }],
+  })
+
+  it('each product line’s sales add up to the plan’s sales, in every scenario', () => {
+    const p = full()
+    for (const sc of ['base', 'best', 'worst'] as const) {
+      const ys = byYear(projectMonths(p, sc))
+      const ls = lineSales(p, sc)
+      ys.forEach((y, i) => expect(Math.abs(ls.reduce((s, l) => s + l.years[i], 0) - y.revenue)).toBeLessThan(0.1))
+    }
+  })
+
+  it('works out the ratios a bank reads, by hand on the simple plan', () => {
+    const r = ratiosOf(byYear(projectMonths(simple())))
+    expect(r[0]).toMatchObject({ growth: null, grossMargin: 40, ebitdaMargin: 25, netMargin: 25, dscr: null, debtToEquity: 0 })
+    expect(r[1].growth).toBe(0)
+    // Equity: 100,000 at the start plus 30,000 a year.
+    expect(r[0].roe).toBe(23.1)
+  })
+
+  it('the cash flow parts add up: investments, loans drawn and repaid, capital put in', () => {
+    const p = full()
+    const ms = projectMonths(p)
+    for (const m of ms) {
+      expect(Math.abs(m.investing + m.capex)).toBeLessThan(0.01)
+      expect(Math.abs(m.financing - (m.draws - m.principal + m.capitalIn))).toBeLessThan(0.02)
+    }
+    const su = sourcesAndUses(p, ms)
+    const sum = (xs: { value: number }[]) => xs.reduce((s, x) => s + x.value, 0)
+    expect(Math.abs(sum(su.sources) - sum(su.uses))).toBeLessThan(1)
+  })
+
+  it('the plan check says when cash runs out, and the fix it offers covers the gap', () => {
+    const p = simple({ opening: { cash: 0 } as BusinessPlan['opening'], capex: [{ id: 'c', name: 'Machine', amount: 200000, month: 2, lifeYears: 10 }] })
+    const ms = projectMonths(p)
+    const ind = indicators(p, ms)
+    expect(ind.fundingNeeded).toBeGreaterThan(0)
+    expect(ind.firstShortMonth).toBe(2)
+    const checks = planChecks(p, ms)
+    expect(checks[0]).toMatchObject({ id: 'cash', level: 'critical', fix: 'fund' })
+    const fix = fundingFix(ms, ind)!
+    expect(fix.amount).toBeGreaterThanOrEqual(ind.fundingNeeded)
+    const fixed: BusinessPlan = { ...p, equity: [...p.equity, { id: 'x', name: 'More capital', amount: fix.amount, month: fix.month }] }
+    expect(indicators(fixed, projectMonths(fixed)).fundingNeeded).toBe(0)
+    expect(planChecks(fixed, projectMonths(fixed)).find((c) => c.id === 'cash')?.level).toBe('good')
+  })
+
+  it('a healthy plan passes, with the warnings first when there are any', () => {
+    const checks = planChecks(simple(), projectMonths(simple()))
+    expect(checks.map((c) => c.level).every((l) => l === 'good')).toBe(true)
+    const thin = simple({ lines: [{ id: 't', name: 'Thin', units: 1200, price: 100, unitCost: 90, growthUnits: 0, growthPrice: 0 }] })
+    const t = planChecks(thin, projectMonths(thin))
+    expect(t[0].level).not.toBe('good')
+    expect(t.some((c) => c.id === 'margin' && c.level === 'warning')).toBe(true)
+  })
+
+  it('sensitivity: prices up raise the value, costs up lower it, biggest effect first', () => {
+    const p = full()
+    const rows = sensitivity(p, 'npv', 0.1)
+    expect(rows.map((r) => r.spread)).toEqual([...rows.map((r) => r.spread)].sort((a, b) => b - a))
+    const price = rows.find((r) => r.id === 'price')!
+    const cost = rows.find((r) => r.id === 'cost')!
+    expect(price.high).toBeGreaterThan(price.base)
+    expect(price.low).toBeLessThan(price.base)
+    expect(cost.high).toBeLessThan(cost.base)
+    expect(rows[0].base).toBe(metricOf(p, 'npv'))
+    expect(metricOf(moved(p, 'units', 0), 'profit')).toBe(metricOf(p, 'profit'))
+  })
+
+  it('a loan’s instalment, and growth a year', () => {
+    expect(loanPayment({ amount: 120000, rate: 0, termMonths: 12 })).toBe(10000)
+    expect(loanPayment({ amount: 300000, rate: 20, termMonths: 36 })).toBeCloseTo(11149.08, 1)
+    expect(cagr(100, 121, 3)).toBe(10)
+    expect(cagr(0, 121, 3)).toBeNull()
+  })
+})
