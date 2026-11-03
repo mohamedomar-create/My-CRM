@@ -57,6 +57,7 @@ export default function Password({ mode }: { mode: 'forgot' | 'reset' }) {
           <div className="stack">
             <h1>{tr('Check your e-mail')}</h1>
             <p className="muted">{tr('If {email} has an account, we sent it a link to choose a new password. The link works once and expires after an hour.', { email })}</p>
+            <div className="info small">{tr('Nothing after a few minutes? Look in the spam folder. If you were invited to a company but never opened the invitation, you have no login yet: ask the company’s admin for a new invitation link (Team page) and choose your password there.')} <Link to="/register">{tr('Or create a new account')}</Link></div>
             <Link to="/signin" className="btn glow big">{tr('Back to sign in')}</Link>
           </div>
         ) : linkOk === false ? (
