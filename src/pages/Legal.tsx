@@ -7,15 +7,15 @@ type T = [string, string]
 interface Section { h: T; p: T[] }
 type Doc = 'privacy' | 'terms' | 'dpa'
 
-const who: T = [LEGAL.company || 'the company that operates Bonyan', LEGAL.company || 'الشركة المشغّلة لبنيان']
+const who: T = [LEGAL.company || 'the company that operates Nasq360', LEGAL.company || 'الشركة المشغّلة لNasq360']
 const contact: T = [LEGAL.email || 'the contact address on this page (to be added)', LEGAL.email || 'عنوان التواصل في هذه الصفحة (سيُضاف)']
 
 const DOCS: Record<Doc, { title: T; intro: T; sections: Section[] }> = {
   privacy: {
     title: ['Privacy Policy', 'سياسة الخصوصية'],
     intro: [
-      `This policy explains what personal data Bonyan collects, why, where it is kept and the rights you have. Bonyan is operated by ${who[0]} (“we”). We follow Egypt’s Personal Data Protection Law No. 151 of 2020.`,
-      `توضح هذه السياسة البيانات الشخصية التي يجمعها بنيان ولماذا وأين تُحفظ وما حقوقك. يُشغّل بنيان ${who[1]} („نحن“). نلتزم بقانون حماية البيانات الشخصية المصري رقم ١٥١ لسنة ٢٠٢٠.`,
+      `This policy explains what personal data Nasq360 collects, why, where it is kept and the rights you have. Nasq360 is operated by ${who[0]} (“we”). We follow Egypt’s Personal Data Protection Law No. 151 of 2020.`,
+      `توضح هذه السياسة البيانات الشخصية التي يجمعها Nasq360 ولماذا وأين تُحفظ وما حقوقك. يُشغّل Nasq360 ${who[1]} („نحن“). نلتزم بقانون حماية البيانات الشخصية المصري رقم ١٥١ لسنة ٢٠٢٠.`,
     ],
     sections: [
       { h: ['Two kinds of data', 'نوعان من البيانات'], p: [
@@ -34,7 +34,7 @@ const DOCS: Record<Doc, { title: T; intro: T; sections: Section[] }> = {
       ] },
       { h: ['Your rights', 'حقوقك'], p: [
         [`You may ask to see, correct or delete your personal data, to receive a copy, or to object to its use. Requests about your company’s business records go to your company’s admin. Write to us at ${contact[0]}; we answer within the period the law sets. You may also complain to Egypt’s Personal Data Protection Center.`, `يحق لك طلب الاطلاع على بياناتك الشخصية أو تصحيحها أو حذفها أو الحصول على نسخة منها أو الاعتراض على استخدامها. الطلبات الخاصة بسجلات شركتك توجَّه إلى مسؤول شركتك. راسلنا على ${contact[1]}، ونرد خلال المدة التي يحددها القانون. ويحق لك أيضاً تقديم شكوى إلى مركز حماية البيانات الشخصية.`],
-        ['You can delete your own login at any time on the Security page; you then leave every company you belong to. A company’s owner can delete the whole company from the builder (Company tab): it is read-only for 30 days and can be kept, then it is erased with all its data, except the record of what it paid for Bonyan, which we must keep.', 'يمكنك حذف حساب دخولك في أي وقت من صفحة الأمان، فتغادر كل الشركات التي تنتمي إليها. ويمكن لمالك الشركة حذف الشركة كلها من المنشئ (تبويب الشركة): تصبح للقراءة فقط لمدة 30 يومًا ويمكن الإبقاء عليها، ثم تُمحى بكل بياناتها، باستثناء سجل ما دفعته مقابل بنيان، والذي يلزمنا الاحتفاظ به.'],
+        ['You can delete your own login at any time on the Security page; you then leave every company you belong to. A company’s owner can delete the whole company from the builder (Company tab): it is read-only for 30 days and can be kept, then it is erased with all its data, except the record of what it paid for Nasq360, which we must keep.', 'يمكنك حذف حساب دخولك في أي وقت من صفحة الأمان، فتغادر كل الشركات التي تنتمي إليها. ويمكن لمالك الشركة حذف الشركة كلها من المنشئ (تبويب الشركة): تصبح للقراءة فقط لمدة 30 يومًا ويمكن الإبقاء عليها، ثم تُمحى بكل بياناتها، باستثناء سجل ما دفعته مقابل Nasq360، والذي يلزمنا الاحتفاظ به.'],
       ] },
       { h: ['Security', 'الأمان'], p: [
         ['Every change is checked by our server and recorded; each role sees only what it is allowed to; data is encrypted in transit and at rest by our provider; two-factor login is available and can be required by your company.', 'كل تغيير يتحقق منه خادمنا ويُسجَّل، وكل دور يرى ما يُسمح له به فقط، والبيانات مشفّرة أثناء النقل والتخزين لدى مزوّدنا، والتحقق بخطوتين متاح ويمكن لشركتك فرضه.'],
@@ -47,8 +47,8 @@ const DOCS: Record<Doc, { title: T; intro: T; sections: Section[] }> = {
   terms: {
     title: ['Terms of Service', 'شروط الاستخدام'],
     intro: [
-      `These terms are an agreement between your company and ${who[0]} for the use of Bonyan. By creating a workspace or accepting an invitation you accept them.`,
-      `هذه الشروط اتفاق بين شركتك و${who[1]} لاستخدام بنيان. بإنشاء مساحة عمل أو قبول دعوة فإنك توافق عليها.`,
+      `These terms are an agreement between your company and ${who[0]} for the use of Nasq360. By creating a workspace or accepting an invitation you accept them.`,
+      `هذه الشروط اتفاق بين شركتك و${who[1]} لاستخدام Nasq360. بإنشاء مساحة عمل أو قبول دعوة فإنك توافق عليها.`,
     ],
     sections: [
       { h: ['Your account', 'حسابك'], p: [
@@ -58,13 +58,13 @@ const DOCS: Record<Doc, { title: T; intro: T; sections: Section[] }> = {
         ['Your company owns its business data. You can download a full copy at any time (Builder → Company → Download backup). You are responsible for having the right to enter the personal data of your customers and staff.', 'شركتك تملك بيانات عملها، ويمكنك تنزيل نسخة كاملة في أي وقت (المصمم ← الشركة ← تنزيل نسخة احتياطية). وأنت مسؤول عن امتلاك الحق في إدخال البيانات الشخصية لعملائك وموظفيك.'],
       ] },
       { h: ['Fair use', 'الاستخدام العادل'], p: [
-        ['Do not use Bonyan for anything unlawful, try to reach other companies’ data, overload the service, or get around its limits and checks. We may suspend access that puts the service or other customers at risk.', 'لا تستخدم بنيان في أي أمر مخالف للقانون، ولا تحاول الوصول إلى بيانات شركات أخرى أو إثقال الخدمة أو تجاوز حدودها وضوابطها. ويحق لنا إيقاف أي وصول يعرّض الخدمة أو العملاء الآخرين للخطر.'],
+        ['Do not use Nasq360 for anything unlawful, try to reach other companies’ data, overload the service, or get around its limits and checks. We may suspend access that puts the service or other customers at risk.', 'لا تستخدم Nasq360 في أي أمر مخالف للقانون، ولا تحاول الوصول إلى بيانات شركات أخرى أو إثقال الخدمة أو تجاوز حدودها وضوابطها. ويحق لنا إيقاف أي وصول يعرّض الخدمة أو العملاء الآخرين للخطر.'],
       ] },
       { h: ['Accounting and tax', 'المحاسبة والضرائب'], p: [
-        ['Bonyan keeps the books consistent (balanced entries, locked postings), but your company remains responsible for its accounts, tax returns and e-invoicing obligations. Have your accountant review figures before filing.', 'يحافظ بنيان على اتساق الدفاتر (قيود متوازنة وترحيلات مقفلة)، لكن شركتك تظل مسؤولة عن حساباتها وإقراراتها الضريبية والتزامات الفاتورة الإلكترونية. اجعل محاسبك يراجع الأرقام قبل التقديم.'],
+        ['Nasq360 keeps the books consistent (balanced entries, locked postings), but your company remains responsible for its accounts, tax returns and e-invoicing obligations. Have your accountant review figures before filing.', 'يحافظ Nasq360 على اتساق الدفاتر (قيود متوازنة وترحيلات مقفلة)، لكن شركتك تظل مسؤولة عن حساباتها وإقراراتها الضريبية والتزامات الفاتورة الإلكترونية. اجعل محاسبك يراجع الأرقام قبل التقديم.'],
       ] },
       { h: ['Availability and changes', 'التوفر والتغييرات'], p: [
-        ['We work to keep Bonyan available and your data safe, with backups and an audit trail, but cannot promise it will never be interrupted. We may improve or change features; we will tell admins in advance about changes that affect them significantly.', 'نعمل على إبقاء بنيان متاحاً وبياناتك آمنة مع نسخ احتياطية وسجل تدقيق، لكن لا يمكننا ضمان عدم انقطاعه إطلاقاً. قد نطوّر الخصائص أو نغيّرها، وسنبلغ المسؤولين مسبقاً بالتغييرات التي تؤثر عليهم كثيراً.'],
+        ['We work to keep Nasq360 available and your data safe, with backups and an audit trail, but cannot promise it will never be interrupted. We may improve or change features; we will tell admins in advance about changes that affect them significantly.', 'نعمل على إبقاء Nasq360 متاحاً وبياناتك آمنة مع نسخ احتياطية وسجل تدقيق، لكن لا يمكننا ضمان عدم انقطاعه إطلاقاً. قد نطوّر الخصائص أو نغيّرها، وسنبلغ المسؤولين مسبقاً بالتغييرات التي تؤثر عليهم كثيراً.'],
       ] },
       { h: ['Ending', 'الإنهاء'], p: [
         ['You may stop at any time; download your data first. If a workspace is closed we keep its data for 30 days so it can be recovered, then delete it, except records the law requires us to keep.', 'يمكنك التوقف في أي وقت بعد تنزيل بياناتك. عند إغلاق مساحة عمل نحتفظ ببياناتها ٣٠ يوماً لإمكان استعادتها ثم نحذفها، باستثناء ما يُلزمنا القانون بالاحتفاظ به.'],
@@ -82,7 +82,7 @@ const DOCS: Record<Doc, { title: T; intro: T; sections: Section[] }> = {
     ],
     sections: [
       { h: ['What we do with it', 'ما نفعله بها'], p: [
-        ['We process business data only to provide Bonyan as your company configures it, and only on its documented instructions (the settings and actions in the app). Our staff access it only when needed to support you or keep the service safe, and are bound to confidentiality.', 'نعالج بيانات العمل فقط لتقديم بنيان كما تهيّئه شركتك، وفق تعليماتها الموثّقة (الإعدادات والإجراءات في التطبيق). ولا يصل إليها موظفونا إلا عند الحاجة لدعمك أو حماية الخدمة، وهم ملتزمون بالسرية.'],
+        ['We process business data only to provide Nasq360 as your company configures it, and only on its documented instructions (the settings and actions in the app). Our staff access it only when needed to support you or keep the service safe, and are bound to confidentiality.', 'نعالج بيانات العمل فقط لتقديم Nasq360 كما تهيّئه شركتك، وفق تعليماتها الموثّقة (الإعدادات والإجراءات في التطبيق). ولا يصل إليها موظفونا إلا عند الحاجة لدعمك أو حماية الخدمة، وهم ملتزمون بالسرية.'],
       ] },
       { h: ['Security measures', 'إجراءات الأمان'], p: [
         ['Role-based access enforced by the server; append-only ledgers and audit trail; record history; encryption in transit and at rest; two-factor login; limits against abuse; backups.', 'صلاحيات حسب الدور يفرضها الخادم، ودفاتر وسجل تدقيق لا يمكن تعديلهما، وسجل للنسخ السابقة، وتشفير أثناء النقل والتخزين، وتحقق بخطوتين، وحدود ضد إساءة الاستخدام، ونسخ احتياطية.'],

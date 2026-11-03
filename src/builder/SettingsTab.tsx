@@ -26,8 +26,8 @@ export default function SettingsTab() {
       <h1>{tr('Company, tax & numbering')}</h1>
       {errs.map((e, i) => <div key={i} className={e.level === 'error' ? 'error-box' : 'note'} style={{ marginBottom: 10 }}>{e.message}</div>)}
       <div className="card stack" style={{ marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}><Layers size={18} /> {tr('What Bonyan is for')}</h2>
-        <div className="scope-grid" role="radiogroup" aria-label={tr('What Bonyan is for')}>
+        <h2 style={{ margin: 0 }}><Layers size={18} /> {tr('What Nasq360 is for')}</h2>
+        <div className="scope-grid" role="radiogroup" aria-label={tr('What Nasq360 is for')}>
           {SCOPES.map((o) => (
             <button key={o.id} type="button" role="radio" aria-checked={scope === o.id} className={`scope-card${scope === o.id ? ' on' : ''}`} onClick={() => choose(o.id)}>
               <b>{tr(o.title)}</b><span className="small">{tr(o.text)}</span>
@@ -84,7 +84,7 @@ export default function SettingsTab() {
 
       <div className="card" style={{ marginTop: 16 }}>
         <h2><Download size={18} /> {tr('Backup')}</h2>
-        <p className="muted small">{tr('Download everything in this workspace (setup, records, invoices, stock and books) as one file you keep. Bonyan also keeps earlier versions on the server for 90 days.')}</p>
+        <p className="muted small">{tr('Download everything in this workspace (setup, records, invoices, stock and books) as one file you keep. Nasq360 also keeps earlier versions on the server for 90 days.')}</p>
         <button className="secondary" onClick={downloadBackup}><Download size={14} /> {tr('Download full backup')}</button>
       </div>
       <DeleteCompany />
@@ -136,7 +136,7 @@ function DeleteCompany() {
         </>
       ) : (
         <>
-          <p className="small muted" style={{ margin: 0 }}>{tr('For 30 days the company is read-only for everyone and you can still keep it; then it is erased with all its records, documents, books and people. Download a full backup first. Bonyan keeps only the record of what the company paid for its subscription.')}</p>
+          <p className="small muted" style={{ margin: 0 }}>{tr('For 30 days the company is read-only for everyone and you can still keep it; then it is erased with all its records, documents, books and people. Download a full backup first. Nasq360 keeps only the record of what the company paid for its subscription.')}</p>
           {!open ? <div><button className="danger" onClick={() => setOpen(true)}>{tr('Delete this company…')}</button></div> : (
             <form className="stack" onSubmit={ask}>
               <label className="field">{tr('Type the company name to confirm: {name}', { name: want })}<input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>

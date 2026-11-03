@@ -1,5 +1,5 @@
 // Phase H5: sales (and purchases) by month, product, customer or rep, a year at a time, with the history from the old
-// system when asked: so a company sees this year next to the years before it came to Bonyan.
+// system when asked: so a company sees this year next to the years before it came to Nasq360.
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { useApp } from './useApp'

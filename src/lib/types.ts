@@ -336,7 +336,7 @@ export interface OpeningWht {
 }
 
 export interface OpeningBooks {
-  /** the first day worked in Bonyan; the opening balances are those at the end of the day before */
+  /** the first day worked in Nasq360; the opening balances are those at the end of the day before */
   goLive: string
   steps: Record<string, OpeningStep>
   /** the old system's trial balance on the opening date, account by account (debit − credit) */

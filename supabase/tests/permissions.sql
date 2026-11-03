@@ -436,7 +436,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 select pg_temp.blocked('someone who isn''t the owner changes the plan', $q$select public.billing_choose_free('ws_bill00000001')$q$);
 reset role;
 
--- a paid plan, set by Bonyan's staff (payment server or SQL editor)
+-- a paid plan, set by Nasq360's staff (payment server or SQL editor)
 set role service_role;
 select pg_temp.allowed('Growth for 3 seats, paid for a month', $q$select public.billing_grant('ws_bill00000001', 'growth', 3, now() + interval '30 days', 'bank transfer')$q$);
 reset role;
@@ -537,12 +537,12 @@ select pg_temp.check('the company, its people, records, books and audit trail ar
   and not exists (select 1 from public.journal_entries where workspace_id = 'ws_bill00000001')
   and not exists (select 1 from public.audit_events where workspace_id = 'ws_bill00000001')
   and not exists (select 1 from public.subscriptions where workspace_id = 'ws_bill00000001'));
-select pg_temp.check('Bonyan keeps its own record of what the company paid', (select count(*) > 0 from public.billing_payments where workspace_id = 'ws_bill00000001'));
+select pg_temp.check('Nasq360 keeps its own record of what the company paid', (select count(*) > 0 from public.billing_payments where workspace_id = 'ws_bill00000001'));
 select pg_temp.check('other companies are untouched', exists (select 1 from public.workspaces where id = 'ws_books000001') and (select count(*) > 0 from public.audit_events where workspace_id = 'ws_books000001'));
 select pg_temp.blocked('the audit trail is still append-only afterwards', $q$delete from public.audit_events where workspace_id = 'ws_books000001'$q$);
 
 
--- Inventor mode: Bonyan's own team makes as many companies as it likes and tries any billing state.
+-- Inventor mode: Nasq360's own team makes as many companies as it likes and tries any billing state.
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a9', 'inventor@test.dev');
 insert into private.platform_staff (email) values ('inventor@test.dev');
 set role authenticated;
@@ -566,5 +566,11 @@ select pg_temp.blocked('erasing without typing the name', $q$select public.staff
 select pg_temp.allowed('the inventor erases a test company at once', $q$select public.staff_erase_company('ws_inv00000002', 'test 2')$q$);
 reset role;
 select pg_temp.check('it is gone, the others stay', not exists (select 1 from public.workspaces where id = 'ws_inv00000002') and (select count(*) = 6 from public.workspaces where id like 'ws_inv%'));
+
+-- The product is Nasq360: no message from the database says the old name.
+select pg_temp.check('no database message names the old product name', not exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private') and p.prosrc like '%Bonyan%'));
+select pg_temp.check('the update message says Nasq360', exists (
+  select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prosrc like '%Nasq360 was updated%'));
 
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

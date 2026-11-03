@@ -83,7 +83,7 @@ export default function Security() {
         )}
         {done && <div className="info">{tr('Done. From now on you’ll be asked for a code each time you sign in.')}</div>}
         {error && <div className="error-box">{msg(error)}</div>}
-        <p className="tiny muted">{tr('For your safety Bonyan also signs you out after {n} minutes without activity.', { n: IDLE_MINUTES })}</p>
+        <p className="tiny muted">{tr('For your safety Nasq360 also signs you out after {n} minutes without activity.', { n: IDLE_MINUTES })}</p>
         <Link to="/app">{tr('← Back to the app')}</Link>
       </div>
       <YourCompanies />

@@ -97,7 +97,7 @@ describe('earlier periods in the books', () => {
       openingEarlierPeriods(ctx, bad)
       throw new Error('accepted')
     } catch (e) {
-      expect((e as RowsError).rows.map((r) => [r.row, r.message.split(':')[0]])).toEqual([[3, 'Account 3900 is filled by Bonyan itself'], [5, 'Account 9999 doesn’t exist'], [6, 'Month'], [7, 'Month'], [8, 'Month']])
+      expect((e as RowsError).rows.map((r) => [r.row, r.message.split(':')[0]])).toEqual([[3, 'Account 3900 is filled by Nasq360 itself'], [5, 'Account 9999 doesn’t exist'], [6, 'Month'], [7, 'Month'], [8, 'Month']])
     }
     expect(() => openingEarlierPeriods(ctx, tb('2025-11', { '1100': 10, '4000': -9 }))).toThrow(/2025-11 doesn’t balance/)
     expect(() => openingEarlierPeriods(ctx, EARLIER.filter((r) => r.period !== '2025-12-31'))).toThrow(/December 2025/)

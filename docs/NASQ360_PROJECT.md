@@ -1,8 +1,8 @@
-# Bonyan — complete project (CRM + simple ERP builder)
+# Nasq360 — complete project (CRM + simple ERP builder)
 
-This one file contains the **entire source code** of Bonyan, plus the context needed to continue working on it in a new Claude Code chat.
+This one file contains the **entire source code** of Nasq360, plus the context needed to continue working on it in a new Claude Code chat.
 
-- Repository: `mohamedomar-create/TotalCare-Organisation-`, folder `crm-builder/`, branch `claude/magical-wright-pw8slu` (latest commit: bdc56cb Bonyan: add features from leading CRMs and ERPs)
+- Repository: `mohamedomar-create/TotalCare-Organisation-`, folder `crm-builder/`, branch `claude/magical-wright-pw8slu` (latest commit: bdc56cb Nasq360: add features from leading CRMs and ERPs)
 - Stack: React 19 + TypeScript + Vite 8, `@dnd-kit` for drag and drop, `lucide-react` icons, `react-router-dom` 7, `vitest` for tests. No backend yet: data is saved in the browser (`localStorage`).
 - Status: 33 unit tests pass, the production build passes, and an end-to-end browser run of 27 steps passes with no console errors.
 
@@ -10,7 +10,7 @@ This one file contains the **entire source code** of Bonyan, plus the context ne
 
 ## 1. Product vision
 
-Bonyan (بنيان, "structure") is **not a fixed CRM**. It is a tool that lets small and medium companies (Egypt first, then global) **build their own CRM + simple ERP** with clear steps, drag and drop, and strict guardrails that keep the system correct by global standards.
+Nasq360 (نسق, "order, a system that holds together") is **not a fixed CRM**. It is a tool that lets small and medium companies (Egypt first, then global) **build their own CRM + simple ERP** with clear steps, drag and drop, and strict guardrails that keep the system correct by global standards.
 
 User journey:
 1. **Register** a company workspace.
@@ -86,9 +86,9 @@ Egypt defaults: EGP, 14% VAT, the 27 governorates, tax registration number on in
 ### `crm-builder/README.md`
 
 ````markdown
-# Bonyan — build your own CRM & ERP
+# Nasq360 — build your own CRM & ERP
 
-Bonyan (بنيان, "structure") is not another fixed CRM. It is a tool that lets a small or medium company **build the CRM + simple ERP it actually runs on**, by answering questions and then dragging and dropping. Guardrails keep sales, stock and accounting correct whatever the company changes.
+Nasq360 (نسق, "order, a system that holds together") is not another fixed CRM. It is a tool that lets a small or medium company **build the CRM + simple ERP it actually runs on**, by answering questions and then dragging and dropping. Guardrails keep sales, stock and accounting correct whatever the company changes.
 
 ## The journey
 
@@ -108,7 +108,7 @@ Then the team works in the generated app: a dashboard, list and Kanban views, ge
 
 ## Features inspired by the world's leading systems
 
-| Feature | Where it comes from | In Bonyan |
+| Feature | Where it comes from | In Nasq360 |
 |---|---|---|
 | Custom modules and relations | Attio, Airtable | Any module, linked records, title field |
 | **Lookup & rollup fields** | Airtable, Attio | e.g. "Total invoiced" and "Balance due" on each customer, the customer's governorate on a deal |
@@ -247,10 +247,10 @@ dist
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Bonyan — build the CRM and ERP your business actually runs on. Drag-and-drop modules, fields, pipelines, reports and automations, with guardrails that keep everything correct." />
+    <meta name="description" content="Nasq360 — build the CRM and ERP your business actually runs on. Drag-and-drop modules, fields, pipelines, reports and automations, with guardrails that keep everything correct." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <title>Bonyan — Build your own CRM & ERP</title>
+    <title>Nasq360 — Build your own CRM & ERP</title>
   </head>
   <body>
     <div id="root"></div>
@@ -2184,7 +2184,7 @@ export function Logo() {
   return (
     <span className="logo">
       <span className="logo-mark"><Boxes size={18} /></span>
-      Bonyan
+      Nasq360
     </span>
   )
 }
@@ -3562,8 +3562,8 @@ const DICT = {
   heroA: ['Stop bending your business', 'توقّف عن تطويع شركتك'],
   heroB: ['to fit someone else’s software.', 'لتناسب برنامج غيرك.'],
   heroLead: [
-    'Bonyan asks about your industry, teams and pain points, suggests a ready system, then lets you drag and drop every field, pipeline, report and automation — while guardrails keep sales, stock and accounting 100% correct.',
-    'بنيان يسألك عن نشاطك وفرق العمل والتحديات، يقترح عليك نظاماً جاهزاً، ثم تسحب وتُفلت كل حقل ومرحلة وتقرير وأتمتة — بينما تحافظ القواعد على دقة المبيعات والمخزون والحسابات بنسبة ١٠٠٪.',
+    'Nasq360 asks about your industry, teams and pain points, suggests a ready system, then lets you drag and drop every field, pipeline, report and automation — while guardrails keep sales, stock and accounting 100% correct.',
+    'Nasq360 يسألك عن نشاطك وفرق العمل والتحديات، يقترح عليك نظاماً جاهزاً، ثم تسحب وتُفلت كل حقل ومرحلة وتقرير وأتمتة — بينما تحافظ القواعد على دقة المبيعات والمخزون والحسابات بنسبة ١٠٠٪.',
   ],
   start: ['Build my system — free', 'ابنِ نظامي مجاناً'],
   signin: ['Sign in', 'تسجيل الدخول'],
@@ -6086,7 +6086,7 @@ export default function Landing() {
           <Link to="/register" className="btn big" style={{ background: '#fff', color: '#4338ca' }}>{t('start')} <ArrowRight size={18} /></Link>
         </div>
       </section>
-      <footer className="footer">© {new Date().getFullYear()} Bonyan · Made in Egypt for the world</footer>
+      <footer className="footer">© {new Date().getFullYear()} Nasq360 · Made in Egypt for the world</footer>
     </div>
   )
 }

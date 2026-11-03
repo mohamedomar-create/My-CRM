@@ -29,7 +29,7 @@ export interface Answers {
   currency: string
   vatRate: number
   taxId: string
-  /** what Bonyan is for: the CRM, the ERP, or both (scope.ts) */
+  /** what Nasq360 is for: the CRM, the ERP, or both (scope.ts) */
   scope: Scope
 }
 

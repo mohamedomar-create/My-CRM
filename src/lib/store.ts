@@ -52,7 +52,7 @@ interface State {
   liveAt: number
   /** the company's subscription: trial, plan, seats, read-only (Phase 6) */
   billing: BillingStatus | null
-  /** one of Bonyan's own team (inventor mode: unlimited companies, test billing states) */
+  /** one of Nasq360's own team (inventor mode: unlimited companies, test billing states) */
   staff: boolean
 }
 
@@ -719,7 +719,7 @@ export async function startTwoFactorSetup(): Promise<{ factorId: string; qr: str
   const { data: list } = await supabase.auth.mfa.listFactors()
   // A setup that was started but never finished is replaced.
   for (const f of list?.all ?? []) if (f.factor_type === 'totp' && f.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: f.id })
-  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Bonyan ${new Date().toISOString().slice(0, 10)}` })
+  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Nasq360 ${new Date().toISOString().slice(0, 10)}` })
   if (error) throw new Error(friendly(error.message))
   return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret }
 }
@@ -932,7 +932,7 @@ export function downloadBackup() {
   const blob = new Blob([JSON.stringify(ws, null, 2)], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `bonyan-backup-${(ws.answers.companyName || ws.id).replace(/[^\w-]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
+  a.download = `nasq360-backup-${(ws.answers.companyName || ws.id).replace(/[^\w-]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(a.href)
 }

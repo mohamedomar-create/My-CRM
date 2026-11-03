@@ -1,4 +1,4 @@
-// What a company uses Bonyan for: the CRM (customers, contacts, leads, deals, quotations, tasks, service tickets),
+// What a company uses Nasq360 for: the CRM (customers, contacts, leads, deals, quotations, tasks, service tickets),
 // the ERP (invoices, bills, payments, stock, accounting, VAT, budgets, business plan), or both. Chosen at setup and
 // changed any time in the builder: the missing lists are added; a part is switched off only while its lists are
 // empty, so nothing is ever lost.

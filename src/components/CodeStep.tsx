@@ -25,7 +25,7 @@ export function CodeStep({ onDone }: { onDone?: () => void }) {
   return (
     <form className="stack" onSubmit={submit}>
       <h1><ShieldCheck size={22} /> {tr('Enter your code')}</h1>
-      <p className="muted" style={{ marginTop: 0 }}>{tr('Open your authenticator app (Google Authenticator, Microsoft Authenticator…) and enter the 6-digit code for Bonyan.')}</p>
+      <p className="muted" style={{ marginTop: 0 }}>{tr('Open your authenticator app (Google Authenticator, Microsoft Authenticator…) and enter the 6-digit code for Nasq360.')}</p>
       <label className="field">{tr('Code')}<input inputMode="numeric" autoComplete="one-time-code" autoFocus required value={code} onChange={(e) => setCode(e.target.value)} placeholder="123 456" maxLength={9} /></label>
       {error && <div className="error-box">{msg(error)}</div>}
       <button className="glow big" disabled={busy}>{busy ? tr('Checking…') : tr('Continue')}</button>

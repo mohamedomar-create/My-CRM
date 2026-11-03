@@ -50,8 +50,8 @@ export default function Onboarding() {
         {step === 0 && (
           <>
             <span className="pill">{tr('Welcome, {name}', { name: a.companyName })}</span>
-            <h1 style={{ marginTop: 10 }}>{tr('What do you want Bonyan for?')}</h1>
-            <div className="scope-grid" role="radiogroup" aria-label={tr('What do you want Bonyan for?')} style={{ marginBottom: 22 }}>
+            <h1 style={{ marginTop: 10 }}>{tr('What do you want Nasq360 for?')}</h1>
+            <div className="scope-grid" role="radiogroup" aria-label={tr('What do you want Nasq360 for?')} style={{ marginBottom: 22 }}>
               {SCOPES.map((o) => (
                 <button key={o.id} type="button" role="radio" aria-checked={(a.scope ?? 'both') === o.id} className={`scope-card${(a.scope ?? 'both') === o.id ? ' on' : ''}`} onClick={() => set({ scope: o.id })}>
                   <b>{tr(o.title)}</b><span className="small">{tr(o.text)}</span>

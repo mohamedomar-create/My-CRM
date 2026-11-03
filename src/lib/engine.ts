@@ -2121,7 +2121,7 @@ export function withholdingTax(ws: Workspace, year: number, quarter: 1 | 2 | 3 |
       return { date: p.date, ref: p.ref, doc: p.doc, party: partyId, name: String(party?.values.name ?? ''), taxId: String(party?.values.tax_id ?? ''), rate: p.wht!.rate, base: p.wht!.base, amount: p.wht!.amount }
     })
     .sort((a, b) => a.date.localeCompare(b.date))
-  // Withholding from the months of the go-live quarter before Bonyan (Phase H2), so the form is whole.
+  // Withholding from the months of the go-live quarter before Nasq360 (Phase H2), so the form is whole.
   const before = (direction: 'in' | 'out'): WhtRow[] => (ws.books?.opening?.wht ?? [])
     .filter((w) => w.direction === direction && w.date >= from && w.date <= to)
     .map((w) => ({ date: w.date, ref: w.ref, doc: '', party: w.party ?? '', name: w.name, taxId: w.taxId, rate: w.rate, base: w.base, amount: w.amount }))
@@ -2247,7 +2247,7 @@ export function reverseJournal(ctx: Ctx, id: string, date = todayISO()) {
 }
 
 /**
- * What a customer owed you, or you owed a supplier, on the day you start with Bonyan. It becomes a posted opening
+ * What a customer owed you, or you owed a supplier, on the day you start with Nasq360. It becomes a posted opening
  * document, so it shows on their balance and ageing and can be paid like any invoice or bill.
  */
 export function openingBalance(ctx: Ctx, o: { kind: 'customer' | 'supplier'; party: string; amount: number; date: string; ref?: string }) {
@@ -2290,7 +2290,7 @@ export interface Adjustment {
   unitCost?: number
   reason: string
   date: string
-  /** stock you had on the day you started with Bonyan (credited to opening balance equity) */
+  /** stock you had on the day you started with Nasq360 (credited to opening balance equity) */
   opening?: boolean
 }
 
@@ -2680,7 +2680,7 @@ export type ImportTarget = (typeof IMPORT_TARGETS)[number]
 export interface ImportOptions {
   /** the import this part belongs to: the parts of one file share it. Without it the rows are an import of their own. */
   batch?: { id: string; file: string }
-  /** the field (or '__legacy_id') that finds a record already in Bonyan: a row whose key is known updates that record */
+  /** the field (or '__legacy_id') that finds a record already in Nasq360: a row whose key is known updates that record */
   match?: string
   /** with match: rows whose key isn't found are skipped instead of created */
   onlyUpdate?: boolean
@@ -2699,7 +2699,7 @@ export interface ImportRowResult {
   row: number
   action: 'create' | 'update' | 'skip'
   id?: string
-  /** a record already in Bonyan that looks like the one this row creates (same name, phone or e-mail) */
+  /** a record already in Nasq360 that looks like the one this row creates (same name, phone or e-mail) */
   similar?: string
 }
 
@@ -2824,7 +2824,7 @@ export const isAdmin = (ctx: Ctx) => Boolean(ctx.schema.roles.find((r) => r.id =
 
 /**
  * Imports spreadsheet rows. Each row is checked like a form save: good rows are kept, bad rows are reported with the
- * column at fault. With a match key, a row that names a record already in Bonyan updates it instead of adding a
+ * column at fault. With a match key, a row that names a record already in Nasq360 updates it instead of adding a
  * duplicate. Imported rows run no automations and ask for no approvals. Every row is marked with its import, so the
  * whole import can be undone (undoImport) until something else depends on it.
  */
@@ -2835,7 +2835,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
   const matchField = opts.match && opts.match !== '__legacy_id' ? fieldByKey(mod, opts.match) : undefined
   if (opts.match) {
     need(ctx, moduleId, 'edit')
-    if (opts.match !== '__legacy_id' && !matchField) throw new EngineError('Choose the column that finds records already in Bonyan')
+    if (opts.match !== '__legacy_id' && !matchField) throw new EngineError('Choose the column that finds records already in Nasq360')
   }
   if (mod.stages && Object.values(mapping).includes('__stage_date') && !Object.values(mapping).includes('__stage')) throw new EngineError('Match the stage column too, to use the date each record reached it')
 
@@ -3415,7 +3415,7 @@ function newStep(ctx: Ctx): OpeningStep {
   return { at: nowISO(), by: ctx.user.id, count: 0, total: 0, entries: [], docs: [], cheques: [], stock: [] }
 }
 
-/** The day the company starts in Bonyan. The opening balances are those at the end of the day before. */
+/** The day the company starts in Nasq360. The opening balances are those at the end of the day before. */
 export function setGoLive(ctx: Ctx, date: string) {
   needFinance(ctx, 'set up the opening balances')
   if (!ISO_DATE.test(String(date))) throw new EngineError('Choose the go-live date')
@@ -3447,7 +3447,7 @@ export function clearOpeningStep(ctx: Ctx, key: string) {
     if (c.state === 'cleared') throw new EngineError(`Cheque ${c.no} was already cashed, so it can’t be taken out of the opening balances`)
     bounceCheque(at, id, date, 'Opening balances entered again')
   }
-  // What each document has (entries, payments in Bonyan, credit notes), gathered once for the whole step.
+  // What each document has (entries, payments in Nasq360, credit notes), gathered once for the whole step.
   const docs = new Set(s.docs)
   const look: OpeningLookup = { entries: new Map(), paid: new Map(), credited: new Set() }
   for (const j of ctx.ws.data.journal) if (j.doc && docs.has(j.doc)) look.entries.set(j.doc, [...(look.entries.get(j.doc) ?? []), j])
@@ -3479,7 +3479,7 @@ export function clearOpeningStep(ctx: Ctx, key: string) {
 
 /**
  * Takes an opening document out again. What it says was paid before going live is the old system's history; only
- * payments made in Bonyan (and not reversed) or credit notes stop it.
+ * payments made in Nasq360 (and not reversed) or credit notes stop it.
  */
 interface OpeningLookup {
   entries: Map<string, JournalEntry[]>
@@ -3488,7 +3488,7 @@ interface OpeningLookup {
 }
 
 function voidOpeningDoc(ctx: Ctx, rec: Rec, date: string, look: OpeningLookup) {
-  if ((look.paid.get(rec.id) ?? 0) !== 0) throw new EngineError(`${rec.number} has payments in Bonyan. Reverse them first.`)
+  if ((look.paid.get(rec.id) ?? 0) !== 0) throw new EngineError(`${rec.number} has payments in Nasq360. Reverse them first.`)
   if (look.credited.has(rec.id)) throw new EngineError('This document has credit notes. Void them first.')
   for (const je of (look.entries.get(rec.id) ?? []).filter((j) => j.ref === rec.number)) {
     journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
@@ -3534,7 +3534,7 @@ export function openingTrialBalance(ctx: Ctx, input: unknown) {
     const a = findAccount(ctx.ws, code)
     if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
     if (!a.active) throw new EngineError(`Account ${a.code} ${a.name} is turned off`)
-    if (code === '3900') throw new EngineError('Account 3900 is filled by Bonyan itself: put the old system’s opening-balance line under capital or retained earnings')
+    if (code === '3900') throw new EngineError('Account 3900 is filled by Nasq360 itself: put the old system’s opening-balance line under capital or retained earnings')
     const d = amountOf('Debit', r.debit, false)
     const c = amountOf('Credit', r.credit, false)
     if (d < 0 || c < 0) throw new EngineError('Amounts can’t be negative: use the other column')
@@ -3577,7 +3577,7 @@ function periodOf(raw: unknown) {
 
 /**
  * The old system's trial balances at the end of earlier months (one or two years, or more), so the profit and loss,
- * the balance sheet and "compare with last year" cover the time before Bonyan. One row per account per month: the
+ * the balance sheet and "compare with last year" cover the time before Nasq360. One row per account per month: the
  * month, the account (already put on this chart) and its debit or credit balance at the month's end, the profit and
  * loss for the year so far as trial balances show it. The first month is the starting point; each later one is posted
  * as one summary entry of the month's movements, on its last day, and every year before the opening date is closed
@@ -3600,7 +3600,7 @@ export function openingEarlierPeriods(ctx: Ctx, input: unknown) {
     const a = findAccount(ctx.ws, code)
     if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
     if (!a.active) throw new EngineError(`Account ${a.code} ${a.name} is turned off`)
-    if (code === '3900') throw new EngineError('Account 3900 is filled by Bonyan itself: put the old system’s opening-balance line under capital or retained earnings')
+    if (code === '3900') throw new EngineError('Account 3900 is filled by Nasq360 itself: put the old system’s opening-balance line under capital or retained earnings')
     const d = amountOf('Debit', r.debit, false)
     const c = amountOf('Credit', r.credit, false)
     if (d < 0 || c < 0) throw new EngineError('Amounts can’t be negative: use the other column')
@@ -3964,7 +3964,7 @@ export function openingWht(ctx: Ctx, input: unknown) {
     const rate = whtRateOf(amountOf('Rate %', r.rate))
     if (!rate) throw new EngineError('Choose a withholding tax rate of 1%, 3% or 5%')
     const amount = text(r.amount) ? amountOf('Tax withheld', r.amount) : round2((base * rate) / 100)
-    out.push({ date, direction, party, name: rec ? recordTitle(ctx.ws, ctx.schema, rec) : name, taxId: text(r.taxId) || String(rec?.values.tax_id ?? ''), rate, base, amount, ref: text(r.ref) || 'Before Bonyan' })
+    out.push({ date, direction, party, name: rec ? recordTitle(ctx.ws, ctx.schema, rec) : name, taxId: text(r.taxId) || String(rec?.values.tax_id ?? ''), rate, base, amount, ref: text(r.ref) || 'Before Nasq360' })
   })
   const step = newStep(ctx)
   step.count = out.length

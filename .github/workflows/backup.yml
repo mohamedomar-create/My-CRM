@@ -34,7 +34,7 @@ jobs:
         if: steps.check.outputs.ready == 'yes'
         run: |
           set -euo pipefail
-          name="bonyan-$(date -u +%Y-%m-%d)"
+          name="nasq360-$(date -u +%Y-%m-%d)"
           docker run --rm -e DB_URL postgres:17 sh -c 'pg_dump "$DB_URL" --format=custom --no-owner --no-privileges --schema=public --schema=private --schema=auth' > "$name.dump"
           test -s "$name.dump"
           openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASSPHRASE -in "$name.dump" -out "$name.dump.enc"

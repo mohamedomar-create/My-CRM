@@ -197,7 +197,7 @@ export interface CompanyProfile {
   language: 'en' | 'ar'
   allowNegativeStock: boolean
   fiscalYearStart: number
-  /** what the company uses Bonyan for (see scope.ts); missing = worked out from its lists */
+  /** what the company uses Nasq360 for (see scope.ts); missing = worked out from its lists */
   scope?: 'crm' | 'erp' | 'both'
 }
 
