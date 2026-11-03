@@ -940,6 +940,13 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >
 > To try several people with one inbox, invite `name+sales@hotmail.com` and open the link in a private window. To add someone to the team, run `insert into private.platform_staff (email) values ('…');` in the SQL editor.
 
+> **Handmade products & design houses (3 Nov 2026).** A new industry at setup, for makers and design houses that sell direct, wholesale and on consignment (concept stores, museum shops, galleries, hotel boutiques):
+> - **Stockists & customers** carry the channel, the terms (consignment, outright, sale or return, direct), the commission % and how often the stockist reports sales.
+> - **Pieces & collections** carry the collection, maker, material, technique, edition and wholesale price.
+> - **Consignment placements** record each piece on each stockist's shelf: quantity placed, sold and returned, with what is still on the shelf and its value worked out. The pieces stay the company's stock until sold.
+> - **Consignment sales reports** take each stockist's report for a period: sales at shelf price, the commission, and what is due to us. The invoice for the pieces sold (shelf price less commission) takes them out of stock when posted.
+> - **New stockists** is a pipeline from first approach to pieces placed. **Artisans & suppliers** with purchase bills cover the makers and materials.
+
 **What the owner will see**
 - Pricing page.
 - Online signup with a trial.

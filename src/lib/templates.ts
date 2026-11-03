@@ -43,7 +43,7 @@ const core = {
   products: (name = 'Products', singular = 'Product', extra: ModuleSpec['extra'] = []): ModuleSpec => ({ role: 'products', name, singular, icon: 'Package', color: '#f59e0b', extra }),
   quotes: (): ModuleSpec => ({ role: 'quotes', name: 'Quotations', singular: 'Quotation', icon: 'FileText', color: '#14b8a6' }),
   invoices: (): ModuleSpec => ({ role: 'invoices', name: 'Invoices', singular: 'Invoice', icon: 'Receipt', color: '#10b981' }),
-  suppliers: (): ModuleSpec => ({ role: 'suppliers', name: 'Suppliers', singular: 'Supplier', icon: 'Truck', color: '#64748b' }),
+  suppliers: (name = 'Suppliers', singular = 'Supplier'): ModuleSpec => ({ role: 'suppliers', name, singular, icon: 'Truck', color: '#64748b' }),
   purchases: (): ModuleSpec => ({ role: 'purchases', name: 'Purchases', singular: 'Purchase bill', icon: 'ShoppingCart', color: '#f97316' }),
   tasks: (): ModuleSpec => ({ role: 'tasks', name: 'Tasks', singular: 'Task', icon: 'CheckCircle2', color: '#0ea5e9' }),
   tickets: (name = 'Service tickets', singular = 'Ticket', extra: ModuleSpec['extra'] = []): ModuleSpec => ({ role: 'tickets', name, singular, icon: 'LifeBuoy', color: '#ef4444', extra }),
@@ -747,8 +747,89 @@ const ALL: Template[] = [
   },
 ]
 
+// Handmade products and design houses: pieces sold direct, wholesale and on consignment (concept stores, museum shops).
+const HANDMADE: Template = {
+  id: 'handmade',
+  name: 'Handmade products & design houses',
+  nameAr: 'المنتجات اليدوية وبيوت التصميم',
+  tagline: 'Handmade pieces sold direct, wholesale, and on consignment in concept stores, museum shops and galleries.',
+  icon: 'Gem',
+  gradient: ['#d97706', '#be185d'],
+  industries: ['handmade', 'hand made', 'handcraft', 'handicraft', 'crafts', 'artisan', 'design house', 'concept store', 'consignment', 'museum shop', 'gallery', 'jewellery', 'jewelry', 'ceramics', 'pottery', 'textile', 'home decor', 'gifts'],
+  features: ['inventory', 'b2b', 'b2c', 'purchasing'],
+  highlights: ['Pieces on consignment by stockist', 'Sales reports & commission', 'Concept stores, museum shops & galleries', 'Artisans & materials'],
+  modules: [
+    core.accounts('Stockists & customers', 'Stockist / customer', [
+      f('Channel', 'select', { options: opts('Concept store', 'Museum shop', 'Gallery', 'Hotel boutique', 'Online marketplace', 'Wholesale buyer', 'Direct customer'), inList: true }),
+      f('Terms', 'select', { key: 'terms', options: opts('Consignment', 'Outright purchase', 'Sale or return', 'Direct sale'), inList: true }),
+      f('Commission %', 'percent', { key: 'commission', help: 'What the stockist keeps from each piece it sells (consignment)' }),
+      f('Sales report every', 'select', { key: 'report_every', options: opts('Month', 'Two weeks', 'Quarter') }),
+      f('Agreement ends', 'date', { key: 'agreement_end' }),
+    ]),
+    core.contacts(),
+    core.deals('New stockists', 'Stockist opportunity', [
+      f('Channel', 'select', { options: opts('Concept store', 'Museum shop', 'Gallery', 'Hotel boutique', 'Online marketplace', 'Wholesale buyer'), inList: true }),
+      f('Terms offered', 'select', { key: 'terms', options: opts('Consignment', 'Outright purchase', 'Sale or return') }),
+    ], [
+      st('Approached', 15, 'open', '#0ea5e9'),
+      st('Samples / portfolio sent', 35, 'open', '#6366f1'),
+      st('Terms agreed', 70, 'open', '#8b5cf6'),
+      st('Pieces placed', 100, 'won', '#10b981'),
+      st('Not a fit', 0, 'lost', '#ef4444'),
+    ]),
+    core.products('Pieces & collections', 'Piece', [
+      f('Collection', 'text', { inList: true }),
+      f('Maker / artisan', 'text', { key: 'maker', inList: true }),
+      f('Material', 'select', { options: opts('Ceramic', 'Glass', 'Textile', 'Wood', 'Metal', 'Leather', 'Paper', 'Stone', 'Mixed'), inList: true }),
+      f('Technique', 'text'),
+      f('Edition', 'select', { options: opts('One of a kind', 'Limited edition', 'Open edition'), inList: true }),
+      f('Wholesale price', 'currency', { key: 'wholesale_price' }),
+      f('Dimensions', 'text'),
+      f('Care instructions', 'longtext', { key: 'care' }),
+    ]),
+    {
+      role: 'custom', id: 'm_placements', name: 'Consignment placements', singular: 'Placement', icon: 'Store', color: '#d97706',
+      extra: [
+        rel('Stockist', MODULE_IDS.accounts, { key: 'stockist', required: true }),
+        rel('Piece', MODULE_IDS.products, { key: 'piece', required: true }),
+        f('Placed on', 'date', { key: 'placed_on', required: true, inList: true }),
+        f('Quantity placed', 'number', { key: 'qty_placed', required: true, inList: true }),
+        f('Shelf price', 'currency', { key: 'shelf_price', inList: true, help: 'The price the stockist sells it at' }),
+        f('Commission %', 'percent', { key: 'commission', help: 'What the stockist keeps from each piece it sells' }),
+        f('Quantity sold', 'number', { key: 'qty_sold', inList: true }),
+        f('Quantity returned', 'number', { key: 'qty_returned' }),
+        f('Still on the shelf', 'formula', { key: 'qty_on_shelf', formula: 'qty_placed - qty_sold - qty_returned', inList: true }),
+        f('Shelf value', 'formula', { key: 'shelf_value', formula: '(qty_placed - qty_sold - qty_returned) * shelf_price' }),
+        f('Status', 'select', { options: opts('On the shelf', 'Partly sold', 'Sold out', 'Taken back'), inList: true }),
+        f('Last shelf check', 'date', { key: 'last_check' }),
+      ],
+    },
+    {
+      role: 'custom', id: 'm_consign_reports', name: 'Consignment sales reports', singular: 'Sales report', icon: 'ClipboardList', color: '#be185d',
+      extra: [
+        rel('Stockist', MODULE_IDS.accounts, { key: 'stockist', required: true }),
+        f('Period from', 'date', { key: 'period_from', required: true }),
+        f('Period to', 'date', { key: 'period_to', required: true, inList: true }),
+        f('Pieces sold', 'number', { key: 'pieces_sold', inList: true }),
+        f('Sales at shelf price', 'currency', { key: 'gross', inList: true }),
+        f('Commission %', 'percent', { key: 'commission' }),
+        f('Commission', 'formula', { key: 'commission_amount', formula: 'gross * commission / 100' }),
+        f('Due to us', 'formula', { key: 'net_due', formula: 'gross - gross * commission / 100', inList: true }),
+        f('Status', 'select', { options: opts('Waiting for the report', 'Report received', 'Invoiced', 'Paid'), inList: true }),
+        f('Invoice no.', 'text', { key: 'invoice_no', help: 'The invoice for the pieces sold, at shelf price less commission' }),
+      ],
+    },
+    core.quotes(),
+    core.invoices(),
+    core.suppliers('Artisans & suppliers', 'Artisan / supplier'),
+    core.purchases(),
+    core.tasks(),
+  ],
+}
+ALL.push(HANDMADE)
+
 // Shown in this order: the sectors with the most SMEs in Egypt first.
-const ORDER = ['distribution', 'retail', 'food', 'medical', 'clinics', 'building', 'construction', 'realestate', 'manufacturing', 'agriculture', 'automotive', 'services', 'logistics', 'travel', 'education', 'water', 'blank']
+const ORDER = ['distribution', 'retail', 'handmade', 'food', 'medical', 'clinics', 'building', 'construction', 'realestate', 'manufacturing', 'agriculture', 'automotive', 'services', 'logistics', 'travel', 'education', 'water', 'blank']
 export const TEMPLATES: Template[] = [...ALL].sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id))
 
 export const templateById = (id: string) => TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[TEMPLATES.length - 1]
