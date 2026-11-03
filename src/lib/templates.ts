@@ -788,7 +788,7 @@ const HANDMADE: Template = {
       f('Care instructions', 'longtext', { key: 'care' }),
     ]),
     {
-      role: 'custom', id: 'm_placements', name: 'Consignment placements', singular: 'Placement', icon: 'Store', color: '#d97706',
+      role: 'custom', id: 'm_placements', name: 'Consignment placements', singular: 'Placement', icon: 'Store', color: '#d97706', relabel: { name: 'Reference' },
       extra: [
         rel('Stockist', MODULE_IDS.accounts, { key: 'stockist', required: true }),
         rel('Piece', MODULE_IDS.products, { key: 'piece', required: true }),
@@ -805,7 +805,7 @@ const HANDMADE: Template = {
       ],
     },
     {
-      role: 'custom', id: 'm_consign_reports', name: 'Consignment sales reports', singular: 'Sales report', icon: 'ClipboardList', color: '#be185d',
+      role: 'custom', id: 'm_consign_reports', name: 'Consignment sales reports', singular: 'Sales report', icon: 'ClipboardList', color: '#be185d', relabel: { name: 'Reference' },
       extra: [
         rel('Stockist', MODULE_IDS.accounts, { key: 'stockist', required: true }),
         f('Period from', 'date', { key: 'period_from', required: true }),

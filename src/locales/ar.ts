@@ -3642,4 +3642,9 @@ export const AR: Record<string, string> = {
   'Cash still to be found': 'نقد ما زال مطلوباً',
   'Overdraft at the start': 'سحب على المكشوف في البداية',
   'Not saved: see the message, then correct the figure': 'لم يُحفظ: راجع الرسالة ثم صحح الرقم',
+  '{a} sold on invoice {b}': 'بيع {a} في الفاتورة {b}',
+  'took {a} pieces off the stockist’s shelf': 'سحب {a} قطعة من رف منفذ البيع',
+  '{a} back on the shelf (credit note {b})': 'عاد {a} إلى الرف (إشعار دائن {b})',
+  '{a} back on the shelf ({b} voided)': 'عاد {a} إلى الرف (أُلغي {b})',
+  '{a} off the shelf again ({b} voided)': 'سُحب {a} من الرف مرة أخرى (أُلغي {b})',
 }

@@ -954,6 +954,7 @@ The main flows were clicked through and checked in the saved data: budget, busin
 > - **Consignment placements** record each piece on each stockist's shelf: quantity placed, sold and returned, with what is still on the shelf and its value worked out. The pieces stay the company's stock until sold.
 > - **Consignment sales reports** take each stockist's report for a period: sales at shelf price, the commission, and what is due to us. The invoice for the pieces sold (shelf price less commission) takes them out of stock when posted.
 > - **New stockists** is a pipeline from first approach to pieces placed. **Artisans & suppliers** with purchase bills cover the makers and materials.
+> - **Shelves follow the invoices (3 Nov 2026).** Posting an invoice to a stockist takes the pieces sold off its consignment placements for the same piece, the oldest placement first: the quantity sold, what is still on the shelf, its value and the status (partly sold, sold out) update by themselves, and each placement's activity says which invoice sold them. Anything sold beyond the shelf counts as an outright sale. A credit note that takes the pieces back puts them back on the shelf (the latest placement first); voiding the invoice or the credit note undoes it. Placements marked taken back are left alone.
 
 **What the owner will see**
 - Pricing page.
