@@ -91,6 +91,26 @@ describe('server commands', () => {
     expect(list(s.row.doc, accounts).map((r) => r.values.name).sort()).toEqual(['My customer', 'Their customer'])
   })
 
+  it('a big save with thousands of new ids is checked quickly (the ids are collected once, not once per id)', async () => {
+    const { ws, schema } = workspace()
+    const accounts = moduleByRole(schema, 'accounts')!.id
+    const invoices = moduleByRole(schema, 'invoices')!.id
+    // 3,000 customers with an overdue invoice each: the date-based automation makes a follow-up for every one.
+    ws.data.records[accounts] = Array.from({ length: 3000 }, (_, i) => ({ id: `r_acc${String(i).padStart(6, '0')}`, module: accounts, createdAt: '', updatedAt: '', createdBy: admin.id, values: { name: `C${i}` } }))
+    ws.data.records[invoices] = Array.from({ length: 3000 }, (_, i) => ({ id: `r_inv${String(i).padStart(6, '0')}`, module: invoices, number: `INV-${i}`, status: 'posted' as const, createdAt: '', updatedAt: '', createdBy: admin.id, values: { customer: `r_acc${String(i).padStart(6, '0')}`, date: '2026-01-01', due_date: '2026-02-01', total: 114, paid: 0, balance: 114 }, lines: [] }))
+    const local = applyCommand(ws, { userId: admin.id, isAdmin: true }, { name: 'automation.runScheduled', args: {} })
+    expect(local.ids.length).toBeGreaterThan(3000)
+    const s = server(ws, { 'mona@co.eg': { isAdmin: true } }, 'mona@co.eg')
+    const t = Date.now()
+    const out = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ name: 'automation.runScheduled', args: {}, ids: local.ids }] })
+    expect(out.results[0].ok).toBe(true)
+    // Before the fix this took minutes (the whole workspace was turned into text once for every id).
+    expect(Date.now() - t).toBeLessThan(5000)
+    // The same ids sent again are still refused.
+    const again = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ name: 'automation.runScheduled', args: {}, ids: local.ids.slice(0, 1) }] })
+    expect(again.results[0]).toMatchObject({ ok: false, error: 'This change was already saved or is not valid' })
+  }, 30000)
+
   it('creates the same record ids the browser already showed, but refuses ids that already exist', async () => {
     const { ws, schema } = workspace()
     const accounts = moduleByRole(schema, 'accounts')!.id

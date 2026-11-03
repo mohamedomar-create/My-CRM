@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useDeferredValue, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Filter as FilterIcon, Flame, Kanban, Plus, Table2, Upload, X } from 'lucide-react'
@@ -67,10 +67,27 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   })()
   const groups = via ? groupChoices(ws, schema, via.target) : []
   const inGroup = group && via ? groupIds(ws, via.target, group) : undefined
+  // The list follows the search a moment behind the typing, so the box never stalls on a long list.
+  const query = useDeferredValue(q).toLowerCase()
+  // Long lists get their search text ready in the background, a slice at a time, so the first letter typed is quick too.
+  const colSig = cols.map((c) => c.key).join('|')
+  useEffect(() => {
+    if (all.length < 500) return
+    let i = 0
+    let handle = 0
+    const step = () => {
+      const end = Math.min(all.length, i + 1000)
+      for (; i < end; i++) searchText(ws, schema, cols, all[i])
+      if (i < all.length) handle = window.setTimeout(step, 0)
+    }
+    handle = window.setTimeout(step, 50)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, colSig])
   const rows = all
     .filter((r) => !linked.length || matches(schema, r, linked, ws))
     .filter((r) => !inGroup || inGroup.has(via!.target.id === mod.id ? r.id : String(r.values[via!.field.key] ?? '')))
-    .filter((r) => !q || recordTitle(ws, schema, r).toLowerCase().includes(q.toLowerCase()) || cols.some((c) => displayValue(ws, schema, c, r.values[c.key]).toLowerCase().includes(q.toLowerCase())) || [r.legacy?.id, r.legacy?.number].some((x) => x?.toLowerCase().includes(q.toLowerCase())))
+    .filter((r) => !query || searchText(ws, schema, cols, r).includes(query))
     .filter((r) => !stage || r.stage === stage || r.status === stage)
     // each sort value is worked out once per record, not once per comparison
     .map((r) => {
@@ -204,6 +221,20 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
 }
 
 const PAGE = 100
+
+/**
+ * What a record is found by in its list (its title, the columns shown, its old-system id and number), worked out once
+ * per record and kept until the record changes: typing in the search box then only compares text.
+ */
+const SEARCH = new WeakMap<Rec, { sig: string; text: string }>()
+function searchText(ws: Workspace, schema: AppSchema, cols: FieldDef[], r: Rec) {
+  const sig = cols.map((c) => c.key).join('|')
+  const hit = SEARCH.get(r)
+  if (hit && hit.sig === sig) return hit.text
+  const text = [recordTitle(ws, schema, r), ...cols.map((c) => displayValue(ws, schema, c, r.values[c.key])), r.legacy?.id ?? '', r.legacy?.number ?? ''].join('\n').toLowerCase()
+  SEARCH.set(r, { sig, text })
+  return text
+}
 /** cards shown per board column; the rest are counted, and the table or search finds them */
 const BOARD_CARDS = 50
 

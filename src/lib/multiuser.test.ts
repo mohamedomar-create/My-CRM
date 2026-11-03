@@ -176,6 +176,47 @@ describe('two people at the same time', () => {
     expect(saved.find((r) => r.id === a.id)!.number).toBe(list(mona.currentWorkspace()!, invoices).find((r) => r.id === a.id)!.number)
   })
 
+  it('ten people work at once for 15 rounds (150 changes, renames included): nothing is lost, and everyone ends with the same data', async () => {
+    const doc = server.db.workspaces[0].doc as Workspace
+    const people = Array.from({ length: 10 }, (_, i) => `user${i}@co.eg`)
+    doc.users = people.map((email, i) => ({ id: `u_${i}`, name: `User ${i}`, email, roleId: 'role_admin' }))
+    server.db.workspace_members = people.map((email) => ({ workspace_id: 'ws_team', email, is_admin: true }))
+    const browsers: Person[] = []
+    for (const e of people) browsers.push(await person(e))
+    const expected = new Map<string, string>()
+    for (let round = 0; round < 15; round++) {
+      // Everyone adds a customer; and, from round 2, renames one somebody else added earlier, all at the same moment.
+      browsers.forEach((b, i) => {
+        const name = `R${round} by ${i}`
+        const { id } = b.run('record.create', { module: accounts, values: { name } }) as { id: string }
+        expected.set(id, name)
+      })
+      if (round > 0) {
+        const ids = [...expected.keys()]
+        browsers.forEach((b, i) => {
+          const id = ids[(round * 10 + i) % (ids.length - browsers.length)]
+          if (!list(b.currentWorkspace()!, accounts).some((r) => r.id === id)) return
+          const name = `renamed in ${round} by ${i}`
+          b.run('record.update', { id, values: { name } })
+          expected.set(id, name)
+        })
+      }
+      await Promise.all(browsers.map((b) => b.flush()))
+    }
+    // A save that met nine others at the same moment may be told "busy" and sent again a few seconds later: wait for all.
+    const savedCount = () => list(server.db.workspaces[0].doc as Workspace, accounts).length
+    for (let i = 0; i < 40 && (savedCount() < 150 || browsers.some((b) => b.getState().sync === 'saving' || b.getState().sync === 'error')); i++) {
+      await new Promise((r) => setTimeout(r, 500))
+      await Promise.all(browsers.map((b) => b.flush()))
+    }
+    await settle()
+    const saved = new Map(list(server.db.workspaces[0].doc as Workspace, accounts).map((r) => [r.id, String(r.values.name)]))
+    expect(saved.size).toBe(150)
+    // Every customer is there with the last name somebody gave it.
+    for (const [id, name] of expected) expect(saved.get(id), id).toBe(name)
+    for (const b of browsers) expect(new Map(list(b.currentWorkspace()!, accounts).map((r) => [r.id, String(r.values.name)]))).toEqual(saved)
+  }, 120000)
+
   it('both edit the same customer, different fields: neither change is lost', async () => {
     const mona = await person('mona@co.eg')
     const { id } = mona.run('record.create', { module: accounts, values: { name: 'Nile Foods' } }) as { id: string }
