@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Banknote, CheckCircle2, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
@@ -156,6 +156,9 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
             <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, tr('Lead converted: customer, contact and deal created')); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> {tr('Convert to customer')}</button>
           )}
+          {mod.role === 'deals' && rec && moduleByRole(schema, 'quotes') && can({ schema, user }, moduleByRole(schema, 'quotes')!.id, 'create') && (
+            <button className="secondary" disabled={dirty} title={dirty ? tr('Save first') : undefined} onClick={() => { const q = act<{ id: string }>('deal.toQuote', { id: rec.id }, tr('Quotation draft created for the deal')); if (q) nav(`/app/r/${q.id}`) }}><FileText size={15} /> {tr('Make a quotation')}</button>
+          )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
               {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
@@ -278,6 +281,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
           {rec && parentField(mod) && <GroupCard rec={rec} mod={mod} />}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && <PartyHistory rec={rec} mod={mod} />}
+          {rec && <Trail rec={rec} />}
           {rec && <Comments rec={rec} />}
           {rec && (
             <div className="card">
@@ -758,6 +762,29 @@ function Comments({ rec }: { rec: Rec }) {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+/** Where a record came from and what was made from it: lead → deal → quotation → invoice → payments. */
+function Trail({ rec }: { rec: Rec }) {
+  const { ws, schema } = useApp()
+  const from = rec.links?.from ? findRecord(ws, rec.links.from) : undefined
+  const made = [...new Set([...(rec.links?.made ?? []), ...(rec.links?.source ? [rec.links.source] : [])])].map((id) => findRecord(ws, id)).filter((r): r is Rec => Boolean(r))
+  const paid = moduleById(schema, rec.module)?.role === 'invoices' ? ws.data.payments.filter((p) => p.doc === rec.id && !p.reverses && p.amount > 0) : []
+  if (!from && !made.length && !paid.length) return null
+  const item = (r: Rec) => {
+    const m = moduleById(schema, r.module)
+    return <Link to={`/app/r/${r.id}`} className="trail-item">{m && <span className="badge tiny" style={{ background: m.color }}><Icon name={m.icon} size={12} /></span>}<span><span className="muted tiny">{m?.singular}</span> {recordTitle(ws, schema, r)}</span></Link>
+  }
+  return (
+    <div className="card">
+      <h2><GitBranch size={17} /> {tr('Trail')}</h2>
+      <div className="trail">
+        {from && <div><span className="tiny muted">{tr('Made from')}</span>{item(from)}</div>}
+        {made.length > 0 && <div><span className="tiny muted">{tr('Led to')}</span>{made.map((r) => <span key={r.id}>{item(r)}</span>)}</div>}
+        {paid.length > 0 && <div><span className="tiny muted">{tr('Payments')}</span>{paid.map((p) => <span key={p.id} className="trail-item"><Banknote size={13} /> {p.ref} · {money(p.amount, schema.company.currency)} · {p.date}</span>)}</div>}
+      </div>
     </div>
   )
 }

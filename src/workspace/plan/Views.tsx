@@ -194,7 +194,7 @@ export function StatementsTab({ p, sc, setSc }: { p: BusinessPlan; sc: ScenarioN
   const [which, setWhich] = useState<'pl' | 'bs' | 'cf' | 'ratios'>('pl')
   const [period, setPeriod] = useState<number>(-1)
   const periods = period < 0 ? years : months.slice(period * 12, period * 12 + 12)
-  const agrees = months.every((m) => Math.abs(m.check) < 0.05)
+  const agrees = months.every((m) => 0.05 > Math.abs(m.check))
   const tabs = [['pl', N_('Profit and loss')], ['bs', N_('Balance sheet')], ['cf', N_('Cash flow')], ['ratios', N_('Ratios')]] as const
   return (
     <div className="stack">

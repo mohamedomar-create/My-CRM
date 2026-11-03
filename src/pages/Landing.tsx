@@ -1,36 +1,38 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, BarChart3, Boxes, Calculator, CheckCircle2, Globe, Languages, Lock, MousePointerClick, ShieldCheck, Sparkles, Workflow, Zap } from 'lucide-react'
 import { TEMPLATES } from '../lib/templates'
 import { Icon } from '../components/Icon'
-import { msg, useLang } from '../lib/i18n'
+import { msg, N_, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
 
 const BEST = [
-  ['Custom modules & relations', 'Attio, Airtable'],
-  ['Lookup & rollup fields', 'Airtable, Attio'],
-  ['Conditional fields', 'Odoo Studio, Zoho layout rules'],
-  ['Validation rules', 'Salesforce, Zoho'],
-  ['Multi-step approvals', 'Odoo, ERPNext'],
-  ['Stage gates & weighted forecast', 'Salesforce, HubSpot'],
-  ['Deal rotting alerts', 'Pipedrive'],
-  ['Lead scoring', 'HubSpot'],
-  ['Board, table & calendar views + saved views', 'monday.com, Airtable'],
-  ['Visual automations', 'HubSpot, Zapier'],
-  ['CSV import with column matching', 'every leading CRM'],
-  ['Stock, reorder alerts & receivables ageing', 'ERPNext, Odoo'],
+  [N_('Custom modules & relations'), 'Attio, Airtable'],
+  [N_('Lookup & rollup fields'), 'Airtable, Attio'],
+  [N_('Conditional fields'), 'Odoo Studio, Zoho layout rules'],
+  [N_('Validation rules'), 'Salesforce, Zoho'],
+  [N_('Multi-step approvals'), 'Odoo, ERPNext'],
+  [N_('Stage gates & weighted forecast'), 'Salesforce, HubSpot'],
+  [N_('Deal rotting alerts'), 'Pipedrive'],
+  [N_('Lead scoring'), 'HubSpot'],
+  [N_('Board, table & calendar views + saved views'), 'monday.com, Airtable'],
+  [N_('Visual automations'), 'HubSpot, Zapier'],
+  [N_('CSV import with column matching'), N_('every leading CRM')],
+  [N_('Stock, reorder alerts & receivables ageing'), 'ERPNext, Odoo'],
 ]
 
 const GUARDS = [
-  { icon: Calculator, title: 'Accounting that always balances', text: 'Every posted invoice, bill and payment writes a double-entry journal. If debits don’t equal credits, nothing is saved.' },
-  { icon: Boxes, title: 'Stock that matches reality', text: 'On-hand quantity and moving-average cost are calculated by the system, never typed in. Overselling is blocked.' },
-  { icon: Lock, title: 'Locked when it matters', text: 'Posted documents can’t be edited or deleted — only voided with a full reversal, the way auditors expect.' },
-  { icon: Workflow, title: 'Pipelines that can finish', text: 'Every pipeline needs open stages, one Won and one Lost. Stage gates make sure the right data is captured.' },
-  { icon: ShieldCheck, title: 'No broken links', text: 'You can’t delete a field a report, formula or automation depends on. The builder tells you exactly what uses it.' },
-  { icon: Zap, title: 'Automations that can’t loop', text: 'Triggers, conditions and actions are checked before publishing, and actions never re-trigger each other.' },
+  { icon: Calculator, title: N_('Accounting that always balances'), text: N_('Every posted invoice, bill and payment writes a double-entry journal. If debits don’t equal credits, nothing is saved.') },
+  { icon: Boxes, title: N_('Stock that matches reality'), text: N_('On-hand quantity and moving-average cost are calculated by the system, never typed in. Overselling is blocked.') },
+  { icon: Lock, title: N_('Locked when it matters'), text: N_('Posted documents can’t be edited or deleted — only voided with a full reversal, the way auditors expect.') },
+  { icon: Workflow, title: N_('Pipelines that can finish'), text: N_('Every pipeline needs open stages, one Won and one Lost. Stage gates make sure the right data is captured.') },
+  { icon: ShieldCheck, title: N_('No broken links'), text: N_('You can’t delete a field a report, formula or automation depends on. The builder tells you exactly what uses it.') },
+  { icon: Zap, title: N_('Automations that can’t loop'), text: N_('Triggers, conditions and actions are checked before publishing, and actions never re-trigger each other.') },
 ]
 
 export default function Landing() {
   const { t, tr, lang, setLang } = useLang()
+  const [year] = useState(() => new Date().getFullYear())
   return (
     <div className="landing">
       <nav className="nav">
@@ -54,12 +56,12 @@ export default function Landing() {
           <p className="lead">{t('heroLead')}</p>
           <div className="row">
             <Link to="/register" className="btn glow big">{t('start')} <ArrowRight size={18} className="flip" /></Link>
-            <a href="#how" className="btn secondary big">See how it works</a>
+            <a href="#how" className="btn secondary big">{tr('See how it works')}</a>
           </div>
           <div className="trust">
-            <span><CheckCircle2 size={16} /> CRM + sales + stock + invoicing</span>
-            <span><Globe size={16} /> English & العربية, any currency</span>
-            <span><ShieldCheck size={16} /> VAT-ready (Egypt 14% by default)</span>
+            <span><CheckCircle2 size={16} /> {tr('CRM + sales + stock + invoicing')}</span>
+            <span><Globe size={16} /> {tr('English & العربية, any currency')}</span>
+            <span><ShieldCheck size={16} /> {tr('VAT-ready (Egypt 14% by default)')}</span>
           </div>
         </div>
         <HeroMock />
@@ -102,13 +104,13 @@ export default function Landing() {
       </section>
 
       <section className="section">
-        <h2 className="big">The best ideas from the world’s top systems, in one builder</h2>
-        <p className="sub">Features you would normally buy from five different products, ready to switch on and shape around your business.</p>
+        <h2 className="big">{tr('The best ideas from the world’s top systems, in one builder')}</h2>
+        <p className="sub">{tr('Features you would normally buy from five different products, ready to switch on and shape around your business.')}</p>
         <div className="tpl-grid">
           {BEST.map(([f, from]) => (
             <div key={f} className="guard" style={{ padding: 18 }}>
-              <h3 style={{ fontSize: '0.98rem' }}><CheckCircle2 size={18} color="#34d399" /> {f}</h3>
-              <p className="small">Inspired by {from}</p>
+              <h3 style={{ fontSize: '0.98rem' }}><CheckCircle2 size={18} color="#34d399" /> {tr(f)}</h3>
+              <p className="small">{tr('Inspired by {from}', { from: tr(from) })}</p>
             </div>
           ))}
         </div>
@@ -120,8 +122,8 @@ export default function Landing() {
         <div className="guard-grid">
           {GUARDS.map((g) => (
             <div className="guard" key={g.title}>
-              <h3><g.icon size={20} color="#a5b4fc" /> {g.title}</h3>
-              <p>{g.text}</p>
+              <h3><g.icon size={20} color="#a5b4fc" /> {tr(g.title)}</h3>
+              <p>{tr(g.text)}</p>
             </div>
           ))}
         </div>
@@ -131,36 +133,37 @@ export default function Landing() {
         <div className="cta">
           <MousePointerClick size={36} />
           <h2>{t('ctaTitle')}</h2>
-          <p style={{ opacity: 0.9, maxWidth: 560, margin: '0 auto 22px' }}>Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.</p>
+          <p style={{ opacity: 0.9, maxWidth: 560, margin: '0 auto 22px' }}>{tr('Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.')}</p>
           <Link to="/register" className="btn big" style={{ background: '#fff', color: '#4338ca' }}>{t('start')} <ArrowRight size={18} /></Link>
         </div>
       </section>
-      <footer className="footer">© {new Date().getFullYear()} Bonyan · Made in Egypt for the world · <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link> · <Link to="/dpa">Data processing</Link></footer>
+      <footer className="footer">© {year} Bonyan · {tr('Made in Egypt for the world')} · <Link to="/privacy">{tr('Privacy')}</Link> · <Link to="/terms">{tr('Terms')}</Link> · <Link to="/dpa">{tr('Data processing')}</Link></footer>
     </div>
   )
 }
 
 function HeroMock() {
+  const { tr } = useLang()
   const cols = [
-    { name: 'Proposal', c: '#8b5cf6', items: ['Nile Valley – RO plant', 'Delta Foods – upgrade'] },
-    { name: 'Negotiation', c: '#f59e0b', items: ['Cairo Care – ICU kit'] },
-    { name: 'Won', c: '#10b981', items: ['Red Sea Resorts – AMC', 'Sinai Cement – pumps'] },
+    { name: tr('Proposal'), c: '#8b5cf6', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
+    { name: tr('Negotiation'), c: '#f59e0b', items: [tr('Cairo Care – ICU kit')] },
+    { name: tr('Won'), c: '#10b981', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
   ]
   return (
     <div className="mock" aria-hidden>
       <div className="mock-inner">
         <div className="mock-side">
-          <span className="on"><BarChart3 size={12} /> Dashboard</span>
-          <span>Customers</span>
-          <span>Projects</span>
-          <span>Site surveys</span>
-          <span>Invoices</span>
-          <span>Stock</span>
+          <span className="on"><BarChart3 size={12} /> {tr('Dashboard')}</span>
+          <span>{tr('Customers')}</span>
+          <span>{tr('Projects')}</span>
+          <span>{tr('Site surveys')}</span>
+          <span>{tr('Invoices')}</span>
+          <span>{tr('Stock')}</span>
         </div>
         <div className="stack">
           <div className="row between">
-            <b style={{ fontSize: '0.85rem' }}>Projects pipeline</b>
-            <span className="pill green">EGP 4.2M open</span>
+            <b style={{ fontSize: '0.85rem' }}>{tr('Projects pipeline')}</b>
+            <span className="pill green">{tr('EGP 4.2M open')}</span>
           </div>
           <div className="mock-cols">
             {cols.map((c) => (
@@ -177,8 +180,8 @@ function HeroMock() {
           </svg>
         </div>
       </div>
-      <div className="mock-float" style={{ top: -18, insetInlineEnd: 30 }}><CheckCircle2 size={16} color="#10b981" /> Health check: 100%</div>
-      <div className="mock-float" style={{ bottom: -16, insetInlineStart: -10 }}><Zap size={16} color="#f59e0b" /> Task created: call new lead</div>
+      <div className="mock-float" style={{ top: -18, insetInlineEnd: 30 }}><CheckCircle2 size={16} color="#10b981" /> {tr('Health check: 100%')}</div>
+      <div className="mock-float" style={{ bottom: -16, insetInlineStart: -10 }}><Zap size={16} color="#f59e0b" /> {tr('Task created: call new lead')}</div>
     </div>
   )
 }

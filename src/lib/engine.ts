@@ -524,16 +524,56 @@ export function convertLead(ctx: Ctx, lead: Rec) {
   const won = leadsMod.stages?.find((s) => s.type === 'won')
   if (lead.stage === won?.id) throw new EngineError('This lead is already converted')
   const name = String(lead.values.company || lead.values.name)
-  const account = createRecord(ctx, accounts.id, pick(accounts, { name, phone: lead.values.phone, email: lead.values.email, owner: lead.values.owner }))
-  if (contacts) createRecord(ctx, contacts.id, pick(contacts, { name: lead.values.name, account: account.id, phone: lead.values.phone, email: lead.values.email }))
+  // A phone already known (a customer's, or a contact's) means the customer already exists: no second one is made.
+  const known = samePhone(lead.values.phone)
+  const knownContact = contacts && known ? list(ctx.ws, contacts.id).find((c) => known(c.values.phone)) : undefined
+  const existing = known
+    ? list(ctx.ws, accounts.id).find((a) => known(a.values.phone)) ?? (knownContact?.values.account ? list(ctx.ws, accounts.id).find((a) => a.id === knownContact.values.account) : undefined)
+    : undefined
+  const account = existing ?? createRecord(ctx, accounts.id, pick(accounts, { name, phone: lead.values.phone, email: lead.values.email, owner: lead.values.owner }))
+  const contact = contacts && !knownContact ? createRecord(ctx, contacts.id, pick(contacts, { name: lead.values.name, account: account.id, phone: lead.values.phone, email: lead.values.email })) : knownContact
   const amount = Number(lead.values.budget ?? 0) || 1
-  const deal = createRecord(ctx, deals.id, pick(deals, { title: `${name} – new opportunity`, account: account.id, amount, close_date: addDays(todayISO(), 30), owner: lead.values.owner }))
+  const deal = createRecord(ctx, deals.id, pick(deals, { title: `${recordTitle(ctx.ws, ctx.schema, account) || name} – new opportunity`, account: account.id, amount, close_date: addDays(todayISO(), 30), owner: lead.values.owner }))
   if (won) {
     lead.stage = won.id
     lead.stageHistory = [...(lead.stageHistory ?? []), { stage: won.id, at: nowISO() }]
   }
+  linkRecords(lead, deal)
+  if (!existing) linkRecords(lead, account, false)
+  if (contact && !knownContact) linkRecords(lead, contact, false)
   log(ctx, `converted lead “${lead.values.name}”`, lead)
+  if (existing) log(ctx, `matched the existing customer “${recordTitle(ctx.ws, ctx.schema, existing)}” by phone`, lead)
   return deal
+}
+
+/** A test for "the same phone number": digits only, the last 9 compared (so +20 10…, 010… and 10… agree). */
+export function samePhone(phone: unknown): ((other: unknown) => boolean) | undefined {
+  const digits = (v: unknown) => String(v ?? '').replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/\D/g, '')
+  const mine = digits(phone)
+  if (mine.length < 7) return undefined
+  const tail = mine.slice(-9)
+  return (other) => { const o = digits(other); return o.length >= 7 && o.slice(-9) === tail }
+}
+
+/** Records one record as made from another, both ways (the deal from its lead, the invoice from its quotation). */
+export function linkRecords(from: Rec, to: Rec, setFrom = true) {
+  if (setFrom) to.links = { ...to.links, from: from.id }
+  const made = from.links?.made ?? []
+  if (!made.includes(to.id)) from.links = { ...from.links, made: [...made, to.id] }
+}
+
+/** A quotation for a deal: its customer, dated today, valid for 30 days, linked both ways. */
+export function dealToQuote(ctx: Ctx, deal: Rec): Rec {
+  const mod = moduleById(ctx.schema, deal.module)
+  const quotes = moduleByRole(ctx.schema, 'quotes')
+  if (mod?.role !== 'deals') throw new EngineError('Quotations are made from deals')
+  if (!quotes) throw new EngineError('Add a Quotations module first')
+  if (!deal.values.account) throw new EngineError('Choose the deal’s customer first')
+  const today = ctx.today ?? todayISO()
+  const quote = createRecord({ ...ctx, sample: ctx.sample || deal.sample }, quotes.id, { customer: deal.values.account, date: today, valid_until: addDays(today, 30) }, { lines: [] })
+  linkRecords(deal, quote)
+  log(ctx, `made a quotation for the deal “${deal.values.title ?? ''}”`, deal)
+  return quote
 }
 
 function pick(mod: ModuleDef, values: Record<string, unknown>) {
@@ -1246,9 +1286,10 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
   if (quote.values.valid_until && String(quote.values.valid_until) < (ctx.today ?? todayISO())) {
     throw new EngineError(`This quotation expired on ${quote.values.valid_until}. Extend “Valid until” or make a new quotation.`)
   }
-  const inv = createRecord({ ...ctx, sample: ctx.sample || quote.sample }, invoices.id, { customer: quote.values.customer, date: todayISO() }, { lines: (quote.lines ?? []).map((l) => ({ ...l, id: uid('l') })) })
+  const inv = createRecord({ ...ctx, sample: ctx.sample || quote.sample }, invoices.id, { customer: quote.values.customer, date: ctx.today ?? todayISO() }, { lines: (quote.lines ?? []).map((l) => ({ ...l, id: uid('l') })) })
   quote.status = 'invoiced'
-  quote.links = { source: inv.id }
+  quote.links = { ...quote.links, source: inv.id }
+  linkRecords(quote, inv)
   return inv
 }
 

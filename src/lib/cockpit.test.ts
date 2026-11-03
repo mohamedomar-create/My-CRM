@@ -123,6 +123,8 @@ describe('the owner’s cockpit', () => {
     expect(k.receivables).toEqual({ total: 2000 + 1140 + 513, current: 1140 + 513, overdue: 2000, overdueCount: 1 })
     expect(k.payablesSoon).toEqual({ amount: 570, count: 1 })
     expect(k.margin.revenue).toBe(1000 + 450)
+    // The dashboard's sales are the revenue account's for the same period, to the piastre.
+    expect(k.margin.revenue).toBe(-ws.data.journal.filter((j) => j.date >= '2026-06-01' && j.date <= '2026-06-20').flatMap((j) => j.lines).filter((l) => l.account === '4000').reduce((s, l) => s + l.debit - l.credit, 0))
     expect(k.margin.before?.revenue).toBe(2000)
     expect(k.forecast).toMatchObject({ weighted: 10000 * open.probability / 100, open: 1, target: 20000 })
     expect(k.coverage).toBe(round((10000 * open.probability / 100) / (20000 - k.forecast.won)))

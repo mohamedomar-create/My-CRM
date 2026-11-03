@@ -954,3 +954,10 @@ table.bp-statement { font-size: 0.86rem; }
   .bp-row, .bp-rows.tornado .bp-row { grid-template-columns: 92px minmax(0, 1fr) auto; }
   .bp-kpi-value { font-size: 1.3rem; }
 }
+
+/* The trail of a record: what it came from and what came of it. */
+.trail { display: flex; flex-direction: column; gap: 10px; }
+.trail > div { display: flex; flex-direction: column; gap: 4px; }
+.trail-item { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); text-decoration: none; font-size: var(--fs-sm); max-width: 100%; }
+a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
+.badge.tiny { width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; color: #fff; flex-shrink: 0; }

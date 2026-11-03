@@ -51,7 +51,10 @@ type Calc<T> = { label: string; value: (r: T) => ReactNode }
 
 /** Rows of assumptions edited in place, with worked-out columns and a total line. */
 export function Editor<T extends { id: string; name: string }>({ title, help, rows, cols, calcs = [], blank, onChange, total, addLabel, empty }: {
-  title: string; help: string; rows: T[]; cols: Col<T>[]; calcs?: Calc<T>[]; blank: () => T; onChange: (rows: T[]) => void
+  title: string; help: string; rows: T[]
+  cols: Col<T>[]
+  calcs?: Calc<T>[]
+  blank: () => T; onChange: (rows: T[]) => void
   total?: ReactNode[]; addLabel: string; empty: string
 }) {
   const set = (i: number, k: keyof T, v: unknown) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
@@ -142,7 +145,7 @@ function SeasonEditor({ p, set }: { p: BusinessPlan; set: SetPlan }) {
   const max = Math.max(...w, 0) || 1
   const top = w.indexOf(Math.max(...w))
   const months = Array.from({ length: 12 }, (_, i) => monthName(`2027-${String(i + 1).padStart(2, '0')}`, false))
-  const same = (a: number[], b: number[]) => { const sa = a.reduce((s, x) => s + x, 0) || 1; const sb = b.reduce((s, x) => s + x, 0) || 1; return a.every((x, i) => Math.abs(x / sa - b[i] / sb) < 0.001) }
+  const same = (a: number[], b: number[]) => { const sa = a.reduce((s, x) => s + x, 0) || 1; const sb = b.reduce((s, x) => s + x, 0) || 1; return a.every((x, i) => 0.001 > Math.abs(x / sa - b[i] / sb)) }
   return (
     <section className="card">
       <div className="bp-chart-head">

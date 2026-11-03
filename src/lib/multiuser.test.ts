@@ -147,6 +147,35 @@ describe('two people at the same time', () => {
     expect(names(karim)).toEqual(['Delta Traders', 'Nile Foods'])
   })
 
+  it('both post an invoice at the same moment: both are posted, with different numbers, and no number is taken twice', async () => {
+    // Two people who can post (an admin and a second admin).
+    const doc = server.db.workspaces[0].doc as Workspace
+    doc.users[1].roleId = 'role_admin'
+    server.db.workspace_members[1].is_admin = true
+    const invoices = moduleByRole(schema, 'invoices')!.id
+    const mona = await person('mona@co.eg')
+    const { id: customer } = mona.run('record.create', { module: accounts, values: { name: 'Nile Foods' } }) as { id: string }
+    await mona.flush()
+    const karim = await person('karim@co.eg')
+    await settle()
+    const line = (price: number) => [{ id: `l_${price}`, description: 'Delivery service', qty: 1, price, discount: 0, vat: 14 }]
+    const a = mona.run('record.create', { module: invoices, values: { customer, date: '2026-03-01', due_date: '2026-03-31' }, lines: line(100) }) as { id: string }
+    const b = karim.run('record.create', { module: invoices, values: { customer, date: '2026-03-01', due_date: '2026-03-31' }, lines: line(200) }) as { id: string }
+    await Promise.all([mona.flush(), karim.flush()])
+    await settle()
+    mona.run('doc.post', { id: a.id })
+    karim.run('doc.post', { id: b.id })
+    await Promise.all([mona.flush(), karim.flush()])
+    await settle()
+    const saved = list(server.db.workspaces[0].doc as Workspace, invoices)
+    expect(saved.map((r) => r.status)).toEqual(['posted', 'posted'])
+    const numbers = saved.map((r) => r.number).sort()
+    expect(numbers).toEqual(['INV-2026-0001', 'INV-2026-0002'])
+    // Each browser ends up with the same numbers as the server: a printed number is never reassigned.
+    for (const p of [mona, karim]) expect(list(p.currentWorkspace()!, invoices).map((r) => r.number).sort()).toEqual(numbers)
+    expect(saved.find((r) => r.id === a.id)!.number).toBe(list(mona.currentWorkspace()!, invoices).find((r) => r.id === a.id)!.number)
+  })
+
   it('both edit the same customer, different fields: neither change is lost', async () => {
     const mona = await person('mona@co.eg')
     const { id } = mona.run('record.create', { module: accounts, values: { name: 'Nile Foods' } }) as { id: string }
