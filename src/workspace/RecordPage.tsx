@@ -160,7 +160,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             <>
               {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
               {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
-              {(rec.status === 'sent' || rec.status === 'accepted') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
               {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}

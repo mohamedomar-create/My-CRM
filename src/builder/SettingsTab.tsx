@@ -1,18 +1,42 @@
-import { Download, History, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
+import { Download, History, Layers, RotateCcw } from 'lucide-react'
 import { useDraft } from './useDraft'
 import { downloadBackup, run } from '../lib/store'
 import type { CompanyProfile } from '../lib/schema'
 import { tr } from '../lib/i18n'
+import { changeScope, schemaScope, SCOPES, type Scope } from '../lib/scope'
+
 
 export default function SettingsTab() {
   const { ws, schema, edit, issues } = useDraft()
   const set = (patch: Partial<CompanyProfile>) => edit((s) => Object.assign(s.company, patch))
   const errs = issues.filter((i) => i.tab === 'settings')
   const c = schema.company
+  const scope = schemaScope(schema)
+  const [blocked, setBlocked] = useState<{ error: string; lists: string[] } | null>(null)
+  function choose(to: Scope) {
+    if (to === scope) return
+    const out = changeScope(schema, ws, to)
+    if ('error' in out) return setBlocked(out)
+    setBlocked(null)
+    edit((s) => Object.assign(s, out.schema))
+  }
   return (
     <div className="pane" style={{ maxWidth: 960 }}>
       <h1>{tr('Company, tax & numbering')}</h1>
       {errs.map((e, i) => <div key={i} className={e.level === 'error' ? 'error-box' : 'note'} style={{ marginBottom: 10 }}>{e.message}</div>)}
+      <div className="card stack" style={{ marginBottom: 16 }}>
+        <h2 style={{ margin: 0 }}><Layers size={18} /> {tr('What Bonyan is for')}</h2>
+        <div className="scope-grid" role="radiogroup" aria-label={tr('What Bonyan is for')}>
+          {SCOPES.map((o) => (
+            <button key={o.id} type="button" role="radio" aria-checked={scope === o.id} className={`scope-card${scope === o.id ? ' on' : ''}`} onClick={() => choose(o.id)}>
+              <b>{tr(o.title)}</b><span className="small">{tr(o.text)}</span>
+            </button>
+          ))}
+        </div>
+        <p className="tiny muted" style={{ margin: 0 }}>{tr('Switching a part on adds its lists; publish to make the change live. A part can be switched off only while its lists are empty, so nothing is ever lost. The plan on the Billing page must include the parts you use.')}</p>
+        {blocked && <div className="error-box">{tr(blocked.error)} <b>{blocked.lists.join(', ')}</b></div>}
+      </div>
       <div className="card">
         <div className="form-grid">
           <label className="field">{tr('Company name')}<input value={c.name} onChange={(e) => set({ name: e.target.value })} /></label>

@@ -10,6 +10,7 @@ import { moduleByRole } from '../lib/schema'
 import { todayStrip } from '../lib/today'
 import { useStore } from '../lib/store'
 import { tr } from '../lib/i18n'
+import { hasErp } from '../lib/scope'
 
 /** Overdue, due today, waiting for me: one click to the list behind each. */
 export function TodayStrip() {
@@ -46,7 +47,7 @@ export function SetupChecklist() {
     { done: count('accounts') > 0, label: tr('Add your first customer (or bring them in from Excel)'), to: moduleByRole(schema, 'accounts') ? `/app/new/${moduleByRole(schema, 'accounts')!.id}` : '/app/migrate' },
     ...(moduleByRole(schema, 'products') ? [{ done: count('products') > 0, label: tr('Add your products or services'), to: `/app/new/${moduleByRole(schema, 'products')!.id}` }] : []),
     ...(invoices ? [{ done: posted, label: tr('Post your first invoice'), to: `/app/new/${invoices.id}` }] : []),
-    { done: Boolean(ws.books?.opening?.done), label: tr('Bring in your opening balances and go live'), to: '/app/migrate' },
+    ...(hasErp(schema) ? [{ done: Boolean(ws.books?.opening?.done), label: tr('Bring in your opening balances and go live'), to: '/app/migrate' }] : []),
     { done: twoFactor, label: tr('Protect your login with two-factor'), to: '/security' },
   ]
   const left = steps.filter((s) => !s.done).length

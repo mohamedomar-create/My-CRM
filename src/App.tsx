@@ -30,6 +30,7 @@ import Security from './pages/Security'
 import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
 import { loadScreen } from './lib/update'
+import { NeedsErp } from './workspace/NeedsErp'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -173,14 +174,14 @@ export default function App() {
         <Route path="m/:moduleId" element={<ModuleView />} />
         <Route path="r/:id" element={<RecordPage />} />
         <Route path="new/:moduleId" element={<RecordPage />} />
-        <Route path="inventory" element={<Inventory />} />
-        <Route path="accounting" element={<Accounting />} />
+        <Route path="inventory" element={<NeedsErp><Inventory /></NeedsErp>} />
+        <Route path="accounting" element={<NeedsErp><Accounting /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="audit" element={<Audit />} />
         <Route path="migrate" element={<Migrate />} />
-        <Route path="sales" element={<SalesAnalysis />} />
-        <Route path="plan" element={<Plan />} />
+        <Route path="sales" element={<NeedsErp><SalesAnalysis /></NeedsErp>} />
+        <Route path="plan" element={<NeedsErp><Plan /></NeedsErp>} />
         <Route path="billing" element={<Billing />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -9,6 +9,7 @@ import type { Answers } from '../lib/recommend'
 import { currentWorkspace, run, useStore } from '../lib/store'
 import { uid } from '../lib/schema'
 import { msg, N_, tr, useLang } from '../lib/i18n'
+import { SCOPES } from '../lib/scope'
 
 const STEPS = [N_('Industry'), N_('What you sell'), N_('Customers'), N_('Teams'), N_('Challenges')]
 
@@ -47,8 +48,16 @@ export default function Onboarding() {
       <div className="wizard-body" key={step}>
         {step === 0 && (
           <>
-            <span className="pill">Welcome, {a.companyName}</span>
-            <h1 style={{ marginTop: 10 }}>{tr('What does your company do?')}</h1>
+            <span className="pill">{tr('Welcome, {name}', { name: a.companyName })}</span>
+            <h1 style={{ marginTop: 10 }}>{tr('What do you want Bonyan for?')}</h1>
+            <div className="scope-grid" role="radiogroup" aria-label={tr('What do you want Bonyan for?')} style={{ marginBottom: 22 }}>
+              {SCOPES.map((o) => (
+                <button key={o.id} type="button" role="radio" aria-checked={(a.scope ?? 'both') === o.id} className={`scope-card${(a.scope ?? 'both') === o.id ? ' on' : ''}`} onClick={() => set({ scope: o.id })}>
+                  <b>{tr(o.title)}</b><span className="small">{tr(o.text)}</span>
+                </button>
+              ))}
+            </div>
+            <h1>{tr('What does your company do?')}</h1>
             <p className="muted">{tr('We use this to suggest the right starting point. You can change everything later.')}</p>
             <div className="tiles">
               {TEMPLATES.filter((t) => t.id !== 'blank').map((t) => (
@@ -98,14 +107,18 @@ export default function Onboarding() {
                 </button>
               ))}
             </div>
-            {a.sells !== 'services' && (
+            {a.scope !== 'crm' && a.sells !== 'services' && (
               <>
                 <p className="q">{tr('Do you keep stock in a warehouse or shop?')}</p>
                 <YesNo value={a.inventory} onChange={(v) => set({ inventory: v })} />
               </>
             )}
-            <p className="q">{tr('Do you buy from suppliers and want to track what you owe them?')}</p>
-            <YesNo value={a.purchasing} onChange={(v) => set({ purchasing: v })} />
+            {a.scope !== 'crm' && (
+              <>
+                <p className="q">{tr('Do you buy from suppliers and want to track what you owe them?')}</p>
+                <YesNo value={a.purchasing} onChange={(v) => set({ purchasing: v })} />
+              </>
+            )}
             <p className="q">{tr('Your main products or services')} <span className="muted small">{tr('(one per line — we’ll add them to your catalogue)')}</span></p>
             <textarea rows={5} value={a.products} onChange={(e) => set({ products: e.target.value })} placeholder={tr('RO membrane 8"\nDosing pump\nAnnual maintenance visit')} />
           </>

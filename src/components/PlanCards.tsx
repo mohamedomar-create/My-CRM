@@ -7,17 +7,21 @@ import { getLang, N_, tr } from '../lib/i18n'
 
 const INCLUDES: Record<PlanId, string[]> = {
   free: [N_('Up to 2 people'), N_('Customers, contacts, leads and deals'), N_('Quotations, tasks and automations'), N_('The no-code builder, in Arabic and English')],
-  growth: [N_('Everything in Free, for as many people as you pay for'), N_('Invoices, bills, payments and cheques'), N_('Stock, VAT, withholding tax and e-invoice numbers'), N_('Accounting, budgets and the business plan')],
-  pro: [N_('Everything in Growth'), N_('AI system doctor (coming)'), N_('WhatsApp messages (coming)'), N_('Multi-step approvals (coming)')],
+  crm: [N_('As many people as you pay for'), N_('Customers, contacts, leads and deals'), N_('Quotations, tasks, service tickets and automations'), N_('Pipelines, forecasts and sales reports')],
+  erp: [N_('As many people as you pay for'), N_('Invoices, bills, payments and cheques'), N_('Stock, VAT, withholding tax and e-invoice numbers'), N_('Accounting, budgets and the business plan')],
+  growth: [N_('Everything in CRM and ERP together'), N_('From the first lead to the posted invoice'), N_('Stock, VAT, withholding tax and e-invoice numbers'), N_('Accounting, budgets and the business plan')],
+  pro: [N_('Everything in CRM + ERP'), N_('AI system doctor (coming)'), N_('WhatsApp messages (coming)'), N_('Multi-step approvals (coming)')],
 }
 
-export function PlanCards({ plans, cycle, vatRate, seats = 1, current, action }: {
+export function PlanCards({ plans, cycle, vatRate, seats = 1, current, recommend, action }: {
   plans: Plan[]
   cycle: Cycle
   vatRate: number
   /** the seats the price is shown for (the Billing page); the pricing page shows the price per person */
   seats?: number
   current?: PlanId
+  /** the plan that matches what the company uses (CRM, ERP or both) */
+  recommend?: PlanId
   action?: (p: Plan) => ReactNode
 }) {
   const ar = getLang() === 'ar'
@@ -28,10 +32,10 @@ export function PlanCards({ plans, cycle, vatRate, seats = 1, current, action }:
         const each = cycle === 'year' ? p.price_year : p.price_month
         const total = priceFor(p, cycle, seats, vatRate)
         return (
-          <div key={p.id} className={`card stack plan${p.id === 'growth' ? ' featured' : ''}${current === p.id ? ' current' : ''}`}>
+          <div key={p.id} className={`card stack plan${p.id === (recommend ?? 'growth') ? ' featured' : ''}${current === p.id ? ' current' : ''}`}>
             <div className="row between">
               <h3 style={{ margin: 0 }}>{ar ? p.name_ar : p.name}</h3>
-              {current === p.id ? <span className="pill green tiny">{tr('Your plan')}</span> : p.id === 'growth' ? <span className="pill tiny">{tr('Most chosen')}</span> : null}
+              {current === p.id ? <span className="pill green tiny">{tr('Your plan')}</span> : recommend === p.id ? <span className="pill tiny">{tr('Matches your system')}</span> : !recommend && p.id === 'growth' ? <span className="pill tiny">{tr('Most chosen')}</span> : null}
             </div>
             <div>
               <span className="plan-price">{egp(each)}</span>
@@ -42,9 +46,9 @@ export function PlanCards({ plans, cycle, vatRate, seats = 1, current, action }:
             </p>
             {!free && seats > 1 && <p className="small" style={{ margin: 0 }}>{tr('{n} people: {amount} with VAT', { n: seats, amount: egp(total.total) })}</p>}
             <ul className="plan-list">
-              {INCLUDES[p.id].map((line) => <li key={line}><Check size={15} aria-hidden /> {tr(line)}</li>)}
+              {(INCLUDES[p.id] ?? []).map((line) => <li key={line}><Check size={15} aria-hidden /> {tr(line)}</li>)}
             </ul>
-            {action?.(p)}
+            {action && <div className="plan-action">{action(p)}</div>}
           </div>
         )
       })}
