@@ -48,9 +48,9 @@ export default function Password({ mode }: { mode: 'forgot' | 'reset' }) {
   return (
     <div className="auth">
       <div className="auth-art">
-        <div className="row between"><Link to="/"><Logo /></Link><button type="button" className="ghost small" style={{ color: '#c7caf0' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{lang === 'ar' ? 'English' : 'العربية'}</button></div>
+        <div className="row between"><Link to="/"><Logo /></Link><button type="button" className="ghost small" style={{ color: '#cfe3e3' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{lang === 'ar' ? 'English' : 'العربية'}</button></div>
         <h2>{mode === 'forgot' ? tr('Locked out? It happens.') : tr('Choose a new password.')}</h2>
-        <span className="small" style={{ color: '#8a8dc0' }}>{tr('Made in Egypt for the world')}</span>
+        <span className="small" style={{ color: '#9cb8b8' }}>{tr('Made in Egypt for the world')}</span>
       </div>
       <div className="auth-form">
         {sent ? (

@@ -76,17 +76,17 @@ export default function Auth({ mode }: { mode: 'register' | 'signin' | 'join' })
   return (
     <div className="auth">
       <div className="auth-art">
-        <div className="row between"><Link to="/"><Logo /></Link><button type="button" className="ghost small" style={{ color: '#c7caf0' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{lang === 'ar' ? 'English' : 'العربية'}</button></div>
+        <div className="row between"><Link to="/"><Logo /></Link><button type="button" className="ghost small" style={{ color: '#cfe3e3' }} onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{lang === 'ar' ? 'English' : 'العربية'}</button></div>
         <div>
           <h2>{mode === 'register' ? tr('Your own CRM & ERP, shaped around how you work.') : tr('Welcome back.')}</h2>
-          <ul style={{ listStyle: 'none', padding: 0, lineHeight: 2.1, color: '#c7caf0' }}>
-            <li><CheckCircle2 size={16} color="#34d399" /> &nbsp;{tr('A system suggested for your industry')}</li>
-            <li><CheckCircle2 size={16} color="#34d399" /> &nbsp;{tr('Drag-and-drop fields, stages, reports and automations')}</li>
-            <li><CheckCircle2 size={16} color="#34d399" /> &nbsp;{tr('Quotes, invoices, stock and payments that always add up')}</li>
-            <li><CheckCircle2 size={16} color="#34d399" /> &nbsp;{tr('English & Arabic, EGP and VAT ready')}</li>
+          <ul style={{ listStyle: 'none', padding: 0, lineHeight: 2.1, color: '#cfe3e3' }}>
+            <li><CheckCircle2 size={16} color="#5fd3a0" /> &nbsp;{tr('A system suggested for your industry')}</li>
+            <li><CheckCircle2 size={16} color="#5fd3a0" /> &nbsp;{tr('Drag-and-drop fields, stages, reports and automations')}</li>
+            <li><CheckCircle2 size={16} color="#5fd3a0" /> &nbsp;{tr('Quotes, invoices, stock and payments that always add up')}</li>
+            <li><CheckCircle2 size={16} color="#5fd3a0" /> &nbsp;{tr('English & Arabic, EGP and VAT ready')}</li>
           </ul>
         </div>
-        <span className="small" style={{ color: '#8a8dc0' }}>{tr('Made in Egypt for the world')}</span>
+        <span className="small" style={{ color: '#9cb8b8' }}>{tr('Made in Egypt for the world')}</span>
       </div>
       <div className="auth-form">
         {code ? (

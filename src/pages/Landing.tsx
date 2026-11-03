@@ -38,10 +38,10 @@ export default function Landing() {
       <nav className="nav">
         <Logo />
         <div className="row">
-          <button className="ghost" style={{ color: '#c7caf0' }} onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}>
+          <button className="ghost" style={{ color: '#cfe3e3' }} onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}>
             <Languages size={16} /> {lang === 'en' ? 'العربية' : 'English'}
           </button>
-          <Link to="/pricing" className="btn ghost" style={{ color: '#c7caf0' }}>{tr('Pricing')}</Link>
+          <Link to="/pricing" className="btn ghost" style={{ color: '#cfe3e3' }}>{tr('Pricing')}</Link>
           <Link to="/signin" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}>{t('signin')}</Link>
           <Link to="/register" className="btn glow">{t('start')}</Link>
         </div>
@@ -49,7 +49,7 @@ export default function Landing() {
 
       <header className="hero">
         <div>
-          <span className="pill" style={{ background: '#ffffff14', color: '#e0e2ff' }}><Sparkles size={14} /> {t('tagline')}</span>
+          <span className="pill" style={{ background: '#ffffff14', color: '#ddf1f1' }}><Sparkles size={14} /> {t('tagline')}</span>
           <h1 style={{ marginTop: 18 }}>
             {t('heroA')} <span className="grad">{t('heroB')}</span>
           </h1>
@@ -73,11 +73,11 @@ export default function Landing() {
         <div className="steps">
           {(
             [
-              ['s1', 's1d', '#6366f1'],
-              ['s2', 's2d', '#a855f7'],
-              ['s3', 's3d', '#ec4899'],
-              ['s4', 's4d', '#06b6d4'],
-              ['s5', 's5d', '#10b981'],
+              ['s1', 's1d', '#0f8b8d'],
+              ['s2', 's2d', '#2a78d6'],
+              ['s3', 's3d', '#1baf7a'],
+              ['s4', 's4d', '#eda100'],
+              ['s5', 's5d', '#eb6834'],
             ] as const
           ).map(([h, d, c], i) => (
             <div className="step-card" key={h}>
@@ -109,7 +109,7 @@ export default function Landing() {
         <div className="tpl-grid">
           {BEST.map(([f, from]) => (
             <div key={f} className="guard" style={{ padding: 18 }}>
-              <h3 style={{ fontSize: '0.98rem' }}><CheckCircle2 size={18} color="#34d399" /> {tr(f)}</h3>
+              <h3 style={{ fontSize: '0.98rem' }}><CheckCircle2 size={18} color="#5fd3a0" /> {tr(f)}</h3>
               <p className="small">{tr('Inspired by {from}', { from: tr(from) })}</p>
             </div>
           ))}
@@ -122,7 +122,7 @@ export default function Landing() {
         <div className="guard-grid">
           {GUARDS.map((g) => (
             <div className="guard" key={g.title}>
-              <h3><g.icon size={20} color="#a5b4fc" /> {tr(g.title)}</h3>
+              <h3><g.icon size={20} color="#9fd6d7" /> {tr(g.title)}</h3>
               <p>{tr(g.text)}</p>
             </div>
           ))}
@@ -134,7 +134,7 @@ export default function Landing() {
           <MousePointerClick size={36} />
           <h2>{t('ctaTitle')}</h2>
           <p style={{ opacity: 0.9, maxWidth: 560, margin: '0 auto 22px' }}>{tr('Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.')}</p>
-          <Link to="/register" className="btn big" style={{ background: '#fff', color: '#4338ca' }}>{t('start')} <ArrowRight size={18} /></Link>
+          <Link to="/register" className="btn big" style={{ background: '#fff', color: '#0b6e70' }}>{t('start')} <ArrowRight size={18} /></Link>
         </div>
       </section>
       <footer className="footer">© {year} Bonyan · {tr('Made in Egypt for the world')} · <Link to="/privacy">{tr('Privacy')}</Link> · <Link to="/terms">{tr('Terms')}</Link> · <Link to="/dpa">{tr('Data processing')}</Link></footer>
@@ -145,9 +145,9 @@ export default function Landing() {
 function HeroMock() {
   const { tr } = useLang()
   const cols = [
-    { name: tr('Proposal'), c: '#8b5cf6', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
-    { name: tr('Negotiation'), c: '#f59e0b', items: [tr('Cairo Care – ICU kit')] },
-    { name: tr('Won'), c: '#10b981', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
+    { name: tr('Proposal'), c: '#0f8b8d', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
+    { name: tr('Negotiation'), c: '#eda100', items: [tr('Cairo Care – ICU kit')] },
+    { name: tr('Won'), c: '#2e9e6a', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
   ]
   return (
     <div className="mock" aria-hidden>
@@ -174,14 +174,14 @@ function HeroMock() {
             ))}
           </div>
           <svg viewBox="0 0 300 80" style={{ width: '100%', height: 90 }}>
-            <defs><linearGradient id="hm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#6366f1" stopOpacity=".5" /><stop offset="1" stopColor="#6366f1" stopOpacity="0" /></linearGradient></defs>
+            <defs><linearGradient id="hm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0f8b8d" stopOpacity=".5" /><stop offset="1" stopColor="#0f8b8d" stopOpacity="0" /></linearGradient></defs>
             <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10 L300 80 L0 80Z" fill="url(#hm)" />
-            <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10" fill="none" stroke="#6366f1" strokeWidth="3" />
+            <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10" fill="none" stroke="#0f8b8d" strokeWidth="3" />
           </svg>
         </div>
       </div>
-      <div className="mock-float" style={{ top: -18, insetInlineEnd: 30 }}><CheckCircle2 size={16} color="#10b981" /> {tr('Health check: 100%')}</div>
-      <div className="mock-float" style={{ bottom: -16, insetInlineStart: -10 }}><Zap size={16} color="#f59e0b" /> {tr('Task created: call new lead')}</div>
+      <div className="mock-float" style={{ top: -18, insetInlineEnd: 30 }}><CheckCircle2 size={16} color="#2e9e6a" /> {tr('Health check: 100%')}</div>
+      <div className="mock-float" style={{ bottom: -16, insetInlineStart: -10 }}><Zap size={16} color="#e0a526" /> {tr('Task created: call new lead')}</div>
     </div>
   )
 }
