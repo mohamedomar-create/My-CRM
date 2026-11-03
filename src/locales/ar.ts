@@ -3330,4 +3330,11 @@ export const AR: Record<string, string> = {
   'Kept the company (deletion cancelled)': 'أبقى على الشركة (أُلغي الحذف)',
   'Deleted their login and left the company': 'حذف حساب دخوله وغادر الشركة',
   'Sign in first': 'سجّل الدخول أولًا',
+  'Your companies': 'شركاتك',
+  'Every company you belong to. The owner of a company can delete it here: for 30 days it is read-only for everyone and can be kept, then it is erased with all its data. Download a backup first (Customise system → Company).': 'كل الشركات التي تنتمي إليها. يمكن لمالك الشركة حذفها من هنا: لمدة 30 يومًا تصبح للقراءة فقط للجميع ويمكن الإبقاء عليها، ثم تُمحى بكل بياناتها. نزّل نسخة احتياطية أولًا (تخصيص النظام ← الشركة).',
+  'Member': 'عضو',
+  'Open now': 'مفتوحة الآن',
+  'Erased on {date}': 'تُمحى في {date}',
+  'Delete…': 'حذف…',
+  'Only the owner can delete this company.': 'المالك وحده يمكنه حذف هذه الشركة.',
 }

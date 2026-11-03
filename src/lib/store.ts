@@ -453,6 +453,13 @@ export async function requestCompanyDeletion(id: string, confirmName: string): P
   return String(data)
 }
 
+/** When a company is due to be erased (the owner asked to delete it), or null. */
+export async function companyDeletionDate(id: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('billing_status', { p_id: id })
+  if (error) return null
+  return ((data as BillingStatus | null)?.delete_after as string | null | undefined) ?? null
+}
+
 /** The owner keeps the company after all (within the 30 days). */
 export async function cancelCompanyDeletion(id: string) {
   const { error } = await supabase.rpc('cancel_company_deletion', { p_id: id })

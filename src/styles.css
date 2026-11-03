@@ -723,3 +723,9 @@ kbd { font-family: inherit; font-size: var(--fs-xs); border: 1px solid var(--bor
 .scope-card:hover { background: var(--surface-2); color: var(--text); }
 .scope-card.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
 .scope-card .small { color: var(--text-2); font-weight: 400; }
+
+/* Your companies (Security page) */
+.companies { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.companies > li { padding: 12px 0; border-top: 1px solid var(--border); }
+.companies > li:first-child { border-top: 0; padding-top: 0; }
+.sidebar-small { font-size: 12px; opacity: .8; padding: 2px 12px 8px; }

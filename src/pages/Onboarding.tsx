@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Minus, Plus, Trash2, Wand2 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
@@ -43,6 +43,7 @@ export default function Onboarding() {
         <Logo />
         <div className="progress">{STEPS.map((s, i) => <span key={s} className={i <= step ? 'on' : ''} title={tr(s)} />)}</div>
         <span className="muted small">{tr('Step {n} of {total}', { n: step + 1, total: STEPS.length })}</span>
+        <Link to="/security#companies" className="small">{tr('Your companies')}</Link>
         <button type="button" className="ghost small" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>{lang === 'ar' ? 'English' : 'العربية'}</button>
       </div>
       <div className="wizard-body" key={step}>
