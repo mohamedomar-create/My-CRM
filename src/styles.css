@@ -596,6 +596,8 @@ table.statement .total-row td { border-top: 2px solid var(--border-strong); }
   .topbar { flex-wrap: wrap; padding: 10px 16px; gap: 8px; }
   .topbar > div:first-child { max-width: none !important; flex-basis: 100%; }
   .topbar select { max-width: 60vw; }
+  .topbar .search-btn { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .search-btn .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page-head h1 { font-size: 1.3rem; }
   .hbar-row { grid-template-columns: minmax(70px, 34%) 1fr auto; }
   .nav .btn.secondary, .nav button.ghost { display: none; }
