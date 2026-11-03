@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, BarChart3, CheckCircle2, Kanban, LayoutDashboard, Rocket, Settings, Shield, ShieldAlert, X, Zap, Layers } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { useDraft } from './useDraft'
@@ -33,7 +33,8 @@ export interface Focus {
 export default function Builder() {
   const nav = useNavigate()
   const { ws, schema, issues } = useDraft()
-  const [tab, setTab] = useState<Tab>('modules')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'company' ? 'settings' : 'modules')
   const [focus, setFocus] = useState<Focus>({ moduleId: schema.modules[0]?.id })
   const [health, setHealth] = useState(false)
   const [published, setPublished] = useState('')

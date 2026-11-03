@@ -405,12 +405,12 @@ select pg_temp.blocked('a member reads the subscriptions table directly', $q$sel
 select pg_temp.blocked('a member changes their own subscription', $q$update public.subscriptions set paid_until = now() + interval '10 years'$q$);
 select pg_temp.blocked('a member grants themselves a plan', $q$select public.billing_grant('ws_bill00000001', 'pro', 99, now() + interval '10 years')$q$);
 select pg_temp.blocked('a member asks for the server''s billing check', $q$select public.billing_status_for('ws_bill00000001')$q$);
-select pg_temp.check('the pricing page reads the plans', (select count(*) = 3 from public.plans));
+select pg_temp.check('the pricing page reads the plans: Free, CRM, ERP, CRM + ERP, Pro', (select array_agg(id order by sort) = array['free', 'crm', 'erp', 'growth', 'pro'] from public.plans));
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
 select pg_temp.blocked('someone outside the company reads its subscription', $q$select public.billing_status('ws_bill00000001')$q$);
 reset role;
 set role anon;
-select pg_temp.check('the plans can be read without signing in', (select count(*) = 3 from public.plans) and (select vat_rate = 14 from public.billing_settings));
+select pg_temp.check('the plans can be read without signing in', (select count(*) = 5 from public.plans) and (select vat_rate = 14 from public.billing_settings));
 reset role;
 
 -- the trial ends
@@ -479,19 +479,24 @@ select pg_temp.check('2 more seats during the month cost only the days left', (s
 create temp table until_before as select paid_until from public.subscriptions where workspace_id = 'ws_bill00000001';
 select pg_temp.check('the seats payment settles', (select public.billing_payment_settle((select j ->> 'id' from p2), true, 'tx2', null) = 'paid'));
 select pg_temp.check('the seats are added, the period stays', (select seats = 5 and paid_until = (select paid_until from until_before) from public.subscriptions where workspace_id = 'ws_bill00000001'));
-select pg_temp.blocked('another plan while the month runs', $q$select public.billing_prepare_payment('ws_bill00000001', 'pro', 'month', 5, 'owner@test.dev')$q$);
+select pg_temp.blocked('a cheaper plan while the month runs (CRM + ERP to CRM)', $q$select public.billing_prepare_payment('ws_bill00000001', 'crm', 'month', 5, 'owner@test.dev')$q$);
+select pg_temp.blocked('another period while the month runs', $q$select public.billing_prepare_payment('ws_bill00000001', 'growth', 'year', 5, 'owner@test.dev')$q$);
 create temp table p3 as select public.billing_prepare_payment('ws_bill00000001', 'growth', 'month', 5, 'owner@test.dev') as j;
 select pg_temp.check('a renewal of the same plan', (select j ->> 'kind' = 'period' and (j ->> 'amount_cents')::int = 228000 from p3));
 select pg_temp.check('a declined payment is recorded', (select public.billing_payment_settle((select j ->> 'id' from p3), false, 'tx3', null, 'declined') = 'failed'));
 select pg_temp.check('and changes nothing', (select seats = 5 and paid_until = (select paid_until from until_before) from public.subscriptions where workspace_id = 'ws_bill00000001'));
+create temp table p4 as select public.billing_prepare_payment('ws_bill00000001', 'pro', 'month', 5, 'owner@test.dev') as j;
+select pg_temp.check('a dearer plan now: only the difference for the days left', (select j ->> 'kind' = 'upgrade' and (j ->> 'amount_cents')::int between 1000 and 142500 from p4));
+select pg_temp.check('the upgrade settles', (select public.billing_payment_settle((select j ->> 'id' from p4), true, 'tx4', null) = 'paid'));
+select pg_temp.check('Pro from now, the same period end', (select plan = 'pro' and seats = 5 and paid_until = (select paid_until from until_before) from public.subscriptions where workspace_id = 'ws_bill00000001'));
 grant select on p1 to authenticated;
 reset role;
 set role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
-select pg_temp.check('an admin sees the payments, newest first', (select array_agg(status order by created_at desc) = array['failed', 'paid', 'paid'] from public.billing_payments_list('ws_bill00000001')));
+select pg_temp.check('an admin sees the payments, newest first', (select array_agg(status order by created_at desc) = array['paid', 'failed', 'paid', 'paid'] from public.billing_payments_list('ws_bill00000001')));
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","email":"two@test.dev","role":"authenticated"}', false);
 select pg_temp.blocked('a member who isn''t an admin sees the payments', $q$select * from public.billing_payments_list('ws_bill00000001')$q$);
 reset role;
-select pg_temp.check('the payment is in the audit trail', (select count(*) = 2 from public.audit_events where workspace_id = 'ws_bill00000001' and command = 'billing.paid'));
+select pg_temp.check('the payment is in the audit trail', (select count(*) = 3 from public.audit_events where workspace_id = 'ws_bill00000001' and command = 'billing.paid'));
 
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

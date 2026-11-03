@@ -5,21 +5,23 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'
 import { PlanCards } from '../components/PlanCards'
-import { addSeatsPrice, egp, PLANS, priceFor, VAT_RATE, planName, type BillingStatus, type Cycle, type Plan, type PlanId } from '../lib/billing'
+import { addSeatsPrice, egp, PLANS, planFits, planForScope, priceFor, upgradePrice, VAT_RATE, planName, type BillingStatus, type Cycle, type Plan, type PlanId } from '../lib/billing'
 import { chooseFreePlan, listPayments, loadPlans, refreshBilling, startCheckout, useStore, type BillingPayment } from '../lib/store'
 import { getLang, tr } from '../lib/i18n'
 import { showToast, useApp } from './useApp'
+import { schemaScope } from '../lib/scope'
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
 
 export default function Billing() {
-  const { ws } = useApp()
+  const { ws, schema } = useApp()
+  const scope = schemaScope(schema)
   const b = useStore((s) => s.billing)
   const companies = useStore((s) => s.companies)
   const isOwner = Boolean(companies.find((c) => c.id === ws.id)?.is_owner)
   const [prices, setPrices] = useState<{ plans: Plan[]; vatRate: number }>({ plans: PLANS, vatRate: VAT_RATE })
   const [cycle, setCycle] = useState<Cycle>(b?.cycle ?? 'month')
-  const [seats, setSeats] = useState(Math.max(1, b?.members ?? 1))
+  const [seats, setSeats] = useState(Math.max(1, b?.members ?? 1, b?.seats ?? 0))
   const [payments, setPayments] = useState<BillingPayment[]>([])
   const [params, setParams] = useSearchParams()
   const returned = params.get('payment')
@@ -77,6 +79,9 @@ export default function Billing() {
         </div>
       )}
       <div className={`${status.tone} row`} style={{ gap: 8 }}><span className="grow">{status.text}</span></div>
+      {b.state !== 'trial' && b.state !== 'read_only' && !planFits({ features: b.features }, scope) && (
+        <div className="warn-box">{scope === 'crm' ? tr('Your system uses the CRM, which your plan doesn’t include: leads, contacts and deals can be seen but not changed.') : scope === 'erp' ? tr('Your system uses the ERP, which your plan doesn’t include: invoices, stock and the books can be seen but not changed.') : tr('Your system uses the CRM and the ERP together; your plan includes only one of them. CRM + ERP or Pro covers both.')}</div>
+      )}
       <div className="card row" style={{ gap: 16, flexWrap: 'wrap' }}>
         <span className="row" style={{ gap: 6 }}><Users size={16} aria-hidden /> {b.state === 'trial' ? tr('People: {n} (no limit during the trial)', { n: b.members }) : tr('People: {n} of {limit}', { n: b.members, limit: b.seat_limit })}</span>
         {b.invites > 0 && <span className="small muted">{tr('{n} invitations open (each takes a seat when accepted)', { n: b.invites })}</span>}
@@ -97,10 +102,10 @@ export default function Billing() {
           </div>
         </div>
         <p className="tiny muted" style={{ margin: 0 }}>{tr('Everyone who signs in takes a seat, so choose at least the {n} people in the team now.', { n: b.members })}</p>
-        <PlanCards plans={prices.plans} cycle={cycle} vatRate={prices.vatRate} seats={seats} current={b.state === 'trial' ? undefined : b.plan}
+        <PlanCards plans={prices.plans} cycle={cycle} vatRate={prices.vatRate} seats={seats} current={b.state === 'trial' ? undefined : b.plan} recommend={planForScope(scope)}
           action={(p) => p.price_month === 0
             ? (isOwner && b.state !== 'free' && b.state !== 'active' && <button className="secondary" onClick={() => void free()} disabled={b.members > (p.max_users ?? 2)} title={b.members > (p.max_users ?? 2) ? tr('The Free plan is for up to {n} people. Remove members on the Team page first.', { n: p.max_users ?? 2 }) : undefined}>{tr('Move to Free')}</button>)
-            : <PayButton plan={p} cycle={cycle} seats={seats} vatRate={prices.vatRate} b={b} workspace={ws.id} />} />
+            : <PayButton plan={p} cycle={cycle} seats={seats} vatRate={prices.vatRate} b={b} workspace={ws.id} plans={prices.plans} fits={planFits(p, scope)} />} />
       </div>
 
       {payments.length > 0 && (
@@ -113,7 +118,7 @@ export default function Billing() {
                 {payments.map((x) => (
                   <tr key={x.id} style={{ cursor: 'default' }}>
                     <td className="small">{day(x.paid_at ?? x.created_at)}</td>
-                    <td className="small">{x.kind === 'seats' ? tr('{plan}: {n} seats until the period ends', { plan: planName(x.plan as PlanId, ar ? 'ar' : 'en', prices.plans), n: x.seats }) : tr('{plan}: {n} people, {cycle}', { plan: planName(x.plan as PlanId, ar ? 'ar' : 'en', prices.plans), n: x.seats, cycle: x.cycle === 'year' ? tr('1 year') : tr('1 month') })}</td>
+                    <td className="small">{x.kind === 'upgrade' ? tr('Moved to {plan} for {n} people until the period ends', { plan: planName(x.plan as PlanId, ar ? 'ar' : 'en', prices.plans), n: x.seats }) : x.kind === 'seats' ? tr('{plan}: {n} seats until the period ends', { plan: planName(x.plan as PlanId, ar ? 'ar' : 'en', prices.plans), n: x.seats }) : tr('{plan}: {n} people, {cycle}', { plan: planName(x.plan as PlanId, ar ? 'ar' : 'en', prices.plans), n: x.seats, cycle: x.cycle === 'year' ? tr('1 year') : tr('1 month') })}</td>
                     <td className="num">{egp(x.total)}</td>
                     <td><span className={`pill tiny ${x.status === 'paid' ? 'green' : x.status === 'failed' ? 'red' : 'amber'}`}>{x.status === 'paid' ? tr('Paid') : x.status === 'failed' ? tr('Not paid') : tr('Waiting')}</span></td>
                     <td className="small">{day(x.period_to)}</td>
@@ -131,19 +136,25 @@ export default function Billing() {
 }
 
 /** What paying for this plan would be now (a new period, a renewal, or more seats for the days left), and the button. */
-function PayButton({ plan, cycle, seats, vatRate, b, workspace }: { plan: Plan; cycle: Cycle; seats: number; vatRate: number; b: BillingStatus; workspace: string }) {
+function PayButton({ plan, cycle, seats, vatRate, b, workspace, plans, fits }: { plan: Plan; cycle: Cycle; seats: number; vatRate: number; b: BillingStatus; workspace: string; plans: Plan[]; fits: boolean }) {
   const [busy, setBusy] = useState(false)
   const [now] = useState(() => new Date())
   const running = b.state === 'active' && b.paid_until
   const same = b.plan === plan.id && b.cycle === cycle
-  if (running && !same) {
+  const current = plans.find((x) => x.id === b.plan)
+  // A dearer plan of the same period can start now: the difference for the days left.
+  const up = running && !same && b.cycle === cycle && current && (cycle === 'year' ? plan.price_year > current.price_year : plan.price_month > current.price_month)
+  if (running && !same && !up) {
     return <p className="small muted" style={{ margin: 0 }}>{tr('You can move to this plan or period when the current one ends ({date}).', { date: day(b.paid_until) })}</p>
   }
+  const upgrade = up ? upgradePrice(current!, plan, cycle, b.seats, Math.max(seats, b.seats), b.paid_until!, now, vatRate) : null
   const extra = running && same && seats > b.seats ? addSeatsPrice(plan, cycle, seats - b.seats, b.paid_until!, now, vatRate) : null
-  const total = extra ? extra.total : priceFor(plan, cycle, seats, vatRate).total
-  const label = extra
-    ? tr('Add {n} seats for {days} days: {amount}', { n: seats - b.seats, days: extra.days, amount: egp(total) })
-    : running ? tr('Renew for {amount}', { amount: egp(total) }) : tr('Pay {amount}', { amount: egp(total) })
+  const total = upgrade ? upgrade.total : extra ? extra.total : priceFor(plan, cycle, seats, vatRate).total
+  const label = upgrade
+    ? tr('Move now: {amount}', { amount: egp(total) })
+    : extra
+      ? tr('Add {n} seats for {days} days: {amount}', { n: seats - b.seats, days: extra.days, amount: egp(total) })
+      : running ? tr('Renew for {amount}', { amount: egp(total) }) : tr('Pay {amount}', { amount: egp(total) })
   async function pay() {
     setBusy(true)
     try {
@@ -156,7 +167,9 @@ function PayButton({ plan, cycle, seats, vatRate, b, workspace }: { plan: Plan; 
   return (
     <div className="stack" style={{ gap: 4 }}>
       <button onClick={() => void pay()} disabled={busy}><CreditCard size={15} aria-hidden /> {busy ? tr('Opening Paymob…') : label}</button>
+      {upgrade && <span className="tiny muted">{tr('The difference for the {days} days left in this period; the period end stays.', { days: upgrade.days })}</span>}
       <span className="tiny muted">{tr('Card, mobile wallet or Fawry, through Paymob. VAT included.')}</span>
+      {!fits && <span className="tiny" style={{ color: 'var(--warning-text, var(--text-2))' }}>{tr('This plan doesn’t cover every part your system uses.')}</span>}
     </div>
   )
 }

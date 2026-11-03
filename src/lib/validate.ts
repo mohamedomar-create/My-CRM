@@ -1,6 +1,7 @@
 // The guardrails. Every change in the builder is checked here so the published system always works:
 // nothing points at a missing field, money adds up, pipelines can finish, and roles keep their behaviour.
 import type { AppSchema, FieldDef, ModuleDef } from './schema'
+import { hasErp } from './scope'
 import { GROUPABLE_TYPES, fieldByKey, isNumeric, moduleById } from './schema'
 import { ROLES } from './roles'
 import { formulaRefs } from './formula'
@@ -185,7 +186,8 @@ export function validate(schema: AppSchema): Issue[] {
       if (!keys.includes(req)) issues.push({ level: 'error', message: `“${m.name}” is missing its “${req}” field, which ${info.label} needs`, tab: 'modules', moduleId: m.id })
     }
     if (!fieldByKey(m, m.titleField)) issues.push({ level: 'error', message: `“${m.name}” has no title field`, tab: 'modules', moduleId: m.id })
-    for (const need of info.needs ?? []) {
+    // A CRM without the ERP part sends quotations without turning them into invoices.
+    for (const need of (info.needs ?? []).filter((n) => !(m.role === 'quotes' && n === 'invoices' && !hasErp(schema)))) {
       if (!schema.modules.some((x) => x.role === need)) issues.push({ level: 'error', message: `“${m.name}” needs a ${ROLES[need].label} module`, tab: 'modules', moduleId: m.id })
     }
     if (m.numberPrefix !== undefined) {

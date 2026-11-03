@@ -462,7 +462,7 @@ export async function startCheckout(workspaceId: string, plan: string, cycle: 'm
 
 export interface BillingPayment {
   id: string
-  kind: 'period' | 'seats'
+  kind: 'period' | 'seats' | 'upgrade'
   plan: string
   cycle: 'month' | 'year'
   seats: number

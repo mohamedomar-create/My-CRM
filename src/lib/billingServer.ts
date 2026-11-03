@@ -17,7 +17,7 @@ export interface PaymobConfig {
 
 export interface Prepared {
   id: string
-  kind: 'period' | 'seats'
+  kind: 'period' | 'seats' | 'upgrade'
   plan: string
   name: string
   cycle: 'month' | 'year'
@@ -57,7 +57,9 @@ export async function handleCheckout(deps: BillingDeps, user: { email: string; n
   const pay = await deps.prepare(b.workspace, b.plan, b.cycle, Number(b.seats), user.email.toLowerCase())
   const item = pay.kind === 'seats'
     ? `Bonyan ${pay.name}: ${pay.seats} seats until the period ends`
-    : `Bonyan ${pay.name}: ${pay.seats} people, 1 ${pay.cycle}`
+    : pay.kind === 'upgrade'
+      ? `Bonyan: move to ${pay.name} for ${pay.seats} people until the period ends`
+      : `Bonyan ${pay.name}: ${pay.seats} people, 1 ${pay.cycle}`
   const intention = await deps.createIntention(intentionBody({
     payment: pay.id,
     amountCents: pay.amount_cents,

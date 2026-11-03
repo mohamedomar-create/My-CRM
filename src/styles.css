@@ -714,4 +714,12 @@ kbd { font-family: inherit; font-size: var(--fs-xs); border: 1px solid var(--bor
 .plan-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 14px; }
 .plan-list li { display: flex; gap: 6px; align-items: flex-start; }
 .plan-list svg { color: var(--primary); flex: none; margin-top: 3px; }
-.plan > :last-child { margin-top: auto; }
+.plan-action { margin-top: auto; }
+.plan-action button { white-space: normal; width: 100%; }
+
+/* CRM, ERP or both */
+.scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.scope-card { white-space: normal; height: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: start; padding: 14px 16px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-md, 10px); }
+.scope-card:hover { background: var(--surface-2); color: var(--text); }
+.scope-card.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+.scope-card .small { color: var(--text-2); font-weight: 400; }

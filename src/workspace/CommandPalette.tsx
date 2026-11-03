@@ -9,6 +9,7 @@ import { useApp } from './useApp'
 import { can, canPost } from '../lib/engine'
 import { searchRecords, normalize } from '../lib/search'
 import { tr } from '../lib/i18n'
+import { hasErp } from '../lib/scope'
 
 const KEYS = { enter: 'Enter', esc: 'Esc' }
 
@@ -28,7 +29,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const pages: Item[] = [
       { id: 'p-home', group: tr('Go to'), label: tr('Dashboard'), go: go('/app') },
       ...schema.modules.filter((m) => view(m.id)).map((m) => ({ id: `p-${m.id}`, group: tr('Go to'), label: m.name, icon: <Icon name={m.icon} size={15} style={{ color: m.color }} />, go: go(`/app/m/${m.id}`) })),
-      ...(finance ? [{ id: 'p-acc', group: tr('Go to'), label: tr('Accounting'), go: go('/app/accounting') }, { id: 'p-plan', group: tr('Go to'), label: tr('Business plan'), go: go('/app/plan') }] : []),
+      ...(finance && hasErp(schema) ? [{ id: 'p-acc', group: tr('Go to'), label: tr('Accounting'), go: go('/app/accounting') }, { id: 'p-plan', group: tr('Go to'), label: tr('Business plan'), go: go('/app/plan') }] : []),
       ...(role?.admin ? [{ id: 'p-team', group: tr('Go to'), label: tr('Team'), go: go('/app/team') }, { id: 'p-builder', group: tr('Go to'), label: tr('Customise system'), go: go('/builder') }] : []),
     ]
     const create: Item[] = schema.modules.filter((m) => can({ schema, user }, m.id, 'create')).map((m) => ({ id: `n-${m.id}`, group: tr('Create'), label: tr('New {what}', { what: m.singular.toLowerCase() }), icon: <Plus size={15} />, go: go(`/app/new/${m.id}`) }))

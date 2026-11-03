@@ -13,6 +13,7 @@ import { homeKind, mineFilter } from '../lib/today'
 import { useOpenList, usePeriod } from './usePeriod'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { dateLocale, useLang } from '../lib/i18n'
+import { hasErp } from '../lib/scope'
 
 export default function Dashboard() {
   const { ws, user, schema, act } = useApp()
@@ -28,6 +29,7 @@ export default function Dashboard() {
   const openList = useOpenList()
   const finance = canPost({ schema, user })
   const kind = homeKind(schema, user)
+  const erp = hasErp(schema)
   // "Only mine": on by default for sales reps and the team, off for the owner and finance (kept in the address).
   const [params, setParams] = useSearchParams()
   const mine = params.get('me') ? params.get('me') === '1' : kind === 'sales' || kind === 'team'
@@ -44,7 +46,7 @@ export default function Dashboard() {
 
       {role?.admin && !ws.books?.opening?.done && !(ws.data.imports ?? []).length && (
         <div className="info row between" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          <span><b>{tr('Coming from another system?')}</b> {tr('Bring your customers, deals, products and opening books in from one Excel workbook.')}</span>
+          <span><b>{tr('Coming from another system?')}</b> {erp ? tr('Bring your customers, deals, products and opening books in from one Excel workbook.') : tr('Bring your customers, contacts and deals in from one Excel workbook.')}</span>
           <Link to="/app/migrate" className="btn secondary small"><FileSpreadsheet size={15} /> {tr('Bring your data in')}</Link>
         </div>
       )}
@@ -55,13 +57,13 @@ export default function Dashboard() {
         <PeriodBar p={p} />
         <label className="row small no-print" style={{ gap: 6 }}><input type="checkbox" checked={mine} onChange={(e) => { const next = new URLSearchParams(params); next.set('me', e.target.checked ? '1' : '0'); setParams(next, { replace: true }) }} style={{ width: 'auto' }} /> {tr('Only mine')}</label>
       </div>
-      {finance && <OwnerCockpit period={p.period} before={p.before} />}
-      {kind === 'sales' && <MyPipeline />}
+      {finance && erp && <OwnerCockpit period={p.period} before={p.before} />}
+      {(kind === 'sales' || (kind === 'owner' && !erp)) && <MyPipeline />}
       {kind === 'warehouse' && <ReorderList />}
 
       <SalesHistory />
-      <BudgetCard />
-      <TargetsCard />
+      {erp && <BudgetCard />}
+      {erp && <TargetsCard />}
 
       {reports.length === 0 && (
         <div className="card empty">

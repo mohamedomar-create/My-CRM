@@ -11,6 +11,7 @@ import { CommandPalette } from './CommandPalette'
 import { BillingBanner } from './BillingBanner'
 import { dateLocale, useLang } from '../lib/i18n'
 import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
+import { hasErp } from '../lib/scope'
 
 const SHORTCUT = 'Ctrl K'
 
@@ -26,6 +27,8 @@ export default function Shell() {
   const [palette, setPalette] = useState(false)
   const ran = useRef(false)
   const role = schema.roles.find((r) => r.id === user.roleId)
+  // The ERP pages only when the company uses the ERP part (CRM, ERP or both).
+  const erp = hasErp(schema)
 
   const billing = useStore((s) => s.billing)
   useEffect(() => {
@@ -77,10 +80,10 @@ export default function Shell() {
           </NavLink>
         ))}
         <div className="sect">{tr('Operations')}</div>
-        {schema.modules.some((m) => m.role === 'products') && <NavLink to="/app/inventory"><Boxes size={18} /> {tr('Stock')}</NavLink>}
+        {erp && schema.modules.some((m) => m.role === 'products') && <NavLink to="/app/inventory"><Boxes size={18} /> {tr('Stock')}</NavLink>}
         {schema.modules.some((m) => (m.role === 'invoices' || m.role === 'purchases') && (canPost({ schema, user }) || can({ schema, user }, m.id, 'view'))) && <NavLink to="/app/sales"><BarChart3 size={18} /> {tr('Sales analysis')}</NavLink>}
-        {canPost({ schema, user }) && <NavLink to="/app/plan"><LineChart size={18} /> {tr('Business plan')}</NavLink>}
-        {canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> {tr('Accounting')}</NavLink>}
+        {erp && canPost({ schema, user }) && <NavLink to="/app/plan"><LineChart size={18} /> {tr('Business plan')}</NavLink>}
+        {erp && canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> {tr('Accounting')}</NavLink>}
         {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> {tr('Approvals')} {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
         {role?.admin && <NavLink to="/app/team"><Users size={18} /> {tr('Team')}</NavLink>}
         {role?.admin && <NavLink to="/app/billing"><CreditCard size={18} /> {tr('Billing')}</NavLink>}

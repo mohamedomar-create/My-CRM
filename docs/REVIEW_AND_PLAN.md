@@ -904,6 +904,26 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >
 > Still to do: automatic renewal (saved cards), a tax invoice for each payment from the operator, and e-mail reminders before a period ends.
 
+> **CRM, ERP or both (3 Nov 2026).** Each company chooses what it uses Bonyan for.
+> - **The CRM:** customers, contacts, leads, deals, quotations, tasks, service tickets.
+> - **The ERP:** invoices, bills, payments, stock, accounting, VAT and e-invoices, budgets, the business plan.
+> - **Or both.**
+>
+> How it works:
+> - **At setup:** the choice is the first question. The industry's system is built with only the lists that part needs, and nothing points at a list that isn't there. All 17 industries build without errors in each choice.
+> - **In the app:** a CRM-only company sees no Accounting, Stock, Sales analysis or Business plan. Its home shows the pipeline, and the ERP pages explain how to switch the ERP part on.
+> - **In the builder:** the Company tab switches a part on or off. Switching a part on adds its lists, with permissions in each role. A part is switched off only while its lists are empty, so nothing is ever lost.
+> - **Plans by choice:**
+>   - Free: the CRM for 2 people;
+>   - CRM: EGP 250;
+>   - ERP: EGP 350;
+>   - CRM + ERP: EGP 400 (was "Growth");
+>   - Pro: EGP 650;
+>   - all per person per month plus 14% VAT; yearly is 10 months.
+>
+>   Customers, products, quotations, tasks and the company's own lists come with every plan. The server refuses what the plan doesn't include.
+> - **Billing page:** it marks the plan that matches the system and warns when the plan doesn't cover a part in use. A dearer plan of the same period can start mid-period, paying the difference for the days left.
+
 **What the owner will see**
 - Pricing page.
 - Online signup with a trial.

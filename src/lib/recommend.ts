@@ -1,5 +1,6 @@
 // Turns the onboarding answers into ranked template suggestions and a tailored first schema.
 import type { AppSchema, ModuleDef, ModuleRole } from './schema'
+import { PART_SPECS, pruneFields, specsFor, type Scope } from './scope'
 import { clone, uid } from './schema'
 import type { Feature, Template } from './templates'
 import { TEMPLATES } from './templates'
@@ -28,6 +29,8 @@ export interface Answers {
   currency: string
   vatRate: number
   taxId: string
+  /** what Bonyan is for: the CRM, the ERP, or both (scope.ts) */
+  scope: Scope
 }
 
 export const emptyAnswers = (companyName = ''): Answers => ({
@@ -56,6 +59,7 @@ export const emptyAnswers = (companyName = ''): Answers => ({
   currency: 'EGP',
   vatRate: 14,
   taxId: '',
+  scope: 'both',
 })
 
 export function neededFeatures(a: Answers): Feature[] {
@@ -140,8 +144,15 @@ function extraSpecs(a: Answers, roles: Set<ModuleRole>): ModuleSpec[] {
 }
 
 export function generateSchema(t: Template, a: Answers): AppSchema {
+  const scope: Scope = a.scope ?? 'both'
   const roles = new Set(t.modules.map((m) => m.role))
-  const specs = [...clone(t.modules), ...extraSpecs(a, roles)]
+  const specs = specsFor([...clone(t.modules), ...extraSpecs(a, roles)], scope)
+  // The lists a part can't work without, when the industry's starting point doesn't have them.
+  const need = [
+    ...(scope === 'crm' ? PART_SPECS.crm.filter((x) => x.role !== 'leads') : []),
+    ...(scope === 'erp' ? PART_SPECS.erp.filter((x) => a.purchasing || (x.role !== 'suppliers' && x.role !== 'purchases')) : []),
+  ]
+  for (const x of need) if (!specs.some((s) => s.role === x.role)) specs.push({ ...x })
   // Keep quotes/invoices/tasks last-ish: place extra modules before the documents for a natural menu order.
   const order: ModuleRole[] = ['leads', 'accounts', 'contacts', 'deals', 'custom', 'tickets', 'products', 'quotes', 'invoices', 'suppliers', 'purchases', 'tasks']
   specs.sort((x, y) => order.indexOf(x.role) - order.indexOf(y.role))
@@ -150,10 +161,11 @@ export function generateSchema(t: Template, a: Answers): AppSchema {
   // Contacts in a template that has no accounts would break; buildModule always targets m_accounts so make sure it exists.
   if (!modules.some((m) => m.id === MODULE_IDS.accounts)) modules.unshift(buildModule({ role: 'accounts', name: 'Customers', singular: 'Customer', icon: 'Building2', color: '#6366f1' }, a.vatRate))
 
-  if (a.inventory === false || a.sells === 'services') {
+  pruneFields(modules)
+  if (a.inventory === false || a.sells === 'services' || scope === 'crm') {
     const p = modules.find((m) => m.role === 'products')
     const track = p?.fields.find((x) => x.key === 'track_stock')
-    if (track) track.help = 'Your business sells services, so stock is off by default'
+    if (track) track.help = scope === 'crm' ? 'Stock is kept in the ERP part, so it is off here' : 'Your business sells services, so stock is off by default'
   }
 
   const schema: AppSchema = {
@@ -170,6 +182,7 @@ export function generateSchema(t: Template, a: Answers): AppSchema {
       language: 'en',
       allowNegativeStock: false,
       fiscalYearStart: 1,
+      scope,
     },
     modules,
     reports: [],
