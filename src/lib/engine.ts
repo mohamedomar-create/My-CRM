@@ -1200,6 +1200,9 @@ function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMet
 }
 
 function checkPayable(ctx: Ctx, rec: Rec, amount: number, date: string) {
+  // Two people paying the same document at the same moment: the second one is told why, not to post it.
+  if (rec.status === 'paid') throw new EngineError(`${rec.number ?? 'This document'} is already paid in full. A colleague may have just registered the payment.`)
+  if (rec.status === 'void') throw new EngineError(`${rec.number ?? 'This document'} was voided, so it takes no payment`)
   if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError(`Post ${rec.number ?? 'the document'} before registering a payment`)
   if (rec.values.credit_for) throw new EngineError('This is a credit note: use Refund to pay its credit back')
   const balance = round2(Number(rec.values.balance))

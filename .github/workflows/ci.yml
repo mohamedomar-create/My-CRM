@@ -55,7 +55,13 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - name: Apply the migrations and try every attack
+      # for the many-people simulation that runs after the permission tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply the migrations, try every attack, and have many people work at once
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
         run: bash scripts/test-db.sh

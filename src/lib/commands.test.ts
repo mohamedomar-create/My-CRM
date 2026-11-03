@@ -106,9 +106,11 @@ describe('server commands', () => {
     expect(out.results[0].ok).toBe(true)
     // Before the fix this took minutes (the whole workspace was turned into text once for every id).
     expect(Date.now() - t).toBeLessThan(5000)
-    // The same ids sent again are still refused.
+    // The same ids sent again change nothing: it is already saved. Some old ids mixed with new ones are refused.
     const again = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ name: 'automation.runScheduled', args: {}, ids: local.ids.slice(0, 1) }] })
-    expect(again.results[0]).toMatchObject({ ok: false, error: 'This change was already saved or is not valid' })
+    expect(again.results[0]).toMatchObject({ ok: true, already: true })
+    const mixed = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ name: 'automation.runScheduled', args: {}, ids: [local.ids[0], 'r_brandnew000001'] }] })
+    expect(mixed.results[0]).toMatchObject({ ok: false, error: 'This change was already saved or is not valid' })
   }, 30000)
 
   it('creates the same record ids the browser already showed, but refuses ids that already exist', async () => {
@@ -118,9 +120,15 @@ describe('server commands', () => {
     const s = server(ws, { 'mona@co.eg': { isAdmin: true } }, 'mona@co.eg')
     const out = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ ...customerCmd(accounts, 'Nile Foods'), ids: local.ids }] })
     expect((out.results[0].result as { id: string }).id).toBe((local.result as { id: string }).id)
+    // Sent again with the same ids (its reply was lost): reported as saved, and nothing is made or changed.
+    const version = s.row.version
     const again = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ ...customerCmd(accounts, 'Copy'), ids: local.ids }] })
-    expect(again.results[0].ok).toBe(false)
-    expect(list(s.row.doc, accounts)).toHaveLength(1)
+    expect(again.results[0]).toMatchObject({ ok: true, already: true })
+    expect(list(s.row.doc, accounts).map((r) => r.values.name)).toEqual(['Nile Foods'])
+    expect(s.row.version).toBe(version)
+    // Ids that are not ids are refused.
+    const bad = await handleCommands(s.deps, { workspace: 'ws_test', commands: [{ ...customerCmd(accounts, 'Bad'), ids: ['DROP TABLE'] }] })
+    expect(bad.results[0]).toMatchObject({ ok: false, error: 'This change is not valid' })
   })
 
   it('a refused change doesn’t block the ones after it', async () => {
