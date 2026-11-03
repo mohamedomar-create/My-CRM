@@ -60,6 +60,13 @@ export class HttpError extends Error {
 }
 
 const ID = /^[a-z]{1,4}_[a-z0-9]{6,40}$/
+
+/** Every value in the workspace that looks like an id (the same test as before: the id anywhere in the document). */
+export function idsIn(doc: Workspace): Set<string> {
+  const out = new Set<string>()
+  for (const m of JSON.stringify(doc).matchAll(/"([a-z]{1,4}_[a-z0-9]{6,40})"/g)) out.add(m[1])
+  return out
+}
 const MAX_COMMANDS = 50
 /** changes one person may send per minute */
 export const PER_MINUTE = 120
@@ -93,11 +100,14 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
     let doc = loaded.doc
     const results: CommandResult[] = []
     const audit: AuditRow[] = []
+    // Every id already in the workspace, collected once (not once per id: that made a big save take minutes).
+    let known: Set<string> | undefined
     for (const c of req.commands) {
       try {
         // Ids the browser already used are kept, so the page it shows still finds the record, but only fresh ones.
         const ids = Array.isArray(c.ids) ? c.ids.filter((x): x is string => typeof x === 'string') : undefined
-        if (ids?.some((id) => !ID.test(id) || JSON.stringify(doc).includes(`"${id}"`))) throw new Error('This change was already saved or is not valid')
+        if (ids?.length) known ??= idsIn(doc)
+        if (ids?.some((id) => !ID.test(id) || known!.has(id))) throw new Error('This change was already saved or is not valid')
         // Requiring two-factor for others needs it for yourself first, or the admin could lock themselves out.
         if (c.name === 'security.setTwoFactor' && (c.args as { required?: boolean })?.required && deps.user.aal !== 'aal2') {
           throw new Error('Turn on two-factor login for yourself first (Security page), then require it for others')
@@ -107,6 +117,8 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         if (unpaid) throw new Error(unpaid)
         const out = applyCommand(doc, actor, { name: c.name, args: c.args } as Command, ids)
         doc = out.ws
+        // What this command made is in the workspace now: the next command that brings ids looks again.
+        known = undefined
         results.push({ ok: true, result: out.result })
         audit.push({ workspace_id: req.workspace, actor: deps.user.id, actor_email: email, command: c.name, label: c.label ?? null, ok: true, error: null, record_ids: out.ids })
       } catch (e) {
