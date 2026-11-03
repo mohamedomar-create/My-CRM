@@ -482,13 +482,13 @@ A smaller team stretches the timeline roughly in proportion.
 - Salespeople no longer see costs and margins.
 
 **Acceptance checks**
-- [ ] The `created_by` takeover attack, a member rewriting someone else's role, and a member deleting journal lines are all rejected by the database (automated tests).
-- [ ] Two browsers post two invoices at the same moment: both survive with different numbers, or one user gets a clear dialog. A printed number is never reassigned.
-- [ ] All five ACCO-03 scenarios and the negative-cost void scenario leave the inventory account equal to stock value (tests).
-- [ ] A new company that removes sample data issues INV-YYYY-0001 as its first real invoice.
-- [ ] A "set field" automation on a posted invoice is skipped and logged.
-- [ ] Importing "١٥٠٠" stores 1500.
-- [ ] Every change runs type-check, lint, tests and database permission tests automatically.
+- [x] The `created_by` takeover attack, a member rewriting someone else's role, and a member deleting journal lines are all rejected by the database (automated tests). *(3 Nov 2026: permissions.sql.)*
+- [x] Two browsers post two invoices at the same moment: both survive with different numbers, or one user gets a clear dialog. A printed number is never reassigned. *(3 Nov 2026: multiuser.test.ts: both post at the same moment.)*
+- [x] All five ACCO-03 scenarios and the negative-cost void scenario leave the inventory account equal to stock value (tests). *(3 Nov 2026: books.test.ts.)*
+- [x] A new company that removes sample data issues INV-YYYY-0001 as its first real invoice. *(3 Nov 2026: books.test.ts.)*
+- [x] A "set field" automation on a posted invoice is skipped and logged. *(3 Nov 2026: books.test.ts.)*
+- [x] Importing "١٥٠٠" stores 1500. *(3 Nov 2026: books.test.ts.)*
+- [x] Every change runs type-check, lint, tests and database permission tests automatically. *(3 Nov 2026: ci.yml.)*
 
 **Rough effort:** 5–7 weeks for the full team.
 
@@ -526,8 +526,8 @@ A smaller team stretches the timeline roughly in proportion.
 - Lists stay fast with tens of thousands of records.
 
 **Acceptance checks**
-- [ ] A member using direct database access cannot change any posted document, journal, stock or role (automated attack suite).
-- [ ] A Sales role's download contains no costs, journals or modules it cannot view.
+- [x] A member using direct database access cannot change any posted document, journal, stock or role (automated attack suite). *(3 Nov 2026: permissions.sql.)*
+- [x] A Sales role's download contains no costs, journals or modules it cannot view. *(3 Nov 2026: permissions.sql.)*
 - [ ] 10 simulated users editing for 30 minutes lose zero changes.
 - [ ] A list of 20,000 records opens in under 1 second, and typing in search responds in under 100 ms.
 - [ ] Any change can be traced to a real logged-in user with server time.
@@ -569,7 +569,7 @@ A smaller team stretches the timeline roughly in proportion.
 - [ ] An accountant signs off a test company through a full month: opening balances, sales, purchases, returns, WHT, VAT return, bank reconciliation, close.
 - [ ] Customer, supplier and stock totals equal the ledger after 10,000 random post/void/pay sequences.
 - [ ] ETA preprod accepts B2B invoices, credit notes and debit notes.
-- [ ] Nothing can be posted into a locked period.
+- [x] Nothing can be posted into a locked period. *(3 Nov 2026: ledger.test.ts (every journal goes through the period check).)*
 
 **Rough effort:** 3–4 months (several L/XL items in parallel).
 
@@ -741,8 +741,8 @@ A smaller team stretches the timeline roughly in proportion.
 - An Undo button.
 
 **Acceptance checks**
-- [ ] The lead → deal → quote → invoice → payment chain is traceable both ways.
-- [ ] No duplicate customer is created when converting a known phone number.
+- [x] The lead → deal → quote → invoice → payment chain is traceable both ways. *(3 Nov 2026: trail.test.ts; the Trail card on each record.)*
+- [x] No duplicate customer is created when converting a known phone number. *(3 Nov 2026: trail.test.ts.)*
 - [ ] Publishing a setup that would orphan records is blocked until migrated.
 - [ ] A sandbox test of an automation leaves live data untouched.
 
@@ -781,10 +781,10 @@ A smaller team stretches the timeline roughly in proportion.
 - A usable phone app.
 
 **Acceptance checks**
-- [ ] 100% of the user interface is translated (automatic check).
+- [x] 100% of the user interface is translated (automatic check). *(3 Nov 2026: ar.test.ts: every wrapped text has Arabic, and no screen has English left unwrapped (all screens listed).)*
 - [ ] The accessibility scanner (axe) reports 0 serious issues; full keyboard journeys work.
 - [x] No horizontal scrolling at 390px width on any route. (3 Nov 2026: checked on all 22 signed-in routes and the public pages, in English and Arabic; the public pages are checked on every change by the browser test.)
-- [ ] Dashboard net sales equal the revenue account for the same period.
+- [x] Dashboard net sales equal the revenue account for the same period. *(3 Nov 2026: cockpit.test.ts.)*
 - [ ] 5 Egyptian SME owners complete "how did we do this month vs last?" in under 30 seconds in usability tests.
 
 **Rough effort:** 6–8 months in waves (L/XL).

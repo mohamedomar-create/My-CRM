@@ -18,6 +18,22 @@ const read = (f: string) => {
 
 /** Screens fully translated: no English may be left in them unwrapped. Add each screen here as it is done. */
 const DONE = [
+  'src/components/ErrorBoundary.tsx',
+  'src/components/Icon.tsx',
+  'src/components/Logo.tsx',
+  'src/components/PlanCards.tsx',
+  'src/components/YourCompanies.tsx',
+  'src/main.tsx',
+  'src/pages/Landing.tsx',
+  'src/pages/Legal.tsx',
+  'src/pages/Pricing.tsx',
+  'src/workspace/Billing.tsx',
+  'src/workspace/BillingBanner.tsx',
+  'src/workspace/NeedsErp.tsx',
+  'src/workspace/plan/Inputs.tsx',
+  'src/workspace/plan/Report.tsx',
+  'src/workspace/plan/Views.tsx',
+  'src/workspace/plan/charts.tsx',
   'src/workspace/Shell.tsx',
   'src/workspace/Dashboard.tsx',
   'src/pages/Auth.tsx',

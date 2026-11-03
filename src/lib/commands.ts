@@ -11,7 +11,7 @@ import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
-  quoteToInvoice, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
+  quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
@@ -38,6 +38,7 @@ export interface CommandArgs {
   'lead.convert': { id: string }
   'quote.setStatus': { id: string; status: 'sent' | 'accepted' | 'declined' }
   'quote.toInvoice': { id: string }
+  'deal.toQuote': { id: string }
   'doc.post': { id: string }
   'doc.void': { id: string }
   'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
@@ -182,6 +183,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'lead.convert': { run: (ws, u, a) => ({ id: convertLead(ctx(ws, u), rec(ws, a.id)).id }) },
   'quote.setStatus': { run: (ws, u, a) => setQuoteStatus(ctx(ws, u), rec(ws, a.id), a.status) },
   'quote.toInvoice': { run: (ws, u, a) => ({ id: quoteToInvoice(ctx(ws, u), rec(ws, a.id)).id }) },
+  'deal.toQuote': { run: (ws, u, a) => ({ id: dealToQuote(ctx(ws, u), rec(ws, a.id)).id }) },
   'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id)) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
   'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque }) },

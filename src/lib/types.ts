@@ -35,7 +35,14 @@ export interface Rec {
   lines?: Line[]
   postedAt?: string
   /** journal / stock rows created when this document was posted */
-  links?: { source?: string }
+  links?: {
+    /** a quotation: the invoice made from it (kept for older data; `made` is the general form) */
+    source?: string
+    /** the record this one was made from (a deal from its lead, a quotation from its deal, an invoice from its quotation) */
+    from?: string
+    /** the records made from this one */
+    made?: string[]
+  }
   /** created by "Try with sample data"; removed in one click before going live */
   sample?: boolean
   /** what the company's old system knew this record as (Phase H) */
