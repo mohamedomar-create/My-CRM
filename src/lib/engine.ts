@@ -933,8 +933,120 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   rec.values.paid = 0
   rec.values.balance = t.total
   log(ctx, `posted ${mod.singular} ${number}`, rec)
+  if (mod.role === 'invoices' && !rec.values.credit_for && !rec.values.opening) sellFromShelves(ctx, rec, String(party), lines)
   for (const o of overLimit) log(ctx, `posted ${number} over the credit limit of ${o.name} (${money(o.limit, ctx.schema.company.currency)})`, rec)
   runWorkflows(ctx, rec, 'updated')
+}
+
+/* ---------------- consignment: pieces on stockists' shelves ---------------- */
+
+/**
+ * The list of pieces placed on consignment (the handmade template's "Consignment placements", or any list built the
+ * same way): a link to the customer, a link to the product, and the quantities placed and sold.
+ */
+export function placementList(schema: AppSchema) {
+  const accounts = moduleByRole(schema, 'accounts')?.id
+  const products = moduleByRole(schema, 'products')?.id
+  if (!accounts || !products) return null
+  for (const m of schema.modules) {
+    if (m.role !== 'custom') continue
+    const has = (k: string) => m.fields.some((f) => f.key === k && f.type === 'number')
+    const party = m.fields.find((f) => f.type === 'relation' && f.target === accounts)
+    const piece = m.fields.find((f) => f.type === 'relation' && f.target === products)
+    if (has('qty_placed') && has('qty_sold') && party && piece) return { module: m, party: party.key, piece: piece.key }
+  }
+  return null
+}
+
+/** What is still on the shelf of a placement. */
+export const onShelf = (r: Rec) => round4(Number(r.values.qty_placed ?? 0) - Number(r.values.qty_sold ?? 0) - Number(r.values.qty_returned ?? 0))
+
+/** A placement's sold quantity moves by qty; its status and worked-out fields follow. */
+function moveShelf(mod: ModuleDef, r: Rec, qty: number) {
+  r.values.qty_sold = Math.max(0, round4(Number(r.values.qty_sold ?? 0) + qty))
+  const status = mod.fields.find((f) => f.key === 'status' && f.type === 'select')
+  const opt = (v: string) => status?.options?.some((o) => o.value === v)
+  if (status && r.values.status !== 'taken_back') {
+    const left = onShelf(r)
+    const next = left <= 0 ? 'sold_out' : Number(r.values.qty_sold) > 0 ? 'partly_sold' : 'on_the_shelf'
+    if (opt(next)) r.values.status = next
+  }
+  for (const f of mod.fields) if (f.type === 'formula' && f.formula) r.values[f.key] = evalFormula(f.formula, r.values) ?? undefined
+  r.updatedAt = nowISO()
+}
+
+type ShelfMove = { placement: string; product: string; qty: number }
+const shelfMoves = (rec: Rec): ShelfMove[] => (Array.isArray(rec.values.consigned) ? (rec.values.consigned as ShelfMove[]) : [])
+
+/**
+ * An invoice to a stockist for pieces it holds on consignment: the pieces sold come off its shelf, the oldest
+ * placement first. What the invoice took is kept on it, so voiding it or a credit note can put the pieces back.
+ */
+function sellFromShelves(ctx: Ctx, rec: Rec, customer: string, lines: Line[]) {
+  const pl = placementList(ctx.schema)
+  if (!pl) return
+  const moves: ShelfMove[] = []
+  for (const l of lines) {
+    if (!l.product || !(l.qty > 0)) continue
+    let want = l.qty
+    const shelves = list(ctx.ws, pl.module.id)
+      .filter((r) => r.values[pl.party] === customer && r.values[pl.piece] === l.product && r.values.status !== 'taken_back' && onShelf(r) > 0)
+      .sort((a, b) => String(a.values.placed_on ?? a.createdAt ?? '').localeCompare(String(b.values.placed_on ?? b.createdAt ?? '')))
+    for (const r of shelves) {
+      if (want <= 0) break
+      const q = Math.min(want, onShelf(r))
+      moveShelf(pl.module, r, q)
+      want = round4(want - q)
+      const same = moves.find((m) => m.placement === r.id)
+      if (same) same.qty = round4(same.qty + q)
+      else moves.push({ placement: r.id, product: l.product, qty: q })
+      log(ctx, `${q} sold on invoice ${rec.number}`, r)
+    }
+  }
+  if (!moves.length) return
+  rec.values.consigned = moves
+  log(ctx, `took ${round4(moves.reduce((s, m) => s + m.qty, 0))} pieces off the stockist’s shelf`, rec)
+}
+
+/** A credit note that takes pieces back: they go back on the stockist's shelf (the latest placement first). */
+function backOnShelves(ctx: Ctx, orig: Rec, note: Rec, lines: Line[]) {
+  const pl = placementList(ctx.schema)
+  if (!pl || !shelfMoves(orig).length) return
+  // What the invoice still has on each placement, after the credit notes before this one.
+  const net = new Map<string, number>()
+  for (const m of shelfMoves(orig)) net.set(m.placement, (net.get(m.placement) ?? 0) + m.qty)
+  for (const cn of creditNotesOf(ctx.ws, orig)) if (cn.id !== note.id) for (const m of shelfMoves(cn)) net.set(m.placement, (net.get(m.placement) ?? 0) + m.qty)
+  const moves: ShelfMove[] = []
+  for (const l of lines) {
+    if (!l.product) continue
+    let back = l.qty
+    for (const m of [...shelfMoves(orig)].reverse()) {
+      if (back <= 0) break
+      if (m.product !== l.product) continue
+      const r = findRecord(ctx.ws, m.placement)
+      const can = Math.min(back, net.get(m.placement) ?? 0)
+      if (!r || can <= 0) continue
+      moveShelf(pl.module, r, -can)
+      net.set(m.placement, round4((net.get(m.placement) ?? 0) - can))
+      back = round4(back - can)
+      moves.push({ placement: r.id, product: l.product, qty: -can })
+      log(ctx, `${can} back on the shelf (credit note ${note.number})`, r)
+    }
+  }
+  if (moves.length) note.values.consigned = moves
+}
+
+/** Voiding an invoice or credit note undoes what it did to the shelves. */
+function undoShelves(ctx: Ctx, rec: Rec) {
+  const pl = placementList(ctx.schema)
+  if (!pl) return
+  for (const m of shelfMoves(rec)) {
+    const r = findRecord(ctx.ws, m.placement)
+    if (!r) continue
+    moveShelf(pl.module, r, -m.qty)
+    log(ctx, m.qty > 0 ? `${m.qty} back on the shelf (${rec.number} voided)` : `${-m.qty} off the shelf again (${rec.number} voided)`, r)
+  }
+  if (shelfMoves(rec).length) rec.values.consigned = []
 }
 
 export function voidDocument(ctx: Ctx, rec: Rec) {
@@ -977,6 +1089,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   }
   rec.status = 'void'
   rec.values.balance = 0
+  undoShelves(ctx, rec)
   // A voided credit note no longer reduces what was owed on the original document.
   const orig = rec.values.credit_for ? findRecord(ctx.ws, String(rec.values.credit_for)) : undefined
   if (orig) {
@@ -1287,6 +1400,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   rec.values.applied = applied
   rec.values.paid = 0
   refreshBalance(rec)
+  if (sales && restock) backOnShelves(ctx, orig, rec, lines)
   log(ctx, `issued ${sales ? 'credit' : 'debit'} note ${number} for ${orig.number} (${reason})`, orig)
   return rec
 }
