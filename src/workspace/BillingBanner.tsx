@@ -9,6 +9,16 @@ export function BillingBanner({ admin }: { admin: boolean }) {
   const b = useStore((s) => s.billing)
   if (!b) return null
   const go = admin ? <Link to="/app/billing" className="btn small">{tr('Choose a plan')}</Link> : null
+  if (b.reason === 'deleting') {
+    const date = b.delete_after ? new Date(b.delete_after).toLocaleDateString() : ''
+    return (
+      <div className="error-box row" role="status" style={{ gap: 8, marginBottom: 12 }}>
+        <Lock size={16} aria-hidden />
+        <span className="grow small"><b>{tr('This company will be erased on {date}.', { date })}</b> {tr('The owner asked to delete it, so it is read-only. Download what you need; the owner can still keep it.')}</span>
+        {admin && <Link to="/builder?tab=company" className="btn small">{tr('Keep the company')}</Link>}
+      </div>
+    )
+  }
   if (b.state === 'read_only') {
     return (
       <div className="error-box row" role="status" style={{ gap: 8, marginBottom: 12 }}>

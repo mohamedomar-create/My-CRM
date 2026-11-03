@@ -17,6 +17,10 @@ Deno.serve(async (req) => {
   const { data: ok } = await db.rpc('scheduler_key_ok', { p_key: req.headers.get('x-scheduler-key') ?? '' })
   if (ok !== true) return reply(401, { error: 'Not allowed' })
   try {
+    // Companies whose owner asked to delete them 30 days ago are erased first (their automations don't run).
+    const { data: erased, error: purgeError } = await db.rpc('purge_deleted_companies')
+    if (purgeError) console.error('erasing deleted companies failed', purgeError.message)
+    else if (erased) console.log('erased deleted companies', erased)
     const results = await runAll({
       workspaces: async () => {
         const { data, error } = await db.rpc('scheduled_workspaces')
@@ -47,7 +51,7 @@ Deno.serve(async (req) => {
         if (error) console.error('run log insert failed', error.message)
       },
     })
-    return reply(200, { workspaces: results.length, ran: results.reduce((s, r) => s + r.ran, 0), failed: results.filter((r) => !r.ok).length })
+    return reply(200, { erased: erased ?? 0, workspaces: results.length, ran: results.reduce((s, r) => s + r.ran, 0), failed: results.filter((r) => !r.ok).length })
   } catch (e) {
     console.error(e)
     return reply(500, { error: 'The scheduled run failed' })

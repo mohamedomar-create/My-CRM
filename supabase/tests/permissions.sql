@@ -499,4 +499,46 @@ select pg_temp.blocked('a member who isn''t an admin sees the payments', $q$sele
 reset role;
 select pg_temp.check('the payment is in the audit trail', (select count(*) = 3 from public.audit_events where workspace_id = 'ws_bill00000001' and command = 'billing.paid'));
 
+
+-- Deleting a login and deleting a company.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000f2', 'two@test.dev');
+insert into public.records (workspace_id, id, ord, data) values ('ws_bill00000001', 'r_del1', 1, '{"id":"r_del1","module":"m_acc","values":{"name":"Gone Co"}}');
+insert into public.journal_entries (workspace_id, id, ord, data) values ('ws_bill00000001', 'j_del1', 1, '{"id":"j_del1","ref":"X","lines":[{"account":"1200","debit":5,"credit":0},{"account":"4000","debit":0,"credit":5}]}');
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000f2","email":"two@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('deleting a login without typing the e-mail', $q$select public.delete_my_account('someone@else.dev')$q$);
+select pg_temp.blocked('someone who isn''t the owner deletes the company', $q$select public.request_company_deletion('ws_bill00000001', 'B')$q$);
+select pg_temp.allowed('a member deletes their own login', $q$select public.delete_my_account('Two@Test.dev')$q$);
+reset role;
+select pg_temp.check('they left the company and the login is gone', (select count(*) = 0 from public.workspace_members where email = 'two@test.dev') and not exists (select 1 from auth.users where email = 'two@test.dev'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.blocked('an owner deletes their login while they still own a company', $q$select public.delete_my_account('owner@test.dev')$q$);
+select pg_temp.blocked('deleting the company without typing its name', $q$select public.request_company_deletion('ws_bill00000001', 'not it')$q$);
+select pg_temp.allowed('the owner asks to delete the company', $q$select public.request_company_deletion('ws_bill00000001', ' b ')$q$);
+select pg_temp.check('it is read-only for 30 days, and says why', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'deleting' and (b ->> 'days_left')::int = 30 from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.blocked('inviting someone while it waits to be deleted', $q$select public.create_invitation('ws_bill00000001', 'new@test.dev', false)$q$);
+select pg_temp.allowed('the owner restores it', $q$select public.cancel_company_deletion('ws_bill00000001')$q$);
+select pg_temp.check('restored: no longer waiting to be deleted', (select b ->> 'reason' is distinct from 'deleting' from (select public.billing_status('ws_bill00000001') b) x));
+select pg_temp.allowed('the owner asks again', $q$select public.request_company_deletion('ws_bill00000001', 'B')$q$);
+select pg_temp.blocked('a member runs the erasing', $q$select public.purge_deleted_companies()$q$);
+reset role;
+set role service_role;
+select pg_temp.check('nothing is erased before the 30 days', (select public.purge_deleted_companies() = 0) and exists (select 1 from public.workspaces where id = 'ws_bill00000001'));
+reset role;
+update public.workspace_deletions set delete_after = now() - interval '1 minute' where workspace_id = 'ws_bill00000001';
+select pg_temp.blocked('the journal can''t be deleted outside the erasing', $q$delete from public.journal_entries where id = 'j_del1'$q$);
+set role service_role;
+select pg_temp.check('after 30 days the nightly run erases it', (select public.purge_deleted_companies() = 1));
+reset role;
+select pg_temp.check('the company, its people, records, books and audit trail are gone', not exists (select 1 from public.workspaces where id = 'ws_bill00000001')
+  and not exists (select 1 from public.workspace_members where workspace_id = 'ws_bill00000001')
+  and not exists (select 1 from public.records where workspace_id = 'ws_bill00000001')
+  and not exists (select 1 from public.journal_entries where workspace_id = 'ws_bill00000001')
+  and not exists (select 1 from public.audit_events where workspace_id = 'ws_bill00000001')
+  and not exists (select 1 from public.subscriptions where workspace_id = 'ws_bill00000001'));
+select pg_temp.check('Bonyan keeps its own record of what the company paid', (select count(*) > 0 from public.billing_payments where workspace_id = 'ws_bill00000001'));
+select pg_temp.check('other companies are untouched', exists (select 1 from public.workspaces where id = 'ws_books000001') and (select count(*) > 0 from public.audit_events where workspace_id = 'ws_books000001'));
+select pg_temp.blocked('the audit trail is still append-only afterwards', $q$delete from public.audit_events where workspace_id = 'ws_books000001'$q$);
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;

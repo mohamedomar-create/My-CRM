@@ -924,6 +924,14 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >   Customers, products, quotations, tasks and the company's own lists come with every plan. The server refuses what the plan doesn't include.
 > - **Billing page:** it marks the plan that matches the system and warns when the plan doesn't cover a part in use. A dearer plan of the same period can start mid-period, paying the difference for the days left.
 
+> **Deleting a login and a company (3 Nov 2026).**
+> - **A login:** anyone can delete their own login on the Security page, typing their e-mail to confirm. They leave every company at once; the records they entered stay with each company. An owner first hands the company to another admin, or deletes it.
+> - **A company:** the owner deletes it from the builder (Company tab), typing its name to confirm.
+>   - It is read-only for everyone for 30 days, with a banner, and the owner can keep it.
+>   - Then the nightly run erases it with all its records, books, people and audit trail.
+>   - Bonyan keeps only the record of what the company paid for its subscription.
+>   - The Terms already said this; the Privacy Policy now does too.
+
 **What the owner will see**
 - Pricing page.
 - Online signup with a trial.

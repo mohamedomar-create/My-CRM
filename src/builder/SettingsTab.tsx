@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Download, History, Layers, RotateCcw } from 'lucide-react'
+import { Download, History, Layers, RotateCcw, Trash2 } from 'lucide-react'
 import { useDraft } from './useDraft'
-import { downloadBackup, run } from '../lib/store'
+import { cancelCompanyDeletion, downloadBackup, requestCompanyDeletion, run, useStore } from '../lib/store'
 import type { CompanyProfile } from '../lib/schema'
-import { tr } from '../lib/i18n'
+import { getLang, msg, tr } from '../lib/i18n'
 import { changeScope, schemaScope, SCOPES, type Scope } from '../lib/scope'
 
 
@@ -87,6 +87,65 @@ export default function SettingsTab() {
         <p className="muted small">{tr('Download everything in this workspace (setup, records, invoices, stock and books) as one file you keep. Bonyan also keeps earlier versions on the server for 90 days.')}</p>
         <button className="secondary" onClick={downloadBackup}><Download size={14} /> {tr('Download full backup')}</button>
       </div>
+      <DeleteCompany />
+    </div>
+  )
+}
+
+/** The owner deletes the company: read-only for 30 days (and can be restored), then erased with everything in it. */
+function DeleteCompany() {
+  const { ws } = useDraft()
+  const isOwner = useStore((s) => Boolean(s.companies.find((c) => c.id === ws.id)?.is_owner))
+  const b = useStore((s) => s.billing)
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  if (!isOwner) return null
+  const want = ws.answers?.companyName?.trim() || 'delete'
+  const until = b?.reason === 'deleting' && b.delete_after ? new Date(b.delete_after).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+  async function ask(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (!confirm(tr('Delete {name}? Everyone loses the right to change anything now; in 30 days the company is erased with all its records, documents and books.', { name: want }))) return
+    setBusy(true)
+    try {
+      await requestCompanyDeletion(ws.id, name)
+      setOpen(false)
+      setName('')
+    } catch (err) {
+      setError((err as Error).message)
+    }
+    setBusy(false)
+  }
+  async function restore() {
+    setError('')
+    try {
+      await cancelCompanyDeletion(ws.id)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+  return (
+    <div className="card stack danger-zone" style={{ marginTop: 16 }}>
+      <h2 style={{ margin: 0 }}><Trash2 size={18} aria-hidden /> {tr('Delete this company')}</h2>
+      {until ? (
+        <>
+          <div className="error-box">{tr('This company will be erased on {date}. Until then it is read-only and you can keep it.', { date: until })}</div>
+          <div><button onClick={() => void restore()}><RotateCcw size={14} /> {tr('Keep the company')}</button></div>
+        </>
+      ) : (
+        <>
+          <p className="small muted" style={{ margin: 0 }}>{tr('For 30 days the company is read-only for everyone and you can still keep it; then it is erased with all its records, documents, books and people. Download a full backup first. Bonyan keeps only the record of what the company paid for its subscription.')}</p>
+          {!open ? <div><button className="danger" onClick={() => setOpen(true)}>{tr('Delete this company…')}</button></div> : (
+            <form className="stack" onSubmit={ask}>
+              <label className="field">{tr('Type the company name to confirm: {name}', { name: want })}<input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
+              <div className="row"><button className="danger" disabled={busy || name.trim().toLowerCase() !== want.toLowerCase()}>{tr('Delete this company')}</button><button type="button" className="ghost" onClick={() => { setOpen(false); setError('') }}>{tr('Cancel')}</button></div>
+            </form>
+          )}
+        </>
+      )}
+      {error && <div className="error-box">{msg(error)}</div>}
     </div>
   )
 }

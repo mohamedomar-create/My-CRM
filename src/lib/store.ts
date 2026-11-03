@@ -445,6 +445,35 @@ export async function refreshBilling(id = state.session?.workspaceId): Promise<B
   return b
 }
 
+/** The owner asks to delete the company (typing its name): read-only now, erased after 30 days unless restored. */
+export async function requestCompanyDeletion(id: string, confirmName: string): Promise<string> {
+  const { data, error } = await supabase.rpc('request_company_deletion', { p_id: id, p_confirm: confirmName })
+  if (error) throw new Error(friendly(error.message))
+  await refreshBilling(id)
+  return String(data)
+}
+
+/** The owner keeps the company after all (within the 30 days). */
+export async function cancelCompanyDeletion(id: string) {
+  const { error } = await supabase.rpc('cancel_company_deletion', { p_id: id })
+  if (error) throw new Error(friendly(error.message))
+  await refreshBilling(id)
+}
+
+/** The e-mail of the login that is signed in. */
+export async function myEmail(): Promise<string> {
+  const { data } = await supabase.auth.getUser()
+  return (data.user?.email ?? '').toLowerCase()
+}
+
+/** Deletes this person's own login (typing their e-mail): they leave every company, then they are signed out. */
+export async function deleteMyAccount(confirmEmail: string) {
+  await flush()
+  const { error } = await supabase.rpc('delete_my_account', { p_confirm_email: confirmEmail })
+  if (error) throw new Error(friendly(error.message))
+  await signOut()
+}
+
 /** The owner moves the company to the Free plan (2 people, the CRM only). */
 export async function chooseFreePlan(id: string) {
   const { data, error } = await supabase.rpc('billing_choose_free', { p_id: id })

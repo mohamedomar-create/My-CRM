@@ -30,7 +30,9 @@ export interface BillingStatus {
   /** trial: the free trial; free: the Free plan; active: paid; past_due: paid period over, in the grace days; read_only: nothing can be changed */
   state: 'trial' | 'free' | 'active' | 'past_due' | 'read_only'
   /** why it is read-only */
-  reason?: 'trial_ended' | 'unpaid'
+  reason?: 'trial_ended' | 'unpaid' | 'deleting'
+  /** the owner asked to delete the company: it is erased on this date unless restored */
+  delete_after?: string | null
   writable: boolean
   features: Feature[]
   /** how many people may be members */
@@ -86,6 +88,7 @@ export function featureFor(ws: Workspace, name: string, args: unknown): Feature 
 export function billingProblem(status: BillingStatus | null | undefined, ws: Workspace, name: string, args: unknown): string | null {
   if (!status) return null
   if (!status.writable) {
+    if (status.reason === 'deleting') return 'The owner asked to delete this company, so it is read-only. The owner can restore it in the builder (Company tab) until it is erased.'
     return status.reason === 'trial_ended'
       ? 'The free trial has ended, so the company is read-only: everything can be seen and exported, nothing changed. An admin can choose a plan on the Billing page.'
       : 'The subscription is unpaid, so the company is read-only: everything can be seen and exported, nothing changed. An admin can pay on the Billing page.'
