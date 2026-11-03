@@ -84,7 +84,7 @@ export default function Suggest() {
                   <ul className="stack" style={{ padding: 0, listStyle: 'none' }}>
                     {fixes.map((c) => (
                       <li key={c.id} className="row" style={{ alignItems: 'flex-start' }}>
-                        <Check size={16} color="#10b981" style={{ marginTop: 3 }} />
+                        <Check size={16} color="#2e9e6a" style={{ marginTop: 3 }} />
                         <span className="grow"><b>{lang === 'ar' ? c.labelAr : c.label}</b><br /><span className="muted small">{lang === 'ar' ? c.fixAr : c.fix}</span></span>
                       </li>
                     ))}

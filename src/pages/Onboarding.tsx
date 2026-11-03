@@ -69,7 +69,7 @@ export default function Onboarding() {
                 </button>
               ))}
               <button type="button" className={`tile ${a.industry === 'other' ? 'on' : ''}`} onClick={() => set({ industry: 'other' })}>
-                <span className="ic" style={{ background: 'linear-gradient(135deg,#334155,#6366f1)' }}><Icon name="Sparkles" size={22} /></span>
+                <span className="ic" style={{ background: 'linear-gradient(135deg,#0d3536,#0f8b8d)' }}><Icon name="Sparkles" size={22} /></span>
                 <b>{tr('Something else')}</b>
                 <small>{tr('Describe it and we’ll find the closest match.')}</small>
               </button>
@@ -187,7 +187,7 @@ export default function Onboarding() {
                 const on = a.challenges.includes(c.id)
                 return (
                   <button key={c.id} type="button" className={`tile ${on ? 'on' : ''}`} onClick={() => toggle('challenges', c.id, 5)}>
-                    <span className="ic" style={{ background: on ? 'linear-gradient(135deg,#6366f1,#a855f7)' : '#cbd5e1' }}><Icon name={c.icon} size={20} /></span>
+                    <span className="ic" style={{ background: on ? 'linear-gradient(135deg,#0b6e70,#0f8b8d)' : '#c9c9c2' }}><Icon name={c.icon} size={20} /></span>
                     <b>{lang === 'ar' ? c.labelAr : c.label}</b>
                     <small>{on ? '✓ ' : ''}{lang === 'ar' ? c.fixAr : c.fix}</small>
                   </button>

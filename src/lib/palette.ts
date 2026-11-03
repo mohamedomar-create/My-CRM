@@ -1,7 +1,7 @@
 // The categorical palette (4.2a/4.2c, UX-04): seven colours that stay apart from each other and readable as marks on
 // both the light and the dark theme, then a grey for "Other". Charts and accents take their colours from here only.
-export const CATEGORICAL = ['#1f7a8c', '#e2a64b', '#7c5cc4', '#d9534f', '#3a9d5d', '#c86b9a', '#5b7fd6'] as const
-export const OTHER = '#94a3ab'
+export const CATEGORICAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'] as const
+export const OTHER = '#a3a39c'
 
 /** The colour of the n-th series (anything past the seventh is "Other"). */
 export const seriesColor = (n: number) => (n < CATEGORICAL.length ? CATEGORICAL[n] : OTHER)
