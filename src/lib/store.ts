@@ -52,6 +52,8 @@ interface State {
   liveAt: number
   /** the company's subscription: trial, plan, seats, read-only (Phase 6) */
   billing: BillingStatus | null
+  /** one of Bonyan's own team (inventor mode: unlimited companies, test billing states) */
+  staff: boolean
 }
 
 export interface Company {
@@ -75,7 +77,7 @@ interface Change {
   ids: string[]
 }
 
-let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false, liveAt: 0, billing: null }
+let state: State = { ready: false, sync: 'saved', workspaces: {}, session: null, notice: null, loadError: null, prefs: {}, companies: [], invitations: [], needCode: false, twoFactor: false, liveAt: 0, billing: null, staff: false }
 const listeners = new Set<() => void>()
 const versions = new Map<string, number>()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -467,6 +469,37 @@ export async function cancelCompanyDeletion(id: string) {
   await refreshBilling(id)
 }
 
+/** The companies this person belongs to, read again (after making or erasing one). */
+export async function reloadCompanies() {
+  const { data, error } = await supabase.rpc('my_workspaces')
+  if (error) throw new Error(friendly(error.message))
+  publish((s) => { s.companies = (data ?? []) as Company[] })
+}
+
+/** Makes another company with this person as its owner and opens it (setup starts). Inventors have no limit. */
+export async function createCompany(name: string) {
+  await flush()
+  const { data } = await supabase.auth.getUser()
+  if (!data.user) throw new Error('Please sign in again')
+  if (!name.trim()) throw new Error('Give the company a name')
+  await createWorkspace(data.user, name.trim(), selfUser()?.name ?? '')
+  await reloadCompanies()
+}
+
+/** Inventor mode: puts one of your companies into a billing state to try it (no payment). */
+export async function setTestBilling(id: string, scenario: string) {
+  const { data, error } = await supabase.rpc('staff_set_billing', { p_id: id, p_scenario: scenario })
+  if (error) throw new Error(friendly(error.message))
+  if (state.session?.workspaceId === id) publish((s) => { s.billing = data as BillingStatus })
+}
+
+/** Inventor mode: erases a test company you own at once (typing its name). */
+export async function eraseCompanyNow(id: string, confirmName: string) {
+  const { error } = await supabase.rpc('staff_erase_company', { p_id: id, p_confirm: confirmName })
+  if (error) throw new Error(friendly(error.message))
+  await reloadCompanies()
+}
+
 /** The e-mail of the login that is signed in. */
 export async function myEmail(): Promise<string> {
   const { data } = await supabase.auth.getUser()
@@ -527,7 +560,7 @@ export async function loadPlans(): Promise<{ plans: Plan[]; vatRate: number }> {
 /** Opens the workspace this account belongs to (the last one used, or a given one), or creates the one it registered for. */
 async function openFor(auth: AuthUser, wanted?: string) {
   const email = (auth.email ?? '').toLowerCase()
-  const [mine, invited, factors] = await Promise.all([supabase.rpc('my_workspaces'), supabase.rpc('my_invitations'), supabase.auth.mfa.listFactors()])
+  const [mine, invited, factors, staff] = await Promise.all([supabase.rpc('my_workspaces'), supabase.rpc('my_invitations'), supabase.auth.mfa.listFactors(), supabase.rpc('am_i_staff')])
   if (mine.error) throw new Error(friendly(mine.error.message))
   const companies = (mine.data ?? []) as Company[]
   const invitations = (invited.data ?? []) as PendingInvitation[]
@@ -535,6 +568,7 @@ async function openFor(auth: AuthUser, wanted?: string) {
     s.companies = companies
     s.invitations = invitations
     s.twoFactor = Boolean(factors.data?.totp?.length)
+    s.staff = staff.data === true
   })
   if (companies.length === 0) {
     const company = auth.user_metadata?.company as string | undefined

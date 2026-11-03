@@ -541,4 +541,30 @@ select pg_temp.check('Bonyan keeps its own record of what the company paid', (se
 select pg_temp.check('other companies are untouched', exists (select 1 from public.workspaces where id = 'ws_books000001') and (select count(*) > 0 from public.audit_events where workspace_id = 'ws_books000001'));
 select pg_temp.blocked('the audit trail is still append-only afterwards', $q$delete from public.audit_events where workspace_id = 'ws_books000001'$q$);
 
+
+-- Inventor mode: Bonyan's own team makes as many companies as it likes and tries any billing state.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a9', 'inventor@test.dev');
+insert into private.platform_staff (email) values ('inventor@test.dev');
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
+select pg_temp.check('someone else isn''t an inventor', not public.am_i_staff());
+select pg_temp.blocked('someone else makes themselves an inventor', $q$insert into private.platform_staff (email) values ('owner@test.dev')$q$);
+select pg_temp.blocked('someone else uses the test states', $q$select public.staff_set_billing('ws_books000001', 'internal')$q$);
+select pg_temp.blocked('someone else erases a company at once', $q$select public.staff_erase_company('ws_books000001', 'Books')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a9","email":"inventor@test.dev","role":"authenticated"}', false);
+select pg_temp.check('the inventor is one', public.am_i_staff());
+do $$ begin for i in 1..7 loop perform public.create_workspace('ws_inv0000000' || i, 'Test ' || i, jsonb_build_object('id', 'ws_inv0000000' || i, 'users', '[]'::jsonb, 'draft', null, 'data', '{}'::jsonb)); end loop; end $$;
+select pg_temp.check('the inventor makes 7 companies (more than the 5 others may own)', (select count(*) = 7 from public.my_workspaces() where id like 'ws_inv%'));
+select pg_temp.check('they start unlocked: everything, 200 people', (select b ->> 'state' = 'active' and b ->> 'plan' = 'pro' and (b ->> 'seat_limit')::int = 200 from (select public.billing_status('ws_inv00000001') b) x));
+select pg_temp.check('test state: trial ended (read-only)', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'trial_ended' from (select public.staff_set_billing('ws_inv00000001', 'trial_ended') b) x));
+select pg_temp.check('test state: the CRM plan', (select b ->> 'state' = 'active' and b -> 'features' = '["crm"]' from (select public.staff_set_billing('ws_inv00000001', 'crm') b) x));
+select pg_temp.check('test state: unpaid', (select b ->> 'reason' = 'unpaid' from (select public.staff_set_billing('ws_inv00000001', 'unpaid') b) x));
+select pg_temp.check('back to unlocked', (select (b ->> 'writable')::boolean and (b ->> 'seat_limit')::int = 200 from (select public.staff_set_billing('ws_inv00000001', 'internal') b) x));
+select pg_temp.blocked('an unknown test state', $q$select public.staff_set_billing('ws_inv00000001', 'gold')$q$);
+select pg_temp.blocked('test states on a company they aren''t in', $q$select public.staff_set_billing('ws_books000001', 'internal')$q$);
+select pg_temp.blocked('erasing without typing the name', $q$select public.staff_erase_company('ws_inv00000002', 'nope')$q$);
+select pg_temp.allowed('the inventor erases a test company at once', $q$select public.staff_erase_company('ws_inv00000002', 'test 2')$q$);
+reset role;
+select pg_temp.check('it is gone, the others stay', not exists (select 1 from public.workspaces where id = 'ws_inv00000002') and (select count(*) = 6 from public.workspaces where id like 'ws_inv%'));
+
 select 'ALL DATABASE PERMISSION TESTS PASSED' as result;
