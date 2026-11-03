@@ -13,6 +13,9 @@ import { applyChanges } from './split'
 const server = vi.hoisted(() => {
   type Row = Record<string, unknown>
   const db = { workspaces: [] as Row[], workspace_members: [] as Row[] }
+  // how long the stand-in database takes to load and to save (ms), and how many of the next sends it answers "busy"
+  const slow = { ms: 0, busy: 0 }
+  const pause = () => (slow.ms ? new Promise((r) => setTimeout(r, slow.ms * (0.5 + Math.random()))) : Promise.resolve())
   const listeners: { topic: string; cb: (msg: { payload: { version: number } }) => void }[] = []
 
   /** One browser's Supabase client: its own login, sharing the server's tables. */
@@ -53,6 +56,10 @@ const server = vi.hoisted(() => {
       },
       functions: {
         invoke: async (_fn: string, { body }: { body: unknown }) => {
+          if (slow.busy > 0) {
+            slow.busy--
+            return { data: null, error: { message: 'The workspace is very busy right now. Try again in a moment.', context: { status: 409 } } }
+          }
           const { handleCommands, HttpError } = await import('./commandServer')
           try {
             const data = await handleCommands(
@@ -63,10 +70,12 @@ const server = vi.hoisted(() => {
                   return m ? { isAdmin: Boolean(m.is_admin) } : null
                 },
                 load: async (w) => {
+                  await pause()
                   const r = db.workspaces.find((x) => x.id === w)
                   return r ? { doc: structuredClone(r.doc as Workspace), version: r.version as number, maxOrd: r.version as number * 1000 } : null
                 },
                 save: async (w, base, { setup, changes }) => {
+                  await pause()
                   const r = db.workspaces.find((x) => x.id === w)!
                   if (r.version !== base) return null
                   r.doc = applyChanges(r.doc as Workspace, setup, changes)
@@ -99,7 +108,7 @@ const server = vi.hoisted(() => {
       },
     }
   }
-  return { db, listeners, client }
+  return { db, listeners, client, slow }
 })
 
 
@@ -123,6 +132,8 @@ const settle = () => new Promise((r) => setTimeout(r, 700))
 
 beforeEach(() => {
   server.listeners.length = 0
+  server.slow.ms = 0
+  server.slow.busy = 0
   const ws: Workspace = {
     id: 'ws_team', createdAt: '', answers: emptyAnswers('Co'), draft: structuredClone(schema), published: structuredClone(schema), history: [], data: emptyData(),
     users: [{ id: 'u_mona', name: 'Mona', email: 'mona@co.eg', roleId: 'role_admin' }, { id: 'u_karim', name: 'Karim', email: 'karim@co.eg', roleId: sales.id }],
@@ -252,4 +263,87 @@ describe('two people at the same time', () => {
     await mona.flush()
     expect(savedNames()).toEqual(['Nile Foods'])
   })
+
+  it('the server is busy for a moment: the browser keeps saving (no error shown) and sends it again shortly by itself', async () => {
+    const mona = await person('mona@co.eg')
+    server.slow.busy = 2
+    const seen = new Set<string>()
+    const watch = setInterval(() => seen.add(mona.getState().sync), 5)
+    mona.run('record.create', { module: accounts, values: { name: 'Nile Foods' } })
+    await mona.flush()
+    for (let i = 0; i < 40 && savedNames().length === 0; i++) await new Promise((r) => setTimeout(r, 100))
+    clearInterval(watch)
+    expect(savedNames()).toEqual(['Nile Foods'])
+    expect(seen.has('error'), 'never shown as an error').toBe(false)
+    expect(mona.getState().sync).toBe('saved')
+  })
+
+  it('twenty people sell, buy and take payments at the same moment on a slow server: numbers without gaps, the books balance, everyone ends with the same data, nobody sees an error', async () => {
+    const { booksHealth, onHand, todayISO } = await import('./engine')
+    const doc = server.db.workspaces[0].doc as Workspace
+    const people = Array.from({ length: 20 }, (_, i) => `clerk${i}@co.eg`)
+    doc.users = people.map((email, i) => ({ id: `u_c${i}`, name: `Clerk ${i}`, email, roleId: 'role_admin' }))
+    server.db.workspace_members = people.map((email) => ({ workspace_id: 'ws_team', email, is_admin: true }))
+    const invoices = moduleByRole(schema, 'invoices')!.id
+    const bills = moduleByRole(schema, 'purchases')!.id
+    const products = moduleByRole(schema, 'products')!.id
+    const suppliers = moduleByRole(schema, 'suppliers')!.id
+    const browsers: Person[] = []
+    for (const e of people) browsers.push(await person(e))
+    // The shop: two products, a customer and a supplier, made by the first clerk.
+    const first = browsers[0]
+    const p1 = first.run('record.create', { module: products, values: { name: 'Rice', sku: 'R1', price: 50, vat_rate: 14, track_stock: true } }) as { id: string }
+    const p2 = first.run('record.create', { module: products, values: { name: 'Oil', sku: 'O1', price: 80, vat_rate: 14, track_stock: true } }) as { id: string }
+    const customer = first.run('record.create', { module: accounts, values: { name: 'Nile Foods' } }) as { id: string }
+    const supplier = first.run('record.create', { module: suppliers, values: { name: 'Delta Mills' } }) as { id: string }
+    await first.flush()
+    await settle()
+    server.slow.ms = 4
+    const seen = new Set<string>()
+    const watch = setInterval(() => browsers.forEach((b) => seen.add(b.getState().sync)), 5)
+    const today = todayISO()
+    const line = (product: string, qty: number, price: number) => [{ id: `l_${Math.random().toString(36).slice(2, 12)}`, product, description: 'Goods', qty, price, discount: 0, vat: 14 }]
+    for (let round = 0; round < 4; round++) {
+      browsers.forEach((b, i) => {
+        try {
+          if (i % 2 === 0) {
+            // half buy stock in
+            const bill = b.run('record.create', { module: bills, values: { supplier: supplier.id, date: today, due_date: today }, lines: line(i % 4 ? p1.id : p2.id, 10, 30) }) as { id: string }
+            b.run('doc.post', { id: bill.id })
+          } else {
+            // half sell what is there, and take the money for an open invoice
+            const inv = b.run('record.create', { module: invoices, values: { customer: customer.id, date: today, due_date: today }, lines: line(i % 4 === 1 ? p1.id : p2.id, 1, 50) }) as { id: string }
+            b.run('doc.post', { id: inv.id })
+            const open = list(b.currentWorkspace()!, invoices).find((d) => d.status === 'posted' && Number(d.values.balance) > 0)
+            if (open) b.run('doc.pay', { id: open.id, amount: Number(open.values.balance), date: today, method: 'cash' })
+          }
+        } catch {
+          // the app refused it on the spot (not enough stock yet): nothing was sent
+        }
+      })
+      await Promise.all(browsers.map((b) => b.flush()))
+    }
+    for (let i = 0; i < 60 && browsers.some((b) => b.getState().sync === 'saving'); i++) {
+      await new Promise((r) => setTimeout(r, 250))
+      await Promise.all(browsers.map((b) => b.flush()))
+    }
+    await settle()
+    clearInterval(watch)
+    const saved = server.db.workspaces[0].doc as Workspace
+    const posted = (m: string) => list(saved, m).filter((d) => d.status !== 'draft' && d.status !== 'void')
+    // numbers: each used once, 1…n
+    for (const m of [invoices, bills]) {
+      const seq = posted(m).map((d) => Number(d.number!.match(/(\d+)$/)![1])).sort((a, b) => a - b)
+      expect(seq.length).toBeGreaterThan(5)
+      expect(seq).toEqual(seq.map((_, k) => k + 1))
+    }
+    // nothing paid twice; the books balance and agree with customers, suppliers and stock
+    for (const d of posted(invoices)) expect(Number(d.values.balance)).toBeGreaterThanOrEqual(0)
+    expect(booksHealth(saved, saved.published!, today.slice(0, 7)).filter((c) => c.blocking && !c.ok).map((c) => c.title)).toEqual([])
+    for (const p of [p1.id, p2.id]) expect(onHand(saved, p)).toBeGreaterThanOrEqual(0)
+    // everyone ends with the same data as the server, and nobody was shown an error
+    const ids = (w: Workspace) => [invoices, bills].flatMap((m) => list(w, m).map((d) => `${d.id}:${d.number}:${d.status}:${d.values.balance}`)).sort()
+    for (const b of browsers) expect(ids(b.currentWorkspace()!)).toEqual(ids(saved))
+    expect(seen.has('error'), 'no browser showed an error').toBe(false)
+  }, 120000)
 })

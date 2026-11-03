@@ -2,8 +2,7 @@
 // asking (their login token and their membership in the database), runs the same engine the app uses on the latest
 // saved data, saves the rows that changed on their behalf, writes the audit trail and sends back what they may see. Build with `npm run build:functions`.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { handleCommands, HttpError, type CommandRequest } from '../../../src/lib/commandServer'
-import type { Workspace } from '../../../src/lib/types'
+import { handleCommands, HttpError, joinLoaded, viewed, type CommandRequest } from '../../../src/lib/commandServer'
 import type { BillingStatus } from '../../../src/lib/billing'
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Promise<Response>): void }
@@ -38,18 +37,31 @@ Deno.serve(async (req) => {
       /* no claim: treated as a password-only login */
     }
 
+    // This request's place in the queue of people saving in the same company (see 20261114000000_save_turns.sql).
+    const place = crypto.randomUUID()
     const out = await handleCommands(
       {
         user: { id: user.id, email: user.email, aal },
+        turn: {
+          take: async (workspace) => {
+            const { data, error } = await db.rpc('take_save_turn', { p_id: workspace, p_token: place })
+            if (error) throw error
+            return Number(data)
+          },
+          end: async (workspace) => {
+            const { error } = await db.rpc('end_save_turn', { p_id: workspace, p_token: place })
+            if (error) console.error('end_save_turn failed', error.message)
+          },
+        },
         membership: async (workspace, email) => {
           const { data, error } = await db.from('workspace_members').select('is_admin').eq('workspace_id', workspace).eq('email', email).maybeSingle()
           if (error) throw error
           return data ? { isAdmin: Boolean(data.is_admin) } : null
         },
         load: async (workspace) => {
-          const { data, error } = await db.rpc('load_workspace', { p_id: workspace })
+          const { data, error } = await db.rpc('load_workspace_fast', { p_id: workspace })
           if (error) throw error
-          return data ? { doc: data.doc as Workspace, version: Number(data.version), maxOrd: Number(data.max_ord) } : null
+          return data ? { doc: joinLoaded(data), version: Number(data.version), maxOrd: Number(data.max_ord) } : null
         },
         save: async (workspace, base, { setup, changes }, actor) => {
           const { data, error } = await db.rpc('save_workspace_changes', { p_id: workspace, p_base: base, p_setup: setup, p_changes: changes, p_actor: actor })
@@ -57,9 +69,9 @@ Deno.serve(async (req) => {
           return data === null ? null : Number(data)
         },
         view: async (workspace, email) => {
-          const { data, error } = await db.rpc('workspace_view_for', { p_id: workspace, p_email: email })
+          const { data, error } = await db.rpc('workspace_view_fast', { p_id: workspace, p_email: email })
           if (error || !data) throw error ?? new HttpError(403, 'You have no profile in this workspace')
-          return data as Workspace
+          return viewed(data)
         },
         secondFactor: async (workspace, email) => {
           const { data, error } = await db.rpc('second_factor_problem_for', { p_id: workspace, p_uid: user.id, p_email: email, p_aal: aal })

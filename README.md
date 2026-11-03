@@ -55,6 +55,7 @@ New companies get sensible defaults automatically: rollups on customers, a looku
 | Payments | A payment can't exceed the balance or be dated before the document. Status moves automatically: posted → partial → paid. |
 | Automations | References are validated before publishing, and actions never re-trigger automations, so nothing loops. |
 | Permissions | Enforced in the engine, not only hidden in the UI. Finance rights are separate from edit rights. |
+| Many people at once | People saving in the same company take turns in the order they asked; every save is also checked against the version it started from, so no change overwrites another. A change sent again after a lost reply is saved once, and reported as saved. |
 
 These rules are covered by 33 unit tests (`src/lib/engine.test.ts`). Each industry template must generate with zero validation errors, and its sample data must keep the books balanced.
 
@@ -89,6 +90,8 @@ npm run test:browser  # after npm run build: opens the public pages in a real br
 ```
 
 `npm run test:db` needs Postgres installed locally (`initdb`, `pg_ctl`, `psql`), or a `DATABASE_URL` to an empty database.
+
+After the permission tests it runs the many-people simulation (`src/lib/dbsim.test.ts`): 30 people, each in their own thread with their own database connection, sell, buy, take payments, adjust stock and add customers in the same company at the same moment, through the real server code; then 20 people in a company with 3,000 customers on file. Some replies are lost on the way and sent again. It checks that every confirmed change is saved exactly once, that document numbers are unique with no gaps, that nothing is paid twice or sold below zero stock, that the books balance and agree with customers, suppliers and stock, and that nobody was told the company is busy. Try other sizes with `SIM_PEOPLE`, `SIM_ROUNDS` and `SIM_SIZE`, e.g. `SIM_PEOPLE=50 SIM_SIZE=5000 npm run test:db`.
 
 ## Cloud backend (Supabase)
 

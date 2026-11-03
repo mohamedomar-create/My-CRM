@@ -14,6 +14,8 @@ export interface CommandResult {
   ok: boolean
   result?: unknown
   error?: string
+  /** it was saved by an earlier send of the same change (its reply was lost); nothing was changed now */
+  already?: boolean
 }
 
 export interface AuditRow {
@@ -49,6 +51,23 @@ export interface ServerDeps {
   recentCommands?: () => Promise<number>
   /** the company's subscription now (read-only after the trial or when unpaid; the Free plan has no books) */
   billing?: (workspace: string) => Promise<BillingStatus | null>
+  /** waits between tries after someone saved first (a stand-in in tests) */
+  wait?: (ms: number) => Promise<void>
+  /**
+   * Turns: people saving in the same company at the same moment go one after the other, in the order they asked.
+   * take() answers 0 when it is this request's turn, otherwise how many are ahead; end() gives the turn back.
+   */
+  turn?: { take: (workspace: string) => Promise<number>; end: (workspace: string) => Promise<void> }
+}
+
+/** The workspace from load_workspace_fast: its setup, with the rows (read apart, as text, for speed) put back in. */
+export function joinLoaded(d: { doc: Workspace; tables: Partial<Workspace['data']> }): Workspace {
+  return { ...d.doc, data: { ...d.doc.data, ...d.tables } as Workspace['data'] }
+}
+
+/** What one person may see, from workspace_view_fast: an admin's whole workspace as { doc, tables }, others' { view }. */
+export function viewed(d: { view?: Workspace; doc?: Workspace; tables?: Partial<Workspace['data']> }): Workspace {
+  return d.view ?? joinLoaded(d as { doc: Workspace; tables: Partial<Workspace['data']> })
 }
 
 export class HttpError extends Error {
@@ -60,21 +79,28 @@ export class HttpError extends Error {
 }
 
 const ID = /^[a-z]{1,4}_[a-z0-9]{6,40}$/
+const ID_IN_TEXT = /"([a-z]{1,4}_[a-z0-9]{6,40})"/g
 
 /** Every value in the workspace that looks like an id (the same test as before: the id anywhere in the document). */
 export function idsIn(doc: Workspace): Set<string> {
   const out = new Set<string>()
-  for (const m of JSON.stringify(doc).matchAll(/"([a-z]{1,4}_[a-z0-9]{6,40})"/g)) out.add(m[1])
+  for (const m of JSON.stringify(doc).matchAll(ID_IN_TEXT)) out.add(m[1])
   return out
 }
 const MAX_COMMANDS = 50
+/** how many times a save is tried when others keep saving first, and the waits in between (ms) */
+const ATTEMPTS = 12
+const FIRST_WAIT = 15
+const MAX_WAIT = 1500
+/** the longest a request waits for its turn before going ahead anyway (ms) */
+const TURN_WAIT = 20000
 /** changes one person may send per minute */
 export const PER_MINUTE = 120
 
 /**
  * Applies the commands in order on the latest saved workspace and saves the result.
  * Each command either applies completely or not at all; a refused command doesn't stop the ones after it.
- * If another save lands in between, it starts again from the newer version (up to 5 times).
+ * If another save lands in between, it starts again from the newer version, after a short random wait.
  */
 export async function handleCommands(deps: ServerDeps, req: CommandRequest): Promise<{ doc: Workspace; version: number; results: CommandResult[] }> {
   if (!req || typeof req.workspace !== 'string' || !Array.isArray(req.commands)) throw new HttpError(400, 'Bad request')
@@ -90,7 +116,41 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
 
   const billing = (await deps.billing?.(req.workspace)) ?? null
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const wait = deps.wait ?? ((ms: number) => new Promise<void>((res) => setTimeout(res, ms)))
+  // Wait for this request's turn (asking again now and then, which also says it is still waiting). The turn only
+  // saves work: if it can't be had in time, or the queue fails, the save goes ahead and the version check decides.
+  if (deps.turn) {
+    const until = Date.now() + TURN_WAIT
+    try {
+      for (let ahead = await deps.turn.take(req.workspace); ahead > 0 && Date.now() < until; ahead = await deps.turn.take(req.workspace)) {
+        // next in line: ask again very soon; further back: about when the people ahead should be done
+        await wait((ahead === 1 ? 8 : Math.min(250, 25 * ahead)) * (0.5 + Math.random()))
+      }
+    } catch {
+      /* no queue: carry on without it */
+    }
+  }
+  // The turn is given back as soon as the save is done (the reply is made after), and always, even on an error.
+  let given = false
+  const release = async () => {
+    if (given || !deps.turn) return
+    given = true
+    await deps.turn.end(req.workspace).catch(() => undefined)
+  }
+  try {
+    return await attempts(deps, req, email, member, billing, wait, release)
+  } finally {
+    await release()
+  }
+}
+
+async function attempts(
+  deps: ServerDeps, req: CommandRequest, email: string, member: { isAdmin: boolean }, billing: BillingStatus | null, wait: (ms: number) => Promise<void>, release: () => Promise<void>,
+): Promise<{ doc: Workspace; version: number; results: CommandResult[] }> {
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    // Someone saved first: wait a short, random while before starting again, longer each time, so the people who
+    // collided spread out instead of colliding again together (measured: 50 people at once, see dbsim.test.ts).
+    if (attempt > 0) await wait(Math.random() * Math.min(MAX_WAIT, FIRST_WAIT * 2 ** attempt))
     const loaded = await deps.load(req.workspace)
     if (!loaded) throw new HttpError(404, 'Workspace not found')
     const profile = loaded.doc.users.find((u) => u.email === email)
@@ -107,7 +167,14 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         // Ids the browser already used are kept, so the page it shows still finds the record, but only fresh ones.
         const ids = Array.isArray(c.ids) ? c.ids.filter((x): x is string => typeof x === 'string') : undefined
         if (ids?.length) known ??= idsIn(doc)
-        if (ids?.some((id) => !ID.test(id) || known!.has(id))) throw new Error('This change was already saved or is not valid')
+        if (ids?.some((id) => !ID.test(id))) throw new Error('This change is not valid')
+        // Every id it makes is saved already: the browser sent it again because the reply never reached it (a lost
+        // connection after the save). It is saved, once; saying "refused" would make the person enter it again.
+        if (ids?.length && ids.every((id) => known!.has(id))) {
+          results.push({ ok: true, already: true })
+          continue
+        }
+        if (ids?.some((id) => known!.has(id))) throw new Error('This change was already saved or is not valid')
         // Requiring two-factor for others needs it for yourself first, or the admin could lock themselves out.
         if (c.name === 'security.setTwoFactor' && (c.args as { required?: boolean })?.required && deps.user.aal !== 'aal2') {
           throw new Error('Turn on two-factor login for yourself first (Security page), then require it for others')
@@ -117,8 +184,11 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         if (unpaid) throw new Error(unpaid)
         const out = applyCommand(doc, actor, { name: c.name, args: c.args } as Command, ids)
         doc = out.ws
-        // What this command made is in the workspace now: the next command that brings ids looks again.
-        known = undefined
+        // What this command made (and any ids it was given) is in the workspace now; nothing else can be new.
+        if (known) {
+          for (const id of out.ids) known.add(id)
+          for (const m of JSON.stringify(c.args ?? null).matchAll(ID_IN_TEXT)) known.add(m[1])
+        }
         results.push({ ok: true, result: out.result })
         audit.push({ workspace_id: req.workspace, actor: deps.user.id, actor_email: email, command: c.name, label: c.label ?? null, ok: true, error: null, record_ids: out.ids })
       } catch (e) {
@@ -127,13 +197,15 @@ export async function handleCommands(deps: ServerDeps, req: CommandRequest): Pro
         audit.push({ workspace_id: req.workspace, actor: deps.user.id, actor_email: email, command: String(c.name), label: c.label ?? null, ok: false, error, record_ids: [] })
       }
     }
-    if (!results.some((r) => r.ok)) {
+    if (!results.some((r) => r.ok && !r.already)) {
+      await release()
       await deps.audit(audit)
       return { doc: await deps.view(req.workspace, email), version: loaded.version, results }
     }
     const { changes } = diff(loaded.doc, doc, loaded.maxOrd)
     const version = await deps.save(req.workspace, loaded.version, { setup: setupPart(doc), changes, doc }, deps.user.id)
     if (version === null) continue
+    await release()
     await deps.audit(audit)
     return { doc: await deps.view(req.workspace, email), version, results }
   }

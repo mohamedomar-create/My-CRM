@@ -3700,4 +3700,7 @@ export const AR: Record<string, string> = {
   'Add a Quotations module first': 'أضف قائمة عروض الأسعار أولاً',
   'Choose the deal’s customer first': 'اختر عميل الصفقة أولاً',
   'made a quotation for the deal “{a}”': 'عمل عرض سعر للصفقة «{a}»',
+  'This change is not valid': 'هذا التغيير غير صالح',
+  '{a} is already paid in full. A colleague may have just registered the payment.': '{a} مدفوعة بالكامل بالفعل. ربما سجّل أحد زملائك الدفعة للتو.',
+  '{a} was voided, so it takes no payment': '{a} ملغاة، فلا تقبل أي دفعة',
 }

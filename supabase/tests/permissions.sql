@@ -172,6 +172,12 @@ select pg_temp.blocked('a member reads the journal table directly', $q$select co
 select pg_temp.blocked('a member loads the whole workspace like the server', $q$select public.load_workspace('ws_books000001')$q$);
 select pg_temp.blocked('a member asks for someone else''s view', $q$select public.workspace_view_for('ws_books000001', 'owner@test.dev')$q$);
 select pg_temp.blocked('a member saves rows like the server', $q$select public.save_workspace_changes('ws_books000001', 1, '{}', '{}', null)$q$);
+select pg_temp.blocked('a member loads the whole workspace the fast way', $q$select public.load_workspace_fast('ws_books000001')$q$);
+select pg_temp.blocked('a member asks for someone else''s view the fast way', $q$select public.workspace_view_fast('ws_books000001', 'owner@test.dev')$q$);
+select pg_temp.blocked('a member reads all rows as text', $q$select private.tables_text('ws_books000001')$q$);
+select pg_temp.blocked('a member takes a save turn', $q$select public.take_save_turn('ws_books000001', gen_random_uuid())$q$);
+select pg_temp.blocked('a member ends someone''s save turn', $q$select public.end_save_turn('ws_books000001', gen_random_uuid())$q$);
+select pg_temp.blocked('a member reads the save queue', $q$select count(*) from private.save_turns$q$);
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000e","email":"fin@test.dev","role":"authenticated"}', false);
 create temp table fin as select public.open_workspace('ws_books000001') -> 'doc' as doc;
@@ -190,6 +196,33 @@ select pg_temp.check('the full file was kept as a snapshot before moving', (sele
 
 set role service_role;
 select pg_temp.check('the server loads exactly what was moved', (select (public.load_workspace('ws_books000001') #> '{doc,data,journal}') = (doc #> '{data,journal}') from original));
+-- The fast load and view give exactly what the jsonb ones give.
+create function pg_temp.joined(j json) returns jsonb language sql as $f$
+  select jsonb_set(j::jsonb -> 'doc', '{data}', coalesce(j::jsonb #> '{doc,data}', '{}') || (j::jsonb -> 'tables'))
+$f$;
+grant execute on function pg_temp.joined(json) to service_role;
+select pg_temp.check('the fast load gives the same workspace, version and list places', (
+  select a -> 'doc' = pg_temp.joined(b) and a -> 'version' = b::jsonb -> 'version' and a -> 'max_ord' = b::jsonb -> 'max_ord'
+    from (select public.load_workspace('ws_books000001') a, public.load_workspace_fast('ws_books000001') b) x));
+select pg_temp.check('the fast view gives an admin the same as before', (
+  select public.workspace_view_for('ws_books000001', 'owner@test.dev') = pg_temp.joined(public.workspace_view_fast('ws_books000001', 'owner@test.dev'))));
+select pg_temp.check('the fast view gives others exactly their own view (hidden records stay hidden)', (
+  select bool_and(public.workspace_view_for('ws_books000001', p) = v -> 'view' and not v ? 'tables')
+    from unnest(array['sales@test.dev', 'fin@test.dev']) p, lateral (select public.workspace_view_fast('ws_books000001', p)::jsonb v) x));
+select pg_temp.check('the fast view gives a stranger nothing', (select public.workspace_view_fast('ws_books000001', 'stranger@test.dev') is null));
+-- Save turns: in the order asked; given back, the next one's turn; someone who stopped asking is not waited for.
+select pg_temp.check('the first to ask has the turn', (select public.take_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a1') = 0));
+select pg_temp.check('the second waits behind one person', (select public.take_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a2') = 1));
+select pg_temp.check('asking again keeps the same place', (select public.take_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a2') = 1));
+select pg_temp.check('another company has its own queue', (select public.take_save_turn('ws_other000001', '00000000-0000-0000-0000-0000000000a3') = 0));
+select public.end_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a1');
+select pg_temp.check('given back: the next one has the turn', (select public.take_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a2') = 0));
+reset role;
+update private.save_turns set seen = now() - interval '5 seconds' where token = '00000000-0000-0000-0000-0000000000a2';
+set role service_role;
+select pg_temp.check('someone who stopped asking is not waited for', (select public.take_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a4') = 0));
+select public.end_save_turn('ws_books000001', '00000000-0000-0000-0000-0000000000a4');
+select public.end_save_turn('ws_other000001', '00000000-0000-0000-0000-0000000000a3');
 select pg_temp.blocked('the old whole-file save on a moved workspace', $q$select public.save_workspace('ws_books000001', (select version from public.workspaces where id='ws_books000001'), (select doc from original), null)$q$);
 create function pg_temp.save(changes jsonb) returns bigint language sql as $f$
   select public.save_workspace_changes('ws_books000001', (select version from public.workspaces where id = 'ws_books000001'),

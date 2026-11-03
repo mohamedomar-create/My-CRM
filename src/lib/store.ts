@@ -108,13 +108,28 @@ export function flush(): Promise<void> {
   saving = saving.then(async () => {
     try {
       await sendOnce()
-    } catch {
+    } catch (e) {
       inFlight = 0
+      if (e instanceof Busy) {
+        // Many colleagues saving at the same moment (or very many changes this minute): still saving, nothing is
+        // wrong; send again a little later, a little apart from the others so they don't all come back together.
+        timer = setTimeout(() => void flush(), e.after * (0.75 + Math.random() / 2))
+        return
+      }
       publish((s) => { s.sync = 'error' })
       timer = setTimeout(() => void flush(), 5000)
     }
   })
   return saving
+}
+
+/** The server is busy with colleagues' saves, or this person sent very many changes this minute: try again later. */
+class Busy extends Error {
+  after: number
+  constructor(after: number) {
+    super('busy')
+    this.after = after
+  }
 }
 
 interface ServerReply {
@@ -162,6 +177,8 @@ async function sendOnce() {
       publish((s) => { s.sync = 'reloaded'; s.notice = { title: 'Your change was not saved', text: 'The server refused it. The workspace now shows the last saved version.', items: dropped } })
       return
     }
+    if (status === 409) throw new Busy(1000)
+    if (status === 429) throw new Busy(5000)
     throw error
   }
   if (!data) throw new Error('No reply from the server')
