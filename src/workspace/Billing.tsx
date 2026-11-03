@@ -3,11 +3,11 @@
 // for Paymob's own confirmation to reach the server; nothing is credited from the return address itself.
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CreditCard, Users } from 'lucide-react'
+import { CreditCard, Users, Zap } from 'lucide-react'
 import { PlanCards } from '../components/PlanCards'
 import { addSeatsPrice, egp, PLANS, planFits, planForScope, priceFor, upgradePrice, VAT_RATE, planName, type BillingStatus, type Cycle, type Plan, type PlanId } from '../lib/billing'
-import { chooseFreePlan, listPayments, loadPlans, refreshBilling, startCheckout, useStore, type BillingPayment } from '../lib/store'
-import { getLang, tr } from '../lib/i18n'
+import { chooseFreePlan, listPayments, loadPlans, refreshBilling, setTestBilling, startCheckout, useStore, type BillingPayment } from '../lib/store'
+import { getLang, N_, tr } from '../lib/i18n'
 import { showToast, useApp } from './useApp'
 import { schemaScope } from '../lib/scope'
 
@@ -18,10 +18,11 @@ export default function Billing() {
   const scope = schemaScope(schema)
   const b = useStore((s) => s.billing)
   const companies = useStore((s) => s.companies)
+  const staff = useStore((s) => s.staff)
   const isOwner = Boolean(companies.find((c) => c.id === ws.id)?.is_owner)
   const [prices, setPrices] = useState<{ plans: Plan[]; vatRate: number }>({ plans: PLANS, vatRate: VAT_RATE })
   const [cycle, setCycle] = useState<Cycle>(b?.cycle ?? 'month')
-  const [seats, setSeats] = useState(Math.max(1, b?.members ?? 1, b?.seats ?? 0))
+  const [seats, setSeats] = useState(Math.max(1, b?.members ?? 1, b && b.seats < 200 ? b.seats : 0))
   const [payments, setPayments] = useState<BillingPayment[]>([])
   const [params, setParams] = useSearchParams()
   const returned = params.get('payment')
@@ -53,7 +54,8 @@ export default function Billing() {
     switch (b.state) {
       case 'trial': return { tone: 'info', text: tr('Free trial with everything: {n} days left (until {date}).', { n: b.days_left ?? 0, date: day(b.trial_ends_at) }) }
       case 'free': return { tone: 'info', text: tr('The Free plan: up to 2 people and the CRM. Invoices, bills, stock and the books come with Growth or Pro.') }
-      case 'active': return { tone: 'ok-box', text: tr('{plan}, {n} seats, paid until {date}.', { plan: planName(b.plan, ar ? 'ar' : 'en', prices.plans), n: b.seats, date: day(b.paid_until) }) }
+      case 'active': if (b.paid_until && new Date(b.paid_until).getFullYear() >= 2099) return { tone: 'ok-box', text: tr('Inventor company: everything included, as many people as needed, never locked.') }
+        return { tone: 'ok-box', text: tr('{plan}, {n} seats, paid until {date}.', { plan: planName(b.plan, ar ? 'ar' : 'en', prices.plans), n: b.seats, date: day(b.paid_until) }) }
       case 'past_due': return { tone: 'warn-box', text: tr('The paid period ended on {date}. Pay within {n} days, or the company becomes read-only.', { date: day(b.paid_until), n: b.days_left ?? 0 }) }
       default: return { tone: 'error-box', text: b.reason === 'deleting' ? tr('The owner asked to delete this company, so it is read-only. The owner can keep it in the builder (Company tab) until it is erased.') : b.reason === 'trial_ended' ? tr('The free trial has ended, so the company is read-only: everything can be seen and exported, nothing changed. Choose a plan to carry on.') : tr('The subscription is unpaid, so the company is read-only: everything can be seen and exported, nothing changed. Pay to carry on.') }
     }
@@ -107,6 +109,8 @@ export default function Billing() {
             ? (isOwner && b.state !== 'free' && b.state !== 'active' && <button className="secondary" onClick={() => void free()} disabled={b.members > (p.max_users ?? 2)} title={b.members > (p.max_users ?? 2) ? tr('The Free plan is for up to {n} people. Remove members on the Team page first.', { n: p.max_users ?? 2 }) : undefined}>{tr('Move to Free')}</button>)
             : <PayButton plan={p} cycle={cycle} seats={seats} vatRate={prices.vatRate} b={b} workspace={ws.id} plans={prices.plans} fits={planFits(p, scope)} />} />
       </div>
+
+      {staff && <TestStates workspace={ws.id} />}
 
       {payments.length > 0 && (
         <div className="card stack">
@@ -170,6 +174,36 @@ function PayButton({ plan, cycle, seats, vatRate, b, workspace, plans, fits }: {
       {upgrade && <span className="tiny muted">{tr('The difference for the {days} days left in this period; the period end stays.', { days: upgrade.days })}</span>}
       <span className="tiny muted">{tr('Card, mobile wallet or Fawry, through Paymob. VAT included.')}</span>
       {!fits && <span className="tiny" style={{ color: 'var(--warning-text, var(--text-2))' }}>{tr('This plan doesn’t cover every part your system uses.')}</span>}
+    </div>
+  )
+}
+
+/** Inventor mode: put this company into any plan or state to try it, without paying. */
+const TEST_STATES: [string, string][] = [
+  ['internal', N_('Unlocked (inventor)')], ['trial', N_('Trial, 14 days left')], ['trial_ending', N_('Trial, 2 days left')], ['trial_ended', N_('Trial ended (read-only)')],
+  ['free', N_('Free plan')], ['crm', N_('CRM paid')], ['erp', N_('ERP paid')], ['growth', N_('CRM + ERP paid')], ['pro', N_('Pro paid')],
+  ['past_due', N_('Past due (grace days)')], ['unpaid', N_('Unpaid (read-only)')],
+]
+function TestStates({ workspace }: { workspace: string }) {
+  const [busy, setBusy] = useState('')
+  async function go(id: string) {
+    setBusy(id)
+    try {
+      await setTestBilling(workspace, id)
+      showToast({ kind: 'ok', text: tr('Test state set') })
+    } catch (e) {
+      showToast({ kind: 'error', text: (e as Error).message })
+    }
+    setBusy('')
+  }
+  return (
+    <div className="card stack">
+      <h2 className="row" style={{ margin: 0, gap: 6 }}><Zap size={18} aria-hidden /> {tr('Test states (inventor mode)')}</h2>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Only Bonyan’s own team sees this. Put this company into any plan or state to see what customers see; nothing is charged. “Unlocked” puts it back.')}</p>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {TEST_STATES.map(([id, label]) => <button key={id} type="button" className="secondary small" disabled={Boolean(busy)} onClick={() => void go(id)}>{busy === id ? tr('Please wait…') : tr(label)}</button>)}
+      </div>
+      <p className="tiny muted" style={{ margin: 0 }}>{tr('To try the system as several people with one inbox, invite yourself as name+sales@hotmail.com (Outlook and Gmail deliver it to you), open the invitation link in a private window and choose a password.')}</p>
     </div>
   )
 }

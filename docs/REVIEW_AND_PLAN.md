@@ -932,6 +932,14 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >   - Bonyan keeps only the record of what the company paid for its subscription.
 >   - The Terms already said this; the Privacy Policy now does too.
 
+> **Inventor mode (3 Nov 2026).** Bonyan's own team, kept in the database (`private.platform_staff`: profomar@hotmail.com, info@totalcareegypt.com, mohamed.omar@totalcareegypt.com), can:
+> - **Make companies without limit.** Others may own 5. Use "New company" under Your companies on the Security page; it opens at the first setup step.
+> - **Work unlocked.** Their companies start (and the existing ones are) unlocked: everything, 200 people, never locked by the trial or payments.
+> - **Try any billing state.** The Billing page's "Test states" puts a company into any plan or state without paying: trial, trial ending or ended, Free, CRM, ERP, CRM + ERP, Pro, past due, unpaid. "Unlocked" puts it back.
+> - **Erase a test company at once**, without the 30 days.
+>
+> To try several people with one inbox, invite `name+sales@hotmail.com` and open the link in a private window. To add someone to the team, run `insert into private.platform_staff (email) values ('…');` in the SQL editor.
+
 **What the owner will see**
 - Pricing page.
 - Online signup with a trial.
