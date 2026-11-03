@@ -188,7 +188,7 @@ export function OpeningBalances() {
   const parties = party.kind === 'customer' ? customers : suppliers
   return (
     <div className="stack">
-      <div className="info">{tr('Enter what you had on the day you start with Bonyan. The differences go to')} <b>{tr('3900 Opening balance equity')}</b>{tr(', which your accountant later moves to capital or retained earnings.')}</div>
+      <div className="info">{tr('Enter what you had on the day you start with Nasq360. The differences go to')} <b>{tr('3900 Opening balance equity')}</b>{tr(', which your accountant later moves to capital or retained earnings.')}</div>
       <label className="field" style={{ maxWidth: 220 }}>{tr('Opening date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
       {already && <div className="note">{tr('Opening balances were already entered. Anything you add now adds to them; to undo a mistake, reverse its journal voucher or void its opening document.')}</div>}
 

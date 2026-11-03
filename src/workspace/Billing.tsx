@@ -199,7 +199,7 @@ function TestStates({ workspace }: { workspace: string }) {
   return (
     <div className="card stack">
       <h2 className="row" style={{ margin: 0, gap: 6 }}><Zap size={18} aria-hidden /> {tr('Test states (inventor mode)')}</h2>
-      <p className="small muted" style={{ margin: 0 }}>{tr('Only Bonyan’s own team sees this. Put this company into any plan or state to see what customers see; nothing is charged. “Unlocked” puts it back.')}</p>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Only Nasq360’s own team sees this. Put this company into any plan or state to see what customers see; nothing is charged. “Unlocked” puts it back.')}</p>
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
         {TEST_STATES.map(([id, label]) => <button key={id} type="button" className="secondary small" disabled={Boolean(busy)} onClick={() => void go(id)}>{busy === id ? tr('Please wait…') : tr(label)}</button>)}
       </div>

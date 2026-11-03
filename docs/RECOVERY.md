@@ -49,8 +49,8 @@ snapshots every 10 minutes for 90 days.
 
 ### Restore from the off-site backup
 ```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:'YOUR PASSPHRASE' -in bonyan-YYYY-MM-DD.dump.enc -out bonyan.dump
-pg_restore --no-owner --no-privileges --dbname "$NEW_DATABASE_URL" bonyan.dump
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:'YOUR PASSPHRASE' -in nasq360-YYYY-MM-DD.dump.enc -out nasq360.dump
+pg_restore --no-owner --no-privileges --dbname "$NEW_DATABASE_URL" nasq360.dump
 ```
 Restore into a new Supabase project first, check it, then switch the app's settings (`src/lib/config.ts`) to it.
 

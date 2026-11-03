@@ -38,7 +38,7 @@ describe('Paymob signatures', () => {
   })
 
   it('the intention and the checkout address', () => {
-    const body = intentionBody({ payment: 'bp_abc0123456', amountCents: 136800, item: 'Bonyan Growth: 3 people, 1 month', integrations: [11, 12], email: 'mona@co.eg', name: 'Mona Adel', notifyUrl: 'https://x.supabase.co/functions/v1/billing?event=paymob', returnUrl: 'https://app/app/billing?payment=bp_abc0123456' })
+    const body = intentionBody({ payment: 'bp_abc0123456', amountCents: 136800, item: 'Nasq360 Growth: 3 people, 1 month', integrations: [11, 12], email: 'mona@co.eg', name: 'Mona Adel', notifyUrl: 'https://x.supabase.co/functions/v1/billing?event=paymob', returnUrl: 'https://app/app/billing?payment=bp_abc0123456' })
     expect(body).toMatchObject({ amount: 136800, currency: 'EGP', payment_methods: [11, 12], special_reference: 'bp_abc0123456', billing_data: { first_name: 'Mona', last_name: 'Adel', email: 'mona@co.eg' } })
     expect(body.items[0].amount).toBe(body.amount)
     expect(checkoutUrl('egy_pk_test', 'egy_csk_1')).toBe('https://accept.paymob.com/unifiedcheckout/?publicKey=egy_pk_test&clientSecret=egy_csk_1')
@@ -100,6 +100,6 @@ describe('the billing server', () => {
     expect(await handleNotify(d, await signForTest(SECRET, declined as never), { type: 'TRANSACTION', obj: declined })).toEqual({ result: 'paid' })
     expect(calls.settle[0][1]).toBe(false)
     const other = tx({ order: { id: 1, merchant_order_id: 'shop-123' } })
-    expect((await handleNotify(deps().d, await signForTest(SECRET, other as never), { type: 'TRANSACTION', obj: other })).result).toMatch(/not a Bonyan/)
+    expect((await handleNotify(deps().d, await signForTest(SECRET, other as never), { type: 'TRANSACTION', obj: other })).result).toMatch(/not a Nasq360/)
   })
 })

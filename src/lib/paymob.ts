@@ -56,7 +56,7 @@ export async function verifyHmac(secret: string, obj: Record<string, unknown>, g
 /** For tests and the sandbox: signs a transaction the way Paymob does. */
 export const signForTest = (secret: string, obj: Record<string, unknown>) => hmacHex(secret, hmacText(obj))
 
-/** A payment Bonyan is waiting for. */
+/** A payment Nasq360 is waiting for. */
 export interface PendingPayment {
   id: string
   amount_cents: number

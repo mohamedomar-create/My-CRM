@@ -1,6 +1,6 @@
-# Bonyan — build your own CRM & ERP
+# Nasq360 — build your own CRM & ERP
 
-Bonyan (بنيان, "structure") is not another fixed CRM. It is a tool that lets a small or medium company **build the CRM + simple ERP it actually runs on**, by answering questions and then dragging and dropping. Guardrails keep sales, stock and accounting correct whatever the company changes.
+Nasq360 (نسق, "order, a system that holds together") is not another fixed CRM. It is a tool that lets a small or medium company **build the CRM + simple ERP it actually runs on**, by answering questions and then dragging and dropping. Guardrails keep sales, stock and accounting correct whatever the company changes.
 
 ## The journey
 
@@ -20,7 +20,7 @@ Then the team works in the generated app: a dashboard, list and Kanban views, ge
 
 ## Features inspired by the world's leading systems
 
-| Feature | Where it comes from | In Bonyan |
+| Feature | Where it comes from | In Nasq360 |
 |---|---|---|
 | Custom modules and relations | Attio, Airtable | Any module, linked records, title field |
 | **Lookup & rollup fields** | Airtable, Attio | e.g. "Total invoiced" and "Balance due" on each customer, the customer's governorate on a deal |

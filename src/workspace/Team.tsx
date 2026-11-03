@@ -164,7 +164,7 @@ export default function Team() {
             <input readOnly value={link.url} onFocus={(e) => e.target.select()} dir="ltr" />
             <div className="row">
               <button onClick={() => void navigator.clipboard.writeText(link.url).then(() => showToast({ kind: 'ok', text: tr('Link copied') }))}><Copy size={15} /> {tr('Copy link')}</button>
-              <a className="btn secondary" href={`https://wa.me/?text=${encodeURIComponent(tr('You’re invited to {company} on Bonyan: {link}', { company: schema.company.name, link: link.url }))}`} target="_blank" rel="noreferrer">{tr('Send on WhatsApp')}</a>
+              <a className="btn secondary" href={`https://wa.me/?text=${encodeURIComponent(tr('You’re invited to {company} on Nasq360: {link}', { company: schema.company.name, link: link.url }))}`} target="_blank" rel="noreferrer">{tr('Send on WhatsApp')}</a>
               <button className="ghost" onClick={() => setLink(null)}>{tr('Done')}</button>
             </div>
           </div>

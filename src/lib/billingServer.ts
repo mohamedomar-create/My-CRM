@@ -56,10 +56,10 @@ export async function handleCheckout(deps: BillingDeps, user: { email: string; n
   if (!deps.config) throw new HttpError(503, 'Online payment isn’t switched on yet. Write to support to pay by bank transfer.')
   const pay = await deps.prepare(b.workspace, b.plan, b.cycle, Number(b.seats), user.email.toLowerCase())
   const item = pay.kind === 'seats'
-    ? `Bonyan ${pay.name}: ${pay.seats} seats until the period ends`
+    ? `Nasq360 ${pay.name}: ${pay.seats} seats until the period ends`
     : pay.kind === 'upgrade'
-      ? `Bonyan: move to ${pay.name} for ${pay.seats} people until the period ends`
-      : `Bonyan ${pay.name}: ${pay.seats} people, 1 ${pay.cycle}`
+      ? `Nasq360: move to ${pay.name} for ${pay.seats} people until the period ends`
+      : `Nasq360 ${pay.name}: ${pay.seats} people, 1 ${pay.cycle}`
   const intention = await deps.createIntention(intentionBody({
     payment: pay.id,
     amountCents: pay.amount_cents,
@@ -85,7 +85,7 @@ export async function handleNotify(deps: BillingDeps, hmac: string, body: unknow
   if (b.type && b.type !== 'TRANSACTION') return { result: 'ignored: not a transaction' }
   const ref = typeof tx.order.merchant_order_id === 'string' && /^bp_[a-z0-9]{10,40}$/.test(tx.order.merchant_order_id) ? tx.order.merchant_order_id : null
   const payment = await deps.find(ref, String(tx.order.id))
-  if (!payment) return { result: 'ignored: not a Bonyan subscription payment' }
+  if (!payment) return { result: 'ignored: not a Nasq360 subscription payment' }
   const o = outcome(tx, payment)
   if (o.result === 'ignore') return { result: `ignored: ${o.why}` }
   return { result: await deps.settle(payment.id, o.result === 'paid', String(tx.id), String(tx.order.id), o.why) }

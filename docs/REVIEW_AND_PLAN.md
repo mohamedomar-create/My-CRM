@@ -1,4 +1,4 @@
-# Bonyan: Expert Review and Development Plan
+# Nasq360: Expert Review and Development Plan
 
 *Final joint meeting of all expert panels, 24 October 2026. The code reviewed is at `/home/user/My-CRM`.*
 
@@ -64,7 +64,7 @@
 
 ## Executive summary
 
-**What Bonyan is.** Bonyan lets a small business build its own CRM (sales and customer system) and a simple ERP (invoicing, stock and accounts) through a guided set of questions. It is made for Egypt first. Today all the business logic runs inside the user's web browser. The whole company is saved as one data file in the cloud (Supabase).
+**What Nasq360 is.** Nasq360 lets a small business build its own CRM (sales and customer system) and a simple ERP (invoicing, stock and accounts) through a guided set of questions. It is made for Egypt first. Today all the business logic runs inside the user's web browser. The whole company is saved as one data file in the cloud (Supabase).
 
 **What is already strong.** These are worth keeping; nothing needs a rewrite.
 
@@ -213,7 +213,7 @@ Seven expert panels each reviewed every module, screen, workflow and engine func
 | SECU-14 | Medium | Tax-invoice numbering is controlled by the browser and can be reset or duplicated. Admins can change or empty the number prefix after posting. *Also: ACCO-M4* | Now: lock the prefix after the first posting; it must be unique and non-empty. Later: server sequence and a database rule that numbers are unique. | S + M |
 | SECU-16 | Medium | Three different meanings of "admin" disagree, and nothing protects the last owner. | One source of truth in the membership table. Exactly one owner. Transfer of ownership with re-login. | S |
 | SECU-18 | Medium | Only the engine is tested; the compiler's strict checking is off; there is no automatic test run on each change. | Automatic test runs on each change (type-check, lint, coverage, database permission tests, multi-user browser journeys). Turn strict mode on. | M |
-| SECU-M5 | Low | Any load error, even a network blip, silently signs the user out. | Sign out only on real login errors. Show a "Can't reach Bonyan — Retry" screen for network problems. | S |
+| SECU-M5 | Low | Any load error, even a network blip, silently signs the user out. | Sign out only on real login errors. Show a "Can't reach Nasq360 — Retry" screen for network problems. | S |
 | SECU-15 | Low | CSV export can carry spreadsheet formula injection. | Neutralise cells that start with = + - @. Offer a native Excel export. | S |
 | SECU-19 | Low | A few engine actions skip permission checks. A notification's "read" flag is shared by everyone. *Also: SALE-13, NOTIF-01* | Add the checks. Store "read" per user. Send automation failures to admins only. | S |
 | SECU-21 | Low | `.env` is committed to the repository; a future secret key could leak. | Rename it to `.env.example`, ignore `.env`, turn on GitHub secret scanning. | S |
@@ -235,7 +235,7 @@ Seven expert panels each reviewed every module, screen, workflow and engine func
 | ACCO-03 | Critical | The inventory account drifts away from actual stock in five reproduced cases: voiding a bill after its goods were sold (stock goes negative); average cost going negative; selling into negative stock; switching stock tracking off; rounding. *Also: SUPP-01, SUPP-M2, SUPP-04, SUPP-05, SUPP-17* | Now: block a bill void unless all its quantity is still on hand. Refuse negative journal lines. Re-average cost on every incoming movement. Lock "track stock" once a product has movements. Later: value each product by quantity and total value with 4–6 decimals, correct negative stock automatically on the next receipt, and add a daily check that the inventory account equals stock value. | S now / L |
 | ACCO-05 | Critical | No credit notes, returns, refunds or payment reversal, so a paid or part-paid document can never be corrected. *Also: SUPP-03* | Add "Reverse payment" first (bounced cheques, mistakes). Then credit and debit notes linked to the original document, allowing partial quantities, returning stock at original cost and reversing VAT. | S–M + L |
 | ACCO-07 | Critical | Hard-coded 9-account chart with no equity accounts. No manual journals, opening balances, or stock adjustments and counts, so no real company can migrate in or record rent, salaries or VAT paid. *Also: SUPP-02, BUIL-13 (opening part), STRA-15 (balances part)* | Make the chart of accounts data, seeded per template (aligned to IFRS / Egyptian standards), with protected system accounts. Add a manual journal document with approval. Add an opening-balance wizard (customers, suppliers, stock, banks). Add stock adjustment and count documents. | XL |
-| ACCO-10 | Critical (Egypt) | ETA e-invoice and e-receipt are missing: no item codes, unit codes, tax types, UUID, signature or submission. Bonyan invoices are not legal e-invoices. *Also: STRA-01* | "Egypt e-invoicing" setup. Required ETA fields on customers, products and lines. A server connector that formats, signs (via the company's USB token / signing bridge), submits and polls status. Show the ETA status, UUID and QR code on the print. Health check blocks posting when ETA data is missing. | XL |
+| ACCO-10 | Critical (Egypt) | ETA e-invoice and e-receipt are missing: no item codes, unit codes, tax types, UUID, signature or submission. Nasq360 invoices are not legal e-invoices. *Also: STRA-01* | "Egypt e-invoicing" setup. Required ETA fields on customers, products and lines. A server connector that formats, signs (via the company's USB token / signing bridge), submits and polls status. Show the ETA status, UUID and QR code on the print. Health check blocks posting when ETA data is missing. | XL |
 | SECU-M1 | High | "Set field" automations can change posted invoices and bills (customer, date, due date) without history, skipping the lock. Needs an admin to set it up, but it breaks the main promise. *Also: ACCO-04, SUPP-M3, BUIL-02, AUTO-03* | Skip "set field" on non-draft documents and log the skip. Route all automation writes through the normal update path with history. Health-check error for system-field targets. | S |
 | SECU-M2 | High | No period lock or year-end: any past or future date is accepted, already-filed VAT months can change, voids are always dated today, and the fiscal-year setting is ignored. *Also: ACCO-06, SUPP-18* | Lock dates (all users / accountant), a "Close month" wizard, a cap on future-dating, check stock availability as of the document date, number documents by fiscal year, year-end close to retained earnings. | M–L |
 | ACCO-08 | High | No P&L, balance sheet, cash-flow statement or general-ledger drill-down. "Gross profit" subtracts operating expenses. | A Reports area with all statements by date range, comparisons, drill-down to documents, and Excel/PDF export. Gross profit uses COGS only. | L |
@@ -379,14 +379,14 @@ Seven expert panels each reviewed every module, screen, workflow and engine func
 |---|---|---|---|---|
 | STRA-05 | High | No AI anywhere; the onboarding "analysis" is a timed animation. | An AI gateway on the server (see "AI & automation blueprint" below). | XL (phased) |
 | BUIL-17 | High | The health check looks only at the setup and uses an arbitrary score; no diagnosis of the live system and no one-click fixes. *Also: STRA-06, STRA-20, UX-20* | Stable issue codes with "why it matters" and fixes. A `diagnose()` check over live data. One-click validated fixes. Then AI explanations in Arabic and English. | S → L |
-| STRA-07 | High | Building a report needs drag-and-drop; owners want to just ask. | "Ask Bonyan": a plain-language question becomes a validated report you can pin. | M |
+| STRA-07 | High | Building a report needs drag-and-drop; owners want to just ask. | "Ask Nasq360": a plain-language question becomes a validated report you can pin. | M |
 | STRA-12 | High | Templates promise depth the engine does not deliver (batches and expiry, raw → finished stock, installments, progress billing). | Reword the copy this week; build the depth in Phase 2B/3. | S + XL |
 | STRA-13 | High | No local payment collection: InstaPay is only a label; no Fawry, Paymob or payment links. | Gateway integrations, a signed public "Pay now" invoice page, payment recorded automatically from the gateway, dunning messages with the pay link. | L |
 | STRA-14 | High | No PDPL / trust layer: no privacy policy, terms or data-processing agreement, no consent fields, no export or erase of personal data, no stated hosting region. | Legal pages and consent, consent fields enforced on marketing actions, export/anonymise, hosting-region choice, a /trust page, start PDPC licensing (confirm with Egyptian counsel). | L |
 | STRA-08 | Medium | No predictions (cash flow, stock-outs, anomalies). | 13-week cash forecast and days-of-cover first; anomaly alerts; predictive lead score later, using shared industry baselines. | XL |
 | STRA-11 | Medium | No billing, plans, seats or trial, so nothing to sell. | Subscriptions table, Paymob/Fawry plus Stripe, seat limits enforced in the database, 14-day trial (then read-only, never deleted). | L |
 | STRA-16 | Medium | Activation basics are missing: invite e-mails, setup checklist, help centre, digests. (Password reset is under SECU-11.) | Checklist card, contextual help, daily digest, onboarding e-mail sequence. | M |
-| STRA-17 | Medium | The landing page presents Bonyan as a follower ("Inspired by Salesforce…"), shows no price, proof or demo, and claims "100% correct". | Outcome-led message, comparison table, "Try the demo company", pricing, Egyptian pilot quotes, replace "100%" with "balanced by design". | M |
+| STRA-17 | Medium | The landing page presents Nasq360 as a follower ("Inspired by Salesforce…"), shows no price, proof or demo, and claims "100% correct". | Outcome-led message, comparison table, "Try the demo company", pricing, Egyptian pilot quotes, replace "100%" with "balanced by design". | M |
 | STRA-18 | Medium | Onboarding cannot learn from free text. | "Describe your business in your own words" → AI proposes answers and extra fields, each validated before it is offered. | M |
 
 ---
@@ -577,7 +577,7 @@ A smaller team stretches the timeline roughly in proportion.
 
 ### Phase H: Bring your history in (data migration)
 
-**Goal.** A company that joins with years of history brings it in once, correctly, across every module, and works in Bonyan as if it had always been there. The full plan is in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md).
+**Goal.** A company that joins with years of history brings it in once, correctly, across every module, and works in Nasq360 as if it had always been there. The full plan is in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md).
 
 > **Phase H1 done (import engine).** Excel and CSV, large files in parts with progress, a check before saving, update by old id, phone or e-mail instead of duplicating, links by old id, value and stage mapping, original dates, old-system fields on the record, no automations, and Undo per import. Details in [DATA_MIGRATION_PLAN.md](DATA_MIGRATION_PLAN.md#h1-import-engine-ml).
 >
@@ -589,7 +589,7 @@ A smaller team stretches the timeline roughly in proportion.
 >
 > **Phase H5 done (history store and document history).** Past invoices, credit notes, quotations and bills kept on the server, never loaded when the app opens, read a page at a time or as server totals, by side and role; a wizard step and workbook sheets for them (undoable, sent again adds nothing twice, linked to the opening balance still owed); each customer and supplier shows what they bought per year and the past documents with lines; a Sales analysis page by month, product, customer or rep with "include history". Sales reports no longer count opening balances.
 >
-> **Phase H6 done (earlier periods in the books).** The old system's month-end trial balances for one or more earlier years become one summary entry per month (the first month is the starting point); every earlier year is closed on 31 December; on the opening date the history is handed over to the opening balances, so the books from the opening date on are exactly what they are without it and 3900 is untouched. The profit and loss, balance sheet, cash flow and "compare with last year" then cover the years before Bonyan. History is never in a VAT return. Next: Phase P (plan and budget), then H7 as customers ask.
+> **Phase H6 done (earlier periods in the books).** The old system's month-end trial balances for one or more earlier years become one summary entry per month (the first month is the starting point); every earlier year is closed on 31 December; on the opening date the history is handed over to the opening balances, so the books from the opening date on are exactly what they are without it and 3900 is untouched. The profit and loss, balance sheet, cash flow and "compare with last year" then cover the years before Nasq360. History is never in a VAT return. Next: Phase P (plan and budget), then H7 as customers ask.
 >
 > **Customer layers (2 November 2026, at the owner's request; part of SALE-17's account hierarchy).** A customer can be under another, at up to 12 layers: Kasr El Ainy under Cairo University Hospitals, under the teaching hospitals, under the Ministry of Higher Education, under the Unified Procurement Authority. Every template's Customers list has a "Belongs to" field; any other list (suppliers, custom lists) gets one in the builder with one click, and existing companies add it the same way. Loops (a record under itself or under one of its own) and more than 12 layers are refused by the server. Each record shows what it is under up to the top, what is directly under it, and the group's figures at every layer under it (members, owed, this year's sales, open deals), with "Add under it". Lists of customers, and of their invoices, deals and contacts, filter by one group at every layer; reports can filter "is or is under"; Sales analysis totals by the top of each customer's layers. An import links each customer to its group wherever the group is in the file (groups are sent first, row numbers kept); a row whose group can't be set is taken out with the rows under it.
 
@@ -612,7 +612,7 @@ A smaller team stretches the timeline roughly in proportion.
 
 **Goal.** An owner sets where the company is going and sees every month whether it is on the way: a budget the books are measured against, sales targets, and a business plan for the next 3–5 years that a bank or an investor accepts. Added at the owner's request on 2 November 2026.
 
-**Why now.** It needs the books (2A) and the earlier years month by month (H6): a budget starts from last year's actuals, and a plan from the company's real history. Most Egyptian SMEs plan in Excel today; none of the CRMs Bonyan competes with does this inside the books.
+**Why now.** It needs the books (2A) and the earlier years month by month (H6): a budget starts from last year's actuals, and a plan from the company's real history. Most Egyptian SMEs plan in Excel today; none of the CRMs Nasq360 competes with does this inside the books.
 
 **P1. Cost centers (S–M)**
 - An optional tag on document lines, journal lines and expenses: branch, department, project or van. Defaults per user, customer or product, so nobody types it twice.
@@ -684,7 +684,7 @@ A smaller team stretches the timeline roughly in proportion.
 
 ### Phase 2B: Supply-chain depth
 
-**Goal.** Distributors, pharma and medical suppliers, importers and workshops can run their operations in Bonyan.
+**Goal.** Distributors, pharma and medical suppliers, importers and workshops can run their operations in Nasq360.
 
 **Work items**
 - SUPP-09: purchase order → goods receipt → bill with three-way match; SUPP-M4 "move stock" permission.
@@ -802,7 +802,7 @@ A smaller team stretches the timeline roughly in proportion.
 - BUIL-04 trigger rules; BUIL-05 action catalogue; BUIL-M2 lifecycle events.
 - BUIL-17 deterministic doctor (issue codes, data checks, one-click fixes).
 - STRA-05 AI gateway.
-- BUIL-17 AI explanations; STRA-07 "Ask Bonyan"; insights rail (UX-20).
+- BUIL-17 AI explanations; STRA-07 "Ask Nasq360"; insights rail (UX-20).
 - STRA-08 cash forecast, days of cover, anomaly alerts.
 - SALE-08 step 3: WhatsApp Business inbox and AI reply drafting.
 - STRA-18 AI onboarding from free text.
@@ -810,7 +810,7 @@ A smaller team stretches the timeline roughly in proportion.
 **What the owner will see**
 - An "Automations → Runs" tab showing what ran, on which record, and why anything failed.
 - A "System doctor" page with problems explained in Arabic and a "Fix" button.
-- An "Ask Bonyan" box.
+- An "Ask Nasq360" box.
 - A 13-week cash forecast with warnings.
 
 **Acceptance checks**
@@ -904,7 +904,7 @@ The main flows were clicked through and checked in the saved data: budget, busin
 >
 > Still to do: automatic renewal (saved cards), a tax invoice for each payment from the operator, and e-mail reminders before a period ends.
 
-> **CRM, ERP or both (3 Nov 2026).** Each company chooses what it uses Bonyan for.
+> **CRM, ERP or both (3 Nov 2026).** Each company chooses what it uses Nasq360 for.
 > - **The CRM:** customers, contacts, leads, deals, quotations, tasks, service tickets.
 > - **The ERP:** invoices, bills, payments, stock, accounting, VAT and e-invoices, budgets, the business plan.
 > - **Or both.**
@@ -929,10 +929,10 @@ The main flows were clicked through and checked in the saved data: budget, busin
 > - **A company:** the owner deletes it from the builder (Company tab), typing its name to confirm.
 >   - It is read-only for everyone for 30 days, with a banner, and the owner can keep it.
 >   - Then the nightly run erases it with all its records, books, people and audit trail.
->   - Bonyan keeps only the record of what the company paid for its subscription.
+>   - Nasq360 keeps only the record of what the company paid for its subscription.
 >   - The Terms already said this; the Privacy Policy now does too.
 
-> **Inventor mode (3 Nov 2026).** Bonyan's own team, kept in the database (`private.platform_staff`: profomar@hotmail.com, info@totalcareegypt.com, mohamed.omar@totalcareegypt.com), can:
+> **Inventor mode (3 Nov 2026).** Nasq360's own team, kept in the database (`private.platform_staff`: profomar@hotmail.com, info@totalcareegypt.com, mohamed.omar@totalcareegypt.com), can:
 > - **Make companies without limit.** Others may own 5. Use "New company" under Your companies on the Security page; it opens at the first setup step.
 > - **Work unlocked.** Their companies start (and the existing ones are) unlocked: everything, 200 people, never locked by the trial or payments.
 > - **Try any billing state.** The Billing page's "Test states" puts a company into any plan or state without paying: trial, trial ending or ended, Free, CRM, ERP, CRM + ERP, Pro, past due, unpaid. "Unlocked" puts it back.
@@ -974,7 +974,7 @@ The main flows were clicked through and checked in the saved data: budget, busin
 
 ## Design direction
 
-**Concept: "بنيان = structure".**
+**Concept: "Nasq360 = structure".**
 - Express it with a subtle grid-and-brick motif.
 - Use calm confidence, not a generic gradient. Keep the gradient only for marketing hero moments.
 
@@ -1056,7 +1056,7 @@ Admins can rearrange any preset on a drag-and-resize 12-column canvas. A **Today
 | 1 | **Reliable automations**: server scheduler; triggers for create / update / field change / N days before or after / lifecycle events (posted, paid, voided, quote sent/accepted/declined, lead converted); actions: task, set field, update linked record, create record, notify user/role/owner, e-mail, WhatsApp template, webhook, wait; Runs log and "Test on a record" | Records, run log | Collections and follow-ups happen even when nobody logs in |
 | 2 | **Deterministic system doctor**: setup checks plus live data checks (records breaking current rules, orphan owners, failing automations, books-health invariants, negative stock, duplicates, numbering gaps, stale approvals), each with a code, "why it matters" and a one-click fix | Setup, records, run log, audit, ledger | Owner fixes problems without a consultant |
 | 3 | **AI explanations of the doctor**: root cause across several issues, in plain Arabic or English, with ranked fixes | Issue list, setup, summary counts (no raw customer lists) | Turns "73%" into a clear to-do list |
-| 4 | **Ask Bonyan**: plain-language question becomes a validated report you can pin | Setup only (fields, stages); the report runs locally | No-drag reporting in Arabic |
+| 4 | **Ask Nasq360**: plain-language question becomes a validated report you can pin | Setup only (fields, stages); the report runs locally | No-drag reporting in Arabic |
 | 5 | **Insights rail and weekly pulse**: period changes, concentration ("3 customers = 70% of overdue"), stale pipeline, written up by AI | Report results | Owners act without opening reports |
 | 6 | **Communication help**: draft WhatsApp/e-mail follow-ups, summarise chats and voice notes into the record (Egyptian dialect) | The record and its timeline (opt-in) | Faster replies, nothing lost |
 | 7 | **Forecasts**: 13-week cash forecast (open receivables by due date × each customer's history of paying late), days of cover and reorder suggestions, anomaly alerts (sales, discounts, margins, voids per user); predictive lead score once there is enough data, using shared industry baselines | Ledger, payments, stock movements, deal stage history | "Cash dips below zero in week 6 unless Delta Foods pays" |
@@ -1066,14 +1066,14 @@ Admins can rearrange any preset on a drag-and-resize 12-column canvas. A **Today
 
 ```mermaid
 flowchart LR
-  UI[Bonyan app<br/>browser / phone] -->|commands| CMD[Server command API<br/>engine.ts in Edge Functions / RPC]
+  UI[Nasq360 app<br/>browser / phone] -->|commands| CMD[Server command API<br/>engine.ts in Edge Functions / RPC]
   CMD --> DB[(Postgres tables<br/>records, ledger, stock,<br/>audit_events, workflow_runs)]
   CRON[pg_cron scheduler] --> AUTO[Automation runner<br/>service identity, idempotency keys]
   AUTO --> CMD
   AUTO --> MSG[E-mail / WhatsApp /<br/>webhooks / payment links]
   DB --> DOC[System doctor<br/>validate + diagnose + booksHealth]
   DOC --> GW[AI gateway Edge Function]
-  UI -->|Ask Bonyan, explain, draft| GW
+  UI -->|Ask Nasq360, explain, draft| GW
   GW -->|Claude API, schema cached,<br/>tool calls return JSON patches| LLM[(LLM)]
   GW -->|every patch re-checked by validate()| CMD
   GW --> LOG[AI audit log + usage metering]
@@ -1091,7 +1091,7 @@ flowchart LR
 
 Expected position **after this plan** is delivered.
 
-| Competitor | Where they win today | Bonyan after the plan | Bonyan's edge |
+| Competitor | Where they win today | Nasq360 after the plan | Nasq360's edge |
 |---|---|---|---|
 | **Odoo** (incl. Egyptian e-invoicing module) | Depth (manufacturing, warehouse, accounting), ETA, Arabic, partner network | At parity on SME accounting, stock, ETA and Arabic; lighter on manufacturing | Live in minutes instead of a partner project; guardrails stop admins breaking the system; AI doctor; simpler screens |
 | **Zoho (CRM + Books / One)** | Breadth, Arabic, AI assistant (Zia), mobile apps, price | At parity on CRM, books, mobile web, AI insights | One unified system with guardrails; Egypt-native templates; WhatsApp and payment links built in |
@@ -1124,7 +1124,7 @@ Expected position **after this plan** is delivered.
 | 12 | **Mobile: installable web app or native app** | Installable web app (PWA) first, which covers offline capture and the camera. Native apps only if field-sales customers demand them after M2. |
 | 13 | **Default language** | Arabic by default for Egyptian sign-ups, with English one click away, and bilingual printing always available. |
 | 14 | **Budget and team** | About 8 people for about 12 months (see team assumption). Budget separately for: an independent penetration test before M2, an accountant / tax adviser retainer, PDPL legal counsel, and a designer for the brand sprint. |
-| 15 | **Brand direction** | Approve the "بنيان = structure" direction (ink-teal + sandstone) for a 2-week brand sprint, or name an alternative now so Wave 1 is not delayed. |
+| 15 | **Brand direction** | Approve the "Nasq360 = structure" direction (ink-teal + sandstone) for a 2-week brand sprint, or name an alternative now so Wave 1 is not delayed. |
 
 ---
 

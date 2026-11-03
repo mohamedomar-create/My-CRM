@@ -1,8 +1,8 @@
-// Who operates Bonyan, for the legal pages (/privacy, /terms, /dpa). Fill these in once the company details are final;
+// Who operates Nasq360, for the legal pages (/privacy, /terms, /dpa). Fill these in once the company details are final;
 // while `draft` is true the pages say they are a draft under legal review.
 export const LEGAL = {
   draft: true,
-  /** the legal name of the company that operates Bonyan */
+  /** the legal name of the company that operates Nasq360 */
   company: 'Nasq360',
   /** its registered address in Egypt */
   address: '',

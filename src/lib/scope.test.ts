@@ -1,4 +1,4 @@
-// What a company uses Bonyan for: the CRM, the ERP or both. Every industry builds without errors in each, has the
+// What a company uses Nasq360 for: the CRM, the ERP or both. Every industry builds without errors in each, has the
 // lists its part needs and none of the other's, and the choice can change later without losing anything.
 import { describe, expect, it } from 'vitest'
 import { TEMPLATES, templateById } from './templates'

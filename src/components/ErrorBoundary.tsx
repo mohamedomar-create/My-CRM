@@ -31,7 +31,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
       <div className="crash" role="alert">
         <div className="card stack">
           <h2 className="row" style={{ margin: 0 }}><AlertTriangle size={20} aria-hidden /> {tr('Something went wrong on this screen')}</h2>
-          <p className="small" style={{ margin: 0 }}>{isStaleChunk(error) ? tr('A new version of Bonyan is out. Reload the page to use it; your saved work is safe on the server. If it still fails, check your internet connection.') : tr('Your saved work is safe on the server. Go back or reload the page; if it happens again, copy the details and send them to support.')}</p>
+          <p className="small" style={{ margin: 0 }}>{isStaleChunk(error) ? tr('A new version of Nasq360 is out. Reload the page to use it; your saved work is safe on the server. If it still fails, check your internet connection.') : tr('Your saved work is safe on the server. Go back or reload the page; if it happens again, copy the details and send them to support.')}</p>
           <pre className="small mono" style={{ whiteSpace: 'pre-wrap', background: 'var(--surface-2)', padding: 10, borderRadius: 'var(--r-md)', maxHeight: 160, overflow: 'auto', margin: 0 }}>{error.message}</pre>
           <div className="row">
             <button onClick={() => history.back()} className="secondary">{tr('Back')}</button>

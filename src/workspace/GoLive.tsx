@@ -292,7 +292,7 @@ export default function GoLive({ presets }: { presets?: Record<string, SheetPres
     <div className="stack">
       <div className="card stack">
         <h2 style={{ margin: 0 }}><Rocket size={18} /> {tr('Bring your books in and go live')}</h2>
-        <p className="small muted" style={{ margin: 0 }}>{tr('Bring in what your old system held on the day before you start with Bonyan: the trial balance and the detail behind it. When everything adds up (opening balance equity, 3900, is zero), go live: the opening balances become final.')}</p>
+        <p className="small muted" style={{ margin: 0 }}>{tr('Bring in what your old system held on the day before you start with Nasq360: the trial balance and the detail behind it. When everything adds up (opening balance equity, 3900, is zero), go live: the opening balances become final.')}</p>
         {final ? (
           <div className="ok-box row" style={{ flexWrap: 'wrap', gap: 8 }}>
             <Lock size={16} /> {tr('Live since {date}. The opening balances of {opening} are final.', { date: o!.goLive, opening: st!.date })}
@@ -300,7 +300,7 @@ export default function GoLive({ presets }: { presets?: Record<string, SheetPres
           </div>
         ) : (
           <form className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }} onSubmit={(e) => { e.preventDefault(); act('opening.setGoLive', { date }, tr('Saved')) }}>
-            <label className="field" style={{ maxWidth: 220 }}>{tr('First day in Bonyan')}<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
+            <label className="field" style={{ maxWidth: 220 }}>{tr('First day in Nasq360')}<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
             <span className="small muted">{tr('Opening balances dated {date}', { date: date ? openingDateOf(date) : '—' })}</span>
             <button className="secondary" disabled={o?.goLive === date}>{o ? tr('Change the date') : tr('Set the date')}</button>
           </form>

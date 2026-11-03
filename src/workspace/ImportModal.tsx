@@ -365,7 +365,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
               {missing.length > 0 && <div className="note small">{tr('Required fields not matched: {fields}. Rows without them will be skipped.', { fields: missing.map(shown).join('، ') })}</div>}
 
               <div className="card" style={{ padding: 12 }}>
-                <b className="small">{tr('Records already in Bonyan')}</b>
+                <b className="small">{tr('Records already in Nasq360')}</b>
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                   <select value={match} onChange={(e) => { setMatch(e.target.value); setPreview(null) }} style={{ width: 'auto' }}>
                     <option value="">{tr('Always add new records')}</option>
@@ -413,7 +413,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
                   {preview.errors.length > 0 && errorList(preview.errors)}
                   {preview.rows.some((r) => r.similar) && (
                     <div className="note small">
-                      <AlertTriangle size={14} /> {tr('{n} new rows look like records already in Bonyan (same name, phone or e-mail). To update those instead of adding them twice, choose a column under “Records already in Bonyan”.', { n: preview.rows.filter((r) => r.similar).length })}
+                      <AlertTriangle size={14} /> {tr('{n} new rows look like records already in Nasq360 (same name, phone or e-mail). To update those instead of adding them twice, choose a column under “Records already in Nasq360”.', { n: preview.rows.filter((r) => r.similar).length })}
                       <ul style={{ margin: '4px 0 0', paddingInlineStart: 18 }}>
                         {preview.rows.filter((r) => r.similar).slice(0, 5).map((r) => <li key={r.row}>{tr('Row {n} looks like “{name}”', { n: r.row, name: recordTitle(ws, saved, findRecord(ws, r.similar)) })}</li>)}
                       </ul>

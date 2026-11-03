@@ -1,8 +1,8 @@
 # Phase H: Bring your history in (data migration)
 
-Every company that signs up already has a past. It has customers and the people it deals with there, open deals, invoices that are still unpaid, cheques waiting to be cashed, stock on the shelves, a bank balance, and years of sales it wants to look back on. If Bonyan only works from the day it is switched on, a new company starts blind. It can't see what a customer bought last year, how old a debt is, or how this March compares with last March. Many companies won't switch at all for that reason.
+Every company that signs up already has a past. It has customers and the people it deals with there, open deals, invoices that are still unpaid, cheques waiting to be cashed, stock on the shelves, a bank balance, and years of sales it wants to look back on. If Nasq360 only works from the day it is switched on, a new company starts blind. It can't see what a customer bought last year, how old a debt is, or how this March compares with last March. Many companies won't switch at all for that reason.
 
-This phase lets a company bring all of that in: once, carefully, with checks that prove nothing was lost or counted twice. After that it works in Bonyan as if it had always been there.
+This phase lets a company bring all of that in: once, carefully, with checks that prove nothing was lost or counted twice. After that it works in Nasq360 as if it had always been there.
 
 It covers every module: finance, treasury, tax, stock, CRM, documents, custom modules, people and files. It builds on what already exists:
 
@@ -16,7 +16,7 @@ It is listed in the review as **BUIL-13** (go-live tools), **ACCO-07** (opening 
 
 ---
 
-## 1. What a new company brings, and what Bonyan can do with it today
+## 1. What a new company brings, and what Nasq360 can do with it today
 
 | Data | What the company has | Today | Gap |
 |---|---|---|---|
@@ -37,7 +37,7 @@ It is listed in the review as **BUIL-13** (go-live tools), **ACCO-07** (opening 
 | Files (contracts, IDs, POs, photos) | Folders | — | No file storage yet. |
 | People who left the company | Names in the old data | — | History needs an owner even when that person has no login. |
 
-There is also a technical limit. When a company opens Bonyan, the app loads all of its data into the browser. That is fine for a year of live work, but five years of invoice history would make the app slow. History therefore needs its own storage path (section 6).
+There is also a technical limit. When a company opens Nasq360, the app loads all of its data into the browser. That is fine for a year of live work, but five years of invoice history would make the app slow. History therefore needs its own storage path (section 6).
 
 ---
 
@@ -52,7 +52,7 @@ There is also a technical limit. When a company opens Bonyan, the app loads all 
    - an open task or ticket;
    - an installment not yet paid.
 
-   Each of them can be collected, cashed, moved or closed in Bonyan. Anything already finished comes in read-only.
+   Each of them can be collected, cashed, moved or closed in Nasq360. Anything already finished comes in read-only.
 4. **Every detail ties to a total.** Each detail list must add up to its control account in the trial balance:
 
    | Detail list | Must equal |
@@ -84,13 +84,13 @@ There is also a technical limit. When a company opens Bonyan, the app loads all 
 
 **Opening trial balance (required).**
 - The company uploads the trial balance from its old system on the day before go-live: account, debit and credit.
-- Bonyan maps each old account to an account in its chart. It suggests the mapping by name and number, and the company can add accounts.
+- Nasq360 maps each old account to an account in its chart. It suggests the mapping by name and number, and the company can add accounts.
 - It then posts one opening entry (OB-JV).
-- The control accounts (1200, 2100, 1300, 1150, 1160, 2150, 1450, 2400) are **not** taken from the trial balance. They come from the detail lists in 3.2–3.5. Bonyan shows the trial balance's figure next to the detail list's total and the difference.
+- The control accounts (1200, 2100, 1300, 1150, 1160, 2150, 1450, 2400) are **not** taken from the trial balance. They come from the detail lists in 3.2–3.5. Nasq360 shows the trial balance's figure next to the detail list's total and the difference.
 
 **Earlier periods (optional, recommended for one or two years).**
 - The company uploads the monthly trial balances (or monthly movements) of earlier years.
-- Bonyan posts one summary entry per month (HIST-JV), dated at the month end, and closes those years.
+- Nasq360 posts one summary entry per month (HIST-JV), dated at the month end, and closes those years.
 - The profit and loss, balance sheet, cash flow and comparisons with last year then work from day one.
 - With this option, the opening trial balance is checked against the sum of the history instead of being posted separately.
 - Account detail inside a month (every old journal line) is not imported: old systems keep it and it is rarely needed. The plan keeps it possible as a later option for audits.
@@ -141,7 +141,7 @@ This works the same way as customers: open bills become opening bills (Dr 3900 /
   - **Check:** the cheques equal 1150 and 1160.
 - **Cheques issued, not yet presented.** One row per cheque, in 2150. They clear or are cancelled like any cheque. **Check:** they equal 2150.
 - **The first bank reconciliation.** For each bank account, the company enters the statement balance on the opening date and the items not yet on the statement (deposits in transit, cheques not presented).
-  - The first reconciliation in Bonyan starts from that point, so the company never has to reconcile the past again.
+  - The first reconciliation in Nasq360 starts from that point, so the company never has to reconcile the past again.
   - **Check:** book balance = statement balance + items in transit.
 
 ### 3.5 Stock
@@ -155,8 +155,8 @@ This works the same way as customers: open bills become opening bills (Dr 3900 /
 
 ### 3.6 Tax
 
-- **VAT.** The VAT position on the opening date (due to the Tax Authority, or credit carried forward) comes in through the trial balance (2210 and 1400). The first VAT return in Bonyan carries the credit forward.
-- **The months before go-live are closed.** Earlier VAT returns are never recalculated in Bonyan.
+- **VAT.** The VAT position on the opening date (due to the Tax Authority, or credit carried forward) comes in through the trial balance (2210 and 1400). The first VAT return in Nasq360 carries the credit forward.
+- **The months before go-live are closed.** Earlier VAT returns are never recalculated in Nasq360.
 - **Withholding tax for the quarter of go-live.** When go-live falls in the middle of a quarter, the company uploads the withholding deducted in the earlier months of that quarter, line by line (supplier, tax number, amount, rate, date).
   - They count in Form 41 for that quarter, but are not posted again.
   - Withholding certificates received from customers, not yet used, come in as the opening balance of 1450, listed per customer.
@@ -182,7 +182,7 @@ The financial statements never use them; the books' history comes from 3.1. This
 **An unpaid invoice is uploaded twice on purpose:** once as an open item (3.2), and once as a history document if the company wants its lines in the sales history. The two are linked by the old number and recognised as the same invoice, so it is counted once in every report.
 
 **Numbering**
-- The company chooses where Bonyan's numbering continues: for example INV-2026-00451 after the last old number, or a fresh series.
+- The company chooses where Nasq360's numbering continues: for example INV-2026-00451 after the last old number, or a fresh series.
 - Old numbers never clash, because they are kept in their own field.
 
 ### 3.8 CRM
@@ -205,7 +205,7 @@ The wizard follows that order.
   - the phone in one international format (+20…);
   - the e-mail;
   - the name.
-- Likely duplicates inside the file and against Bonyan are shown before anything is saved, with a Merge choice.
+- Likely duplicates inside the file and against Nasq360 are shown before anything is saved, with a Merge choice.
 - **Contacts are linked to their company** by the old id or the name.
 
 **Leads**
@@ -214,7 +214,7 @@ The wizard follows that order.
 
 **Deals, open and closed**
 - A deal comes in with its stage, amount, expected close, owner and created date.
-- Old stage names are mapped to Bonyan's stages in one screen ("Hot" → "Negotiation").
+- Old stage names are mapped to Nasq360's stages in one screen ("Hot" → "Negotiation").
 - A won or lost deal keeps its closing date and lost reason. These are history deals: they feed win rates, sales-cycle length, "won last year" and pipeline reports, and don't show on the board unless asked.
 - When the old system has stage dates, they fill the stage history, so time-in-stage reports work.
 
@@ -257,7 +257,7 @@ The industry templates add ready mappings for their typical data:
 
 ### 3.11 Files
 
-Contracts, purchase orders, IDs and photos need file storage, which Bonyan doesn't have yet. The plan for it:
+Contracts, purchase orders, IDs and photos need file storage, which Nasq360 doesn't have yet. The plan for it:
 - Supabase Storage, private per company, virus-scanned, with a size limit per plan.
 - A zip upload matched to records by the old number in the file name.
 
@@ -274,7 +274,7 @@ A page for admins and finance. It opens on the first visit after publishing the 
 2. **Upload** an .xlsx or .csv file. Files over 5,000 rows are split and sent in parts, with a progress bar.
 3. **Map.**
    - Columns are mapped to fields, and old values to options and stages. Old names are mapped to people, and old accounts to the chart.
-   - Bonyan suggests every mapping (by name, by meaning, and later by AI). It remembers them for the next file.
+   - Nasq360 suggests every mapping (by name, by meaning, and later by AI). It remembers them for the next file.
 4. **Preview (dry run).**
    - Every row is checked like a real save, and nothing is written yet.
    - The preview shows rows that will be created, updated or skipped, the errors row by row with the cell to fix, and likely duplicates. Errors can be downloaded as a file.
@@ -312,7 +312,7 @@ A page for admins and finance. It opens on the first visit after publishing the 
   - Arabic digits;
   - totals that include VAT twice;
   - customer names spelt two ways.
-- A partner or Bonyan's support team can be given temporary access to run the migration for the company. That access is logged and expires (Phase 6).
+- A partner or Nasq360's support team can be given temporary access to run the migration for the company. That access is logged and expires (Phase 6).
 
 ---
 
@@ -377,7 +377,7 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 
 > **Progress (H1 done).**
 > - **Files:** the import screen reads Excel workbooks (.xlsx, any sheet) and CSV, including CSV saved by Arabic Excel in the old Arabic code page. A file of up to 50,000 rows is sent in parts of 500, each saved before the next, with a progress bar.
-> - **Before saving:** "Check the rows" runs every check on a copy and shows what will be added, updated or skipped, the problems by row and column (downloadable to fix), and rows that look like records already in Bonyan.
+> - **Before saving:** "Check the rows" runs every check on a copy and shows what will be added, updated or skipped, the problems by row and column (downloadable to fix), and rows that look like records already in Nasq360.
 > - **Updating instead of adding:** an import can update the record with the same old system id, phone (one international form), e-mail or other field.
 > - **Matching:**
 >   - links find their record by old id, then number, then name, and say when a name is ambiguous;
@@ -403,7 +403,7 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 - Go live, with lock and re-open.
 
 **Done when**
-- [ ] An accountant migrates a test company from a real trial balance and ageing report. Ageing in Bonyan then matches the old report bucket by bucket. (Done in the tests with a realistic company; still to do with an accountant and real files.)
+- [ ] An accountant migrates a test company from a real trial balance and ageing report. Ageing in Nasq360 then matches the old report bucket by bucket. (Done in the tests with a realistic company; still to do with an accountant and real files.)
 - [x] The cheque register matches the safe.
 - [x] The first bank reconciliation closes.
 - [x] Stock value equals 1300.
@@ -451,7 +451,7 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 >   - one sheet per step, its columns named as the import screens recognise them, required columns marked *;
 >   - drop-down lists of the options, stages, team members and Yes/No;
 >   - right-to-left sheets in Arabic.
->   It is written by Bonyan itself, with no library.
+>   It is written by Nasq360 itself, with no library.
 > - **The steps, in order:** every list comes after the lists it links to (customers before contacts and deals, a custom module after what it links to), then the opening books.
 > - **Uploading the filled workbook.** Each list shows how many rows its sheet holds and opens the import screen with that sheet already matched, then checked and saved as in H1. The opening-books cards open with their sheets too.
 > - **A summary:** lists with data, opening steps done, 3900, live or not.
@@ -593,7 +593,7 @@ Each step can ship on its own and is useful on its own. Sizes as in the review: 
 
 **After**
 1. On day one it downloads a workbook made for its own system and fills it from its old exports.
-2. It uploads it step by step and fixes the few rows Bonyan points to.
+2. It uploads it step by step and fixes the few rows Nasq360 points to.
 3. It sees every total agree with its old trial balance, then presses Go live.
 
 From that moment:

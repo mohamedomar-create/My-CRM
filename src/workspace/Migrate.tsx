@@ -34,7 +34,7 @@ export default function Migrate() {
     const url = URL.createObjectURL(new Blob([writeXlsx(sheets) as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${saved.company.name || 'Bonyan'} – ${tr('migration workbook')}.xlsx`
+    a.download = `${saved.company.name || 'Nasq360'} – ${tr('migration workbook')}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -78,7 +78,7 @@ export default function Migrate() {
       </div>
 
       <div className="card stack">
-        <p className="small" style={{ margin: 0 }}>{tr('Bring what your old system holds into Bonyan: customers and the people there, suppliers, products, leads and deals, then the opening books. Download a workbook made for your system, fill a sheet per step (copy from your old system’s exports), and upload it here. Each step opens with its sheet; you check the rows and save. Nothing is final until you go live, and each import can be undone.')}</p>
+        <p className="small" style={{ margin: 0 }}>{tr('Bring what your old system holds into Nasq360: customers and the people there, suppliers, products, leads and deals, then the opening books. Download a workbook made for your system, fill a sheet per step (copy from your old system’s exports), and upload it here. Each step opens with its sheet; you check the rows and save. Nothing is final until you go live, and each import can be undone.')}</p>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button className="secondary" onClick={download}><Download size={16} /> {tr('Download your workbook')}</button>
           <label className="btn glow" style={{ cursor: 'pointer' }}><Upload size={16} /> {book ? tr('Upload it again') : tr('Upload the filled workbook')}<input type="file" accept=".xlsx" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /></label>

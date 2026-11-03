@@ -36,8 +36,8 @@ const DICT = {
   heroA: ['Stop bending your business', 'توقّف عن تطويع شركتك'],
   heroB: ['to fit someone else’s software.', 'لتناسب برنامج غيرك.'],
   heroLead: [
-    'Bonyan asks about your industry, teams and pain points, suggests a ready system, then lets you drag and drop every field, pipeline, report and automation — while guardrails keep sales, stock and accounting 100% correct.',
-    'بنيان يسألك عن نشاطك وفرق العمل والتحديات، يقترح عليك نظاماً جاهزاً، ثم تسحب وتُفلت كل حقل ومرحلة وتقرير وأتمتة — بينما تحافظ القواعد على دقة المبيعات والمخزون والحسابات بنسبة ١٠٠٪.',
+    'Nasq360 asks about your industry, teams and pain points, suggests a ready system, then lets you drag and drop every field, pipeline, report and automation — while guardrails keep sales, stock and accounting 100% correct.',
+    'Nasq360 يسألك عن نشاطك وفرق العمل والتحديات، يقترح عليك نظاماً جاهزاً، ثم تسحب وتُفلت كل حقل ومرحلة وتقرير وأتمتة — بينما تحافظ القواعد على دقة المبيعات والمخزون والحسابات بنسبة ١٠٠٪.',
   ],
   start: ['Build my system — free', 'ابنِ نظامي مجاناً'],
   signin: ['Sign in', 'تسجيل الدخول'],

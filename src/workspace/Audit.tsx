@@ -70,7 +70,7 @@ export default function Audit() {
         </div>
       )}
       <h2 style={{ marginTop: 22 }}><Clock size={17} /> {tr('Nightly automations')}</h2>
-      <p className="small muted">{tr('Every night at about 3:15 am Cairo time the server runs your date-based automations (overdue reminders, follow-ups), even when nobody opens Bonyan.')}</p>
+      <p className="small muted">{tr('Every night at about 3:15 am Cairo time the server runs your date-based automations (overdue reminders, follow-ups), even when nobody opens Nasq360.')}</p>
       {runs.length === 0 ? <p className="muted small">{tr('No nightly run yet.')}</p> : (
         <div className="table-wrap">
           <table className="data">
