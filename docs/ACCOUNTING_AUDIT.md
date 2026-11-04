@@ -17,6 +17,17 @@
 | Audit trail | Every posting writes who did what, and when, to the activity log. Server commands are also logged in the database | `trail.test` |
 | Segregation of duties | Only Admin and finance roles can post. Documents can need an approver other than the person who made them (approval rules) | `access.test`, `multiuser.test` |
 
+## 1b. Rigour without complexity
+
+The accounting rules run behind the scenes; people work in plain words.
+
+- **Nobody chooses debits and credits for normal work.** Invoices, bills, payments, returns, cheques, transfers, depreciation, write-offs: each posts its own entry. Journal vouchers are only for what no document covers.
+- **The system remembers the period-end steps.** When a month is closed, it lists what is still due and does each one in one click: depreciation not yet posted, money to set aside for customers far behind on paying. Nothing shows when there is nothing to do.
+- **Problems are shown; passing checks are folded away.** The month-end close shows only what needs fixing, and "N checks passed" for the rest.
+- **Plain words on screen.** "Worn down so far" and "worth in the books" instead of accumulated depreciation and net book value. "Set aside for late payers" instead of provision matrix. "Bring back" instead of reinstate. Account numbers and Dr/Cr stay in the journal and the reports, for the accountant.
+- **Few places to look.** Fixed assets is one tab. Late payers sit under Ageing, next to the late invoices. Cash ↔ bank transfers sit on Bank & cash. Self-reversing accruals are one optional link on a journal voucher.
+- **Safe by construction, not by training.** Control accounts can't be posted by hand, closed months can't be changed, and posted entries can't be edited. A mistake is undone by its mirror entry, so a non-accountant can't break the books.
+
 ## 2. Every kind of entry
 
 | Entry | Arabic | What the audit test does | Exact Dr / Cr checked |
@@ -24,7 +35,7 @@
 | Opening entry | القيد الافتتاحي | Customer and supplier opening balances, opening stock, opening cash, an asset already held (cost and depreciation to date). All go against 3900, which is then handed to capital and ends at **0** | ✔ |
 | Simple entry | القيد البسيط | Rent: Dr 5200 / Cr 1100 (two lines) | ✔ |
 | Compound entry | القيد المركب | Salaries: Dr 5300 / Cr 1100, Cr 2400, Cr 1110 | ✔ |
-| Contra entry (cash ↔ bank) | القيد العكسي بين النقدية والبنك | **New: transfer voucher TRF-.** Dr 1110 40,000; Dr 5500 15 (bank charge); Cr 1100 40,015. Same-account and non-cash accounts are refused | ✔ |
+| Contra entry (cash ↔ bank) | القيد العكسي بين النقدية والبنك | **New: transfer (Bank & cash → Move money between cash and bank), numbered TRF-.** Dr 1110 40,000; Dr 5500 15 (bank charge); Cr 1100 40,015. Same-account and non-cash accounts are refused | ✔ |
 | Sales invoice | فاتورة مبيعات | Dr 1200 3,420; Cr 4000 3,000; Cr 2200 420; Dr 5000 1,250; Cr 1300 1,250 | ✔ |
 | Purchase bill | فاتورة مشتريات | Dr 1300 5,000; Dr 1400 700; Cr 2100 5,700 | ✔ |
 | Sales return | مردودات المبيعات | **Now goes to 4100 Sales returns (a contra revenue account):** Dr 4100 300; Dr 2200 42; Cr 1200 342; Dr 1300 125; Cr 5000 125 | ✔ |
@@ -34,7 +45,7 @@
 | Cheque issued → cleared | أوراق الدفع | Dr 2100 / Cr 2150 → Dr 2150 / Cr 1110 | ✔ |
 | VAT settlement | تسوية ضريبة القيمة المضافة | Dr 2200 378; Cr 1400 665; Dr 2210 287 (a credit carried forward). Allowed only after the month is closed | ✔ |
 | Adjusting: prepayment | مصروفات مقدمة | Dr 1350 / Cr 1110, then the used half Dr 5450 / Cr 1350, marked *adjusting* | ✔ |
-| Adjusting: accrual that reverses itself | مصروفات مستحقة + قيد عكسي تلقائي | **New.** Dr 5400 / Cr 2250 on 31 Dec, with its mirror automatically on 1 Jan. The real bill in January isn't counted twice, and 2250 ends at 0 | ✔ |
+| Adjusting: accrual that reverses itself | مصروفات مستحقة + قيد عكسي تلقائي | **New: "Reverse it automatically next month" on a journal voucher.** Dr 5400 / Cr 2250 on 31 Dec, with its mirror on 1 Jan. The real bill in January isn't counted twice, and 2250 ends at 0 | ✔ |
 | Adjusting: depreciation | الإهلاك | **New fixed-asset register.** Straight line, monthly, a full month from the month in service, down to the salvage value. Dr 5600 / Cr 1590. Months not yet run are caught up; a closed month is refused | ✔ |
 | Adjusting: allowance for doubtful debts | مخصص الديون المشكوك فيها | **New.** From the ageing with a provision matrix (IFRS 9 simplified approach): Dr 5700 570 / Cr 1210 570 | ✔ |
 | Bad-debt write-off, and recovery | إعدام الديون | **New.** Dr 1210 570 (the allowance first); Dr 5700 570; Cr 1200 1,140. Reinstated by the exact mirror if the customer pays | ✔ |

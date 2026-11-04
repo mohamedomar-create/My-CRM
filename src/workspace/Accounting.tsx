@@ -15,11 +15,11 @@ import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseBu
 import { typeLabel } from './labels'
 import { DoubtfulDebts, FixedAssets } from './PeriodEnd'
 
-type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets' | 'debts'
+type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets'
 const GROUPS: { name: string; tabs: { id: Tab; label: string }[] }[] = [
   { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
   { name: N_('Day to day'), tabs: [{ id: 'payments', label: N_('Payments') }, { id: 'bank', label: N_('Bank & cash') }, { id: 'voucher', label: N_('New journal voucher') }, { id: 'tax', label: N_('VAT & withholding') }] },
-  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'debts', label: N_('Doubtful debts') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
+  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
 ]
 
 export default function Accounting() {
@@ -58,7 +58,7 @@ export default function Accounting() {
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
         {dr === cr ? tr('Books balance: total debits = total credits = {amount} across {n} journal entries.', { amount: money(dr, cur), n: ws.data.journal.length }) : tr('Books do not balance ({dr} vs {cr}). Contact support.', { dr, cr })}
       </div>
-      {/* Fifteen screens in three groups, so it is clear where each one is: first the group, then the screen. */}
+      {/* Fourteen screens in three groups, so it is clear where each one is: first the group, then the screen. */}
       <nav className="tab-groups no-print" aria-label={tr('Accounting')}>
         <div className="seg" role="tablist">
           {GROUPS.map((g) => (
@@ -107,6 +107,10 @@ export default function Accounting() {
               </div>
             )
           })}
+          <details className="card">
+            <summary><b>{tr('Customers who may never pay')}</b> <span className="small muted">{tr('Set aside for late payers, or write off an invoice')}</span></summary>
+            <div style={{ marginTop: 12 }}><DoubtfulDebts /></div>
+          </details>
         </div>
       )}
       {tab === 'journal' && (
@@ -136,7 +140,6 @@ export default function Accounting() {
       )}
       {tab === 'close' && <CloseBooks />}
       {tab === 'assets' && <FixedAssets />}
-      {tab === 'debts' && <DoubtfulDebts />}
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}
       {tab === 'reports' && <Statements />}

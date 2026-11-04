@@ -12,6 +12,7 @@ import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
+import { MonthEndTodo } from './PeriodEnd'
 
 
 
@@ -34,9 +35,9 @@ export function JournalVoucher() {
   const [date, setDate] = useState(todayISO())
   const [memo, setMemo] = useState('')
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()])
-  // An adjusting entry of the period end; an accrual reverses itself on the day chosen (usually the 1st of next month).
-  const [adjusting, setAdjusting] = useState(false)
+  // An accrual (an expense of this month billed next month) reverses itself on the day chosen, the 1st of next month by default.
   const [reverseOn, setReverseOn] = useState('')
+  const nextMonth = (() => { const [y, m] = date.split('-').map(Number); return y && m ? new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) : '' })()
   const dr = round2(rows.reduce((s, r) => s + num(r.debit), 0))
   const cr = round2(rows.reduce((s, r) => s + num(r.credit), 0))
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -46,11 +47,10 @@ export function JournalVoucher() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
-    const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(adjusting ? { adjusting: true, ...(reverseOn ? { reverseOn } : {}) } : {}) }, reverseOn && adjusting ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
+    const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(reverseOn ? { reverseOn } : {}) }, reverseOn ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
       setRows([emptyRow(), emptyRow()])
-      setAdjusting(false)
       setReverseOn('')
     }
   }
@@ -62,11 +62,9 @@ export function JournalVoucher() {
         <label className="field" style={{ width: 170 }}>{tr('Date')}<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <label className="field grow">{tr('Description')}<input required value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={tr('e.g. Office rent for January')} /></label>
       </div>
-      <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
-        <label className="row small" style={{ gap: 6 }}><input type="checkbox" checked={adjusting} onChange={(e) => setAdjusting(e.target.checked)} /> {tr('Adjusting entry (period end: accrual, prepayment, correction)')}</label>
-        {adjusting && <label className="field" style={{ width: 230 }}>{tr('Reverse automatically on (accruals)')}<input type="date" value={reverseOn} min={date} onChange={(e) => setReverseOn(e.target.value)} /></label>}
-      </div>
-      {adjusting && reverseOn && <p className="tiny muted" style={{ margin: 0 }}>{tr('An opposite entry is posted on {date}, so when the real bill arrives it is entered as usual and the expense isn’t counted twice.', { date: reverseOn })}</p>}
+      {reverseOn
+        ? <div className="row small" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><label className="row" style={{ gap: 6 }}>{tr('Reverse it automatically on')}<input type="date" value={reverseOn} min={date} onChange={(e) => setReverseOn(e.target.value)} style={{ width: 160 }} /></label><span className="tiny muted">{tr('For an expense of this month billed next month: when the bill comes, enter it as usual and it isn’t counted twice.')}</span><button type="button" className="ghost small" onClick={() => setReverseOn('')}>{tr('Don’t reverse')}</button></div>
+        : <div><button type="button" className="ghost small" onClick={() => setReverseOn(nextMonth)}><Undo2 size={13} /> {tr('Reverse it automatically next month')}</button></div>}
       <div className="table-wrap">
         <table className="data">
           <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th>{withCc && <th>{tr('Cost center')}</th>}<th>{tr('Note')}</th><th /></tr></thead>
@@ -387,14 +385,23 @@ export function CloseBooks() {
         {months.length === 0 ? <p className="muted small">{tr('Every month that has ended is already closed.')}</p> : (
           <>
             <label className="field" style={{ width: 220 }}>{tr('Month')}<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
+            <MonthEndTodo month={month} />
             <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0, gap: 6 }}>
-              {checks.map((c) => (
+              {checks.filter((c) => !c.ok).map((c) => (
                 <li key={c.id} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
                   {c.ok ? <CheckCircle2 size={16} color="var(--success)" /> : c.blocking ? <XCircle size={16} color="var(--danger)" /> : <AlertTriangle size={16} color="var(--warning)" />}
                   <span><b>{msg(c.title)}</b> <span className="muted small">· {msg(c.detail)}</span></span>
                 </li>
               ))}
             </ul>
+            {checks.some((c) => c.ok) && (
+              <details>
+                <summary className="small row" style={{ gap: 6, display: 'inline-flex' }}><CheckCircle2 size={15} color="var(--success)" /> {tr('{n} checks passed', { n: checks.filter((c) => c.ok).length })}</summary>
+                <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', gap: 4 }}>
+                  {checks.filter((c) => c.ok).map((c) => <li key={c.id} className="small"><b>{msg(c.title)}</b> <span className="muted">· {msg(c.detail)}</span></li>)}
+                </ul>
+              </details>
+            )}
             <div className="row" style={{ gap: 10 }}>
               <button className="primary" disabled={blocked} onClick={() => confirm(tr('Close {month}? Nothing dated on or before its last day can be posted afterwards; only an admin can reopen it.', { month: label(month) })) && act('books.closeMonth', { month }, tr('{month} closed', { month: label(month) }), `Closed ${month}`)}>
                 <Lock size={14} /> {tr('Close {month}', { month: label(month) })}

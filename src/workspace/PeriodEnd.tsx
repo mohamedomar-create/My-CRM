@@ -3,12 +3,13 @@
 // command; the engine keeps the rules (accounts fed only by these tools, closed periods, numbering).
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, Calculator, Plus, Undo2 } from 'lucide-react'
+import { Ban, Calculator, CheckCircle2, Plus, Undo2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { list, money, recordTitle, round2, todayISO } from '../lib/engine'
 import { accountLabel, chartOf, moneyAccounts, moneyKind } from '../lib/accounts'
 import { assetsOf, bookValue, chargeUpTo, lastMonth, monthlyCharge, registerTotals } from '../lib/assets'
 import { allowance, DEFAULT_RATES, suggestedAllowance, type Rates } from '../lib/badDebts'
+import { monthEnd } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { getLang, N_, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
@@ -28,13 +29,13 @@ export function FixedAssets() {
   return (
     <div className="stack">
       <div className="dash">
-        <div className="card"><h2>{tr('Cost of assets held')}</h2><div className="kpi-value">{money(totals.cost, cur)}</div></div>
-        <div className="card"><h2>{tr('Accumulated depreciation')}</h2><div className="kpi-value">{money(totals.accumulated, cur)}</div></div>
-        <div className="card"><h2>{tr('Book value')}</h2><div className="kpi-value">{money(totals.book, cur)}</div></div>
+        <div className="card"><h2>{tr('Bought for')}</h2><div className="kpi-value">{money(totals.cost, cur)}</div></div>
+        <div className="card"><h2>{tr('Worn down so far')}</h2><div className="kpi-value">{money(totals.accumulated, cur)}</div></div>
+        <div className="card"><h2>{tr('Worth in the books')}</h2><div className="kpi-value">{money(totals.book, cur)}</div></div>
       </div>
       <div className="card stack">
         <h2>{tr('Depreciation')}</h2>
-        <p className="small muted" style={{ margin: 0 }}>{tr('Straight line, a full month from the month an asset goes into service, down to its salvage value. One entry for all assets, dated the month’s last day: debit 5600 Depreciation, credit 1590 Accumulated depreciation. Months not yet run are caught up.')}</p>
+        <p className="small muted" style={{ margin: 0 }}>{tr('Each asset loses value evenly over its life. Post it once a month — closing the month reminds you — and any month missed is caught up.')}</p>
         <div className="row" style={{ gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
           <label className="field" style={{ width: 170 }}>{tr('Up to the month')}<input type="month" value={month} max={thisMonth} onChange={(e) => setMonth(e.target.value)} /></label>
           <span className="small">{due ? tr('{amount} to post', { amount: money(due, cur) }) : tr('Nothing to depreciate')}</span>
@@ -51,7 +52,7 @@ export function FixedAssets() {
       </div>
       <div className="table-wrap" role="region" aria-label={tr('Fixed-asset register')} tabIndex={0}>
         <table className="data">
-          <thead><tr><th>{tr('Asset')}</th><th>{tr('In service')}</th><th className="num">{tr('Cost')}</th><th className="num">{tr('Per month')}</th><th className="num">{tr('Accumulated')}</th><th className="num">{tr('Book value')}</th><th>{tr('Depreciated up to')}</th><th /></tr></thead>
+          <thead><tr><th>{tr('Asset')}</th><th>{tr('In service')}</th><th className="num">{tr('Cost')}</th><th className="num">{tr('Per month')}</th><th className="num">{tr('Worn down')}</th><th className="num">{tr('Worth now')}</th><th>{tr('Depreciated up to')}</th><th /></tr></thead>
           <tbody>
             {assets.length === 0 && <tr><td colSpan={8} className="muted">{tr('No fixed assets yet.')}</td></tr>}
             {assets.map((a) => (
@@ -71,8 +72,7 @@ export function FixedAssets() {
       </div>
       {selling && <Dispose id={selling} onDone={() => setSelling('')} />}
       <AddAsset />
-      <p className="tiny muted" style={{ margin: 0 }}>{tr('Account 1590 Accumulated depreciation is fed by this register only, so the two always agree.')}</p>
-    </div>
+          </div>
   )
 }
 
@@ -96,7 +96,7 @@ function Dispose({ id, onDone }: { id: string; onDone: () => void }) {
         <label className="field" style={{ width: 150 }}>{tr('Amount received')}<input inputMode="decimal" value={proceeds} onChange={(e) => setProceeds(e.target.value)} style={{ textAlign: 'end' }} placeholder="0" /></label>
         {Number(proceeds) > 0 && <label className="field" style={{ minWidth: 200 }}>{tr('Into')}<select value={account} onChange={(e) => setAccount(e.target.value)}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {accountLabel(b, getLang())}</option>)}</select></label>}
       </div>
-      <p className="small" style={{ margin: 0 }}>{catchUp ? `${tr('Depreciation up to the month of sale: {amount}', { amount: money(catchUp, cur) })} · ` : ''}{tr('Book value {book}', { book: money(book, cur) })} · <b style={{ color: gain < 0 ? 'var(--danger)' : 'var(--success)' }}>{gain >= 0 ? tr('gain {amount}', { amount: money(gain, cur) }) : tr('loss {amount}', { amount: money(-gain, cur) })}</b> {tr('(to 4950)')}</p>
+      <p className="small" style={{ margin: 0 }}>{catchUp ? `${tr('Depreciation up to the month of sale: {amount}', { amount: money(catchUp, cur) })} · ` : ''}{tr('Book value {book}', { book: money(book, cur) })} · <b style={{ color: gain < 0 ? 'var(--danger)' : 'var(--success)' }}>{gain >= 0 ? tr('gain {amount}', { amount: money(gain, cur) }) : tr('loss {amount}', { amount: money(-gain, cur) })}</b></p>
       <div className="row" style={{ gap: 8 }}><button>{tr('Take off the books')}</button><button type="button" className="ghost" onClick={onDone}>{tr('Cancel')}</button></div>
     </form>
   )
@@ -167,25 +167,25 @@ export function DoubtfulDebts() {
   return (
     <div className="stack">
       <div className="card stack">
-        <h2>{tr('Allowance for doubtful debts')}</h2>
-        <p className="small muted" style={{ margin: 0 }}>{tr('At the period end, set aside what customers may never pay, from the ageing with a rate per bucket (a provision matrix). The difference to the allowance held is posted: debit 5700 Bad and doubtful debts, credit 1210 Allowance (lowering it does the opposite).')}</p>
+        <h2>{tr('Set aside for late payers')}</h2>
+        <p className="small muted" style={{ margin: 0 }}>{tr('Part of what is overdue may never come in. Setting it aside keeps the profit honest; the later an invoice, the bigger the share. Change the percentages if you like.')}</p>
         <div className="table-wrap">
           <table className="data">
-            <thead><tr><th>{tr('Overdue')}</th><th className="num">{tr('Owed')}</th><th className="num">{tr('Rate %')}</th><th className="num">{tr('Allowance')}</th></tr></thead>
-            <tbody>{s.buckets.map((b) => <tr key={b.bucket}><td>{tr(BUCKETS.find(([k]) => k === b.bucket)![1])}</td><td className="num">{money(b.owed, cur)}</td><td className="num"><input aria-label={tr('Rate %')} inputMode="decimal" value={String(rates[b.bucket])} onChange={(e) => setRates({ ...rates, [b.bucket]: Number(e.target.value) || 0 })} style={{ width: 70, textAlign: 'end' }} /></td><td className="num">{money(b.amount, cur)}</td></tr>)}</tbody>
+            <thead><tr><th>{tr('How late')}</th><th className="num">{tr('Owed')}</th><th className="num">{tr('% set aside')}</th><th className="num">{tr('Set aside')}</th></tr></thead>
+            <tbody>{s.buckets.map((b) => <tr key={b.bucket}><td>{tr(BUCKETS.find(([k]) => k === b.bucket)![1])}</td><td className="num">{money(b.owed, cur)}</td><td className="num"><input aria-label={tr('% set aside')} inputMode="decimal" value={String(rates[b.bucket])} onChange={(e) => setRates({ ...rates, [b.bucket]: Number(e.target.value) || 0 })} style={{ width: 70, textAlign: 'end' }} /></td><td className="num">{money(b.amount, cur)}</td></tr>)}</tbody>
             <tfoot><tr><td>{tr('Total')}</td><td /><td /><td className="num">{money(s.total, cur)}</td></tr></tfoot>
           </table>
         </div>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <label className="field" style={{ width: 160 }}>{tr('Allowance to hold')}<input inputMode="decimal" value={amount} placeholder={String(s.total)} onChange={(e) => setAmount(e.target.value)} style={{ textAlign: 'end' }} /></label>
-          <span className="small">{tr('Held now {a}; change {b}', { a: money(held, cur), b: money(round2(target - held), cur) })}</span>
-          <button disabled={round2(target - held) === 0 || !(target >= 0)} onClick={() => { if (act('debt.allowance', { date, amount: target, note: amount === '' ? 'Provision matrix' : '' }, tr('Allowance posted'), 'Allowance for doubtful debts') !== undefined) setAmount('') }}>{tr('Post the allowance')}</button>
+          <label className="field" style={{ width: 160 }}>{tr('Amount to set aside')}<input inputMode="decimal" value={amount} placeholder={String(s.total)} onChange={(e) => setAmount(e.target.value)} style={{ textAlign: 'end' }} /></label>
+          <span className="small">{tr('Set aside now {a}; change {b}', { a: money(held, cur), b: money(round2(target - held), cur) })}</span>
+          <button disabled={round2(target - held) === 0 || !(target >= 0)} onClick={() => { if (act('debt.allowance', { date, amount: target, note: amount === '' ? 'Provision matrix' : '' }, tr('Set aside'), 'Allowance for doubtful debts') !== undefined) setAmount('') }}>{tr('Set it aside')}</button>
         </div>
       </div>
       <div className="card stack">
         <h2>{tr('Write off a bad debt')}</h2>
-        <p className="small muted" style={{ margin: 0 }}>{tr('When an invoice will never be paid, write off what is left on it: against the allowance first, the rest to 5700. If the customer pays after all, reinstate it and register the payment.')}</p>
+        <p className="small muted" style={{ margin: 0 }}>{tr('An invoice that will never be paid is written off; what was set aside covers it first. If the customer pays after all, bring it back and register the payment.')}</p>
         <div className="table-wrap">
           <table className="data">
             <thead><tr><th>{tr('Invoice')}</th><th>{tr('Customer')}</th><th>{tr('Due')}</th><th className="num">{tr('Balance')}</th><th /></tr></thead>
@@ -211,12 +211,38 @@ export function DoubtfulDebts() {
             <div className="table-wrap">
               <table className="data">
                 <thead><tr><th>{tr('Invoice')}</th><th>{tr('Date')}</th><th>{tr('Reason')}</th><th className="num">{tr('Amount')}</th><th /></tr></thead>
-                <tbody>{written.map((r) => { const w = r.values.write_off as { ref: string; date: string; reason: string } | undefined; return <tr key={r.id}><td><Link to={`/app/r/${r.id}`}>{r.number}</Link> <span className="tiny muted">{w?.ref}</span></td><td>{w?.date}</td><td>{w?.reason}</td><td className="num">{money(Number(r.values.written_off), cur)}</td><td><button className="ghost small" onClick={() => confirm(tr('Reinstate {a}? What was written off is owed again, so the payment can be registered.', { a: r.number ?? '' })) && act('debt.reinstate', { id: r.id, date: todayISO() }, tr('Reinstated'), `Reinstate ${r.number}`)}><Undo2 size={13} /> {tr('Reinstate')}</button></td></tr> })}</tbody>
+                <tbody>{written.map((r) => { const w = r.values.write_off as { ref: string; date: string; reason: string } | undefined; return <tr key={r.id}><td><Link to={`/app/r/${r.id}`}>{r.number}</Link> <span className="tiny muted">{w?.ref}</span></td><td>{w?.date}</td><td>{w?.reason}</td><td className="num">{money(Number(r.values.written_off), cur)}</td><td><button className="ghost small" onClick={() => confirm(tr('Bring back {a}? What was written off is owed again, so the payment can be registered.', { a: r.number ?? '' })) && act('debt.reinstate', { id: r.id, date: todayISO() }, tr('Brought back'), `Reinstate ${r.number}`)}><Undo2 size={13} /> {tr('Bring back')}</button></td></tr> })}</tbody>
               </table>
             </div>
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/* ---------------- what the month end needs, done in one click ---------------- */
+
+/**
+ * The period-end steps an accountant would remember, worked out for the month being closed: depreciation not yet
+ * posted, and money to set aside for customers far behind on paying. Nothing shows when there is nothing to do.
+ */
+export function MonthEndTodo({ month }: { month: string }) {
+  const { ws, schema, act } = useApp()
+  const cur = schema.company.currency
+  const end = monthEnd(month)
+  const dep = round2(assetsOf(ws).filter((a) => a.date <= end).reduce((s, a) => s + chargeUpTo(a, month).amount, 0))
+  const need = suggestedAllowance(ws, schema, end).total
+  const aside = round2(need - allowance(ws))
+  const items = [
+    dep > 0 && { key: 'dep', text: tr('Assets lose {amount} of value up to {month}', { amount: money(dep, cur), month }), button: tr('Post it'), run: () => act('asset.depreciate', { month }, tr('Depreciation posted'), `Depreciation up to ${month}`) },
+    aside > 0 && { key: 'late', text: tr('Customers are late: set aside {amount} in case some never pay', { amount: money(aside, cur) }), button: tr('Set it aside'), run: () => act('debt.allowance', { date: end, amount: need, note: 'Month-end' }, tr('Set aside'), 'Allowance for doubtful debts') },
+  ].filter(Boolean) as { key: string; text: string; button: string; run: () => unknown }[]
+  if (!items.length) return null
+  return (
+    <div className="note stack" style={{ gap: 8 }}>
+      <b>{tr('Before closing')}</b>
+      {items.map((i) => <div key={i.key} className="row between" style={{ gap: 10, flexWrap: 'wrap' }}><span className="small">{i.text}</span><button className="small" onClick={i.run}><CheckCircle2 size={13} /> {i.button}</button></div>)}
     </div>
   )
 }
