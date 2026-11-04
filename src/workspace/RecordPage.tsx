@@ -452,6 +452,13 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
                     {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} /> : null}
                     {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
                     {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
+                    {mod.role === 'purchases' && Boolean(p?.values.track_stock) && (
+                      <div className="line-batch">
+                        <input value={l.lot ?? ''} onChange={(e) => upd(i, { lot: e.target.value || undefined })} disabled={disabled} placeholder={tr('Batch no.')} aria-label={tr('Batch number')} maxLength={40} />
+                        <input type="date" value={l.expiry ?? ''} onChange={(e) => upd(i, { expiry: e.target.value || undefined })} disabled={disabled} aria-label={tr('Expiry date')} title={tr('Expiry date')} />
+                      </div>
+                    )}
+                    {l.lots && l.lots.length > 0 && <div className="tiny muted">{tr('Batches')}: {l.lots.map((b) => `${b.lot}${b.expiry ? ` (${tr('exp.')} ${b.expiry})` : ''} × ${b.qty}`).join(' · ')}</div>}
                   </td>
                   <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>

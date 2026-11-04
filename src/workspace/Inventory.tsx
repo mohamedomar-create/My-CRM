@@ -3,6 +3,7 @@ import { AlertTriangle, Boxes } from 'lucide-react'
 import { useApp } from './useApp'
 import { can, canPost, canSeeCosts, list, money, onHand, round2, stockValue } from '../lib/engine'
 import { StockTools } from './Ledger'
+import { BatchesPanel } from './Batches'
 import { moduleByRole } from '../lib/schema'
 import { tr } from '../lib/i18n'
 
@@ -27,6 +28,7 @@ export default function Inventory() {
         <div className="card"><h2>{tr('Movements')}</h2><div className="kpi-value">{ws.data.stock.length}</div></div>
       </div>
       <div className="info" style={{ marginBottom: 14 }}>{tr('Quantities and costs come only from posted bills and invoices, stock adjustments and counts, so they always match the books. Quantities can’t be typed in directly.')}</div>
+      <BatchesPanel />
       {canPost({ schema, user }) && <StockTools />}
       <div className="table-wrap" style={{ marginBottom: 18 }}>
         <table className="data">

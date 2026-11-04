@@ -7,6 +7,7 @@ import type { AppSchema, ModuleDef } from './schema'
 import { moduleByRole } from './schema'
 import { booksHealth, can, canPost, hasSampleData, list, onHand, recordTitle, round2, stockValue, todayISO } from './engine'
 import { validate } from './validate'
+import { allLots } from './batches'
 
 export type Severity = 'urgent' | 'important' | 'tip'
 export type Area = 'books' | 'sales' | 'stock' | 'data' | 'setup' | 'team'
@@ -132,6 +133,12 @@ export function checkup(ws: Workspace, schema: AppSchema, user: User, today = to
       const value = round2(dead.reduce((s, p) => s + stockValue(ws, p), 0))
       if (dead.length && value > 0) add({ id: 'dead-stock', severity: 'tip', area: 'stock', title: N_('{a} products not sold in 90 days'), vars: { a: dead.length }, detail: N_('This stock ties up cash. Consider an offer, a return to the supplier, or ordering less of it.'), count: dead.length, amount: value, records: rows(dead.sort((a, b) => stockValue(ws, b) - stockValue(ws, a)), (p) => String(stockValue(ws, p))), fix: { to: '/app/inventory', label: N_('Open stock') } })
     }
+    // batches: expired ones still in stock, and those expiring within 60 days
+    const lots = allLots(ws, schema, today)
+    const expired = lots.filter((l) => l.daysLeft !== null && l.daysLeft < 0)
+    if (expired.length) add({ id: 'expired-batches', severity: 'urgent', area: 'stock', title: N_('{a} expired batches still in stock'), vars: { a: expired.length }, detail: N_('Expired goods can’t be sold and must not be shipped. Write them off (or return them to the supplier) so stock and its value are true.'), count: expired.length, ...(finance ? { amount: round2(expired.reduce((s, l) => s + l.value, 0)) } : {}), records: expired.slice(0, 30).map((l) => ({ id: l.product.id, title: String(l.product.values.name ?? ''), note: `${l.lot} · ${l.expiry} · ${l.qty}` })), fix: { to: '/app/inventory#batches', label: N_('Open batches') } })
+    const soon = lots.filter((l) => l.daysLeft !== null && l.daysLeft >= 0 && l.daysLeft <= 60)
+    if (soon.length) add({ id: 'expiring-batches', severity: 'important', area: 'stock', title: N_('{a} batches expire within 60 days'), vars: { a: soon.length }, detail: N_('Sell these first (the app already does on every invoice), offer them to customers who buy fast, or arrange a return with the supplier before they expire.'), count: soon.length, ...(finance ? { amount: round2(soon.reduce((s, l) => s + l.value, 0)) } : {}), records: soon.slice(0, 30).map((l) => ({ id: l.product.id, title: String(l.product.values.name ?? ''), note: `${l.lot} · ${l.expiry} · ${l.qty}` })), fix: { to: '/app/inventory#batches', label: N_('Open batches') } })
     const noPrice = ps.filter((p) => !(Number(p.values.price ?? 0) > 0))
     if (noPrice.length) add({ id: 'no-price', severity: 'tip', area: 'data', title: N_('{a} products without a selling price'), vars: { a: noPrice.length }, detail: N_('Invoices and quotations for them start at zero.'), count: noPrice.length, records: rows(noPrice), fix: { to: `/app/m/${products.id}`, label: N_('Open products') } })
     dupes(ps, (p) => [sameName(p.values.name), String(p.values.sku ?? '').trim().toLowerCase()], 'dup-products', N_('{a} products look entered twice'), products)

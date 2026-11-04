@@ -19,6 +19,11 @@ export interface Line {
   from?: string
   /** the cost center its income or expense goes to (P1) */
   cc?: string
+  /** on a purchase bill: the batch (lot) received and its expiry date */
+  lot?: string
+  expiry?: string
+  /** on a posted invoice: the batches the units were taken from, first to expire first */
+  lots?: { lot: string; expiry?: string; qty: number }[]
 }
 
 export interface Rec {
@@ -87,6 +92,9 @@ export interface StockMove {
   /** exact change in the product's stock value (moving average), so a void reverses it to the cent */
   value?: number
   sample?: boolean
+  /** the batch (lot) these units belong to, and its expiry date (see batches.ts) */
+  lot?: string
+  expiry?: string
 }
 
 /** An account of the chart of accounts (see accounts.ts), e.g. '1100' or one the company added. */

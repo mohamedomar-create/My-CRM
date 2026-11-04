@@ -1,5 +1,6 @@
 // The runtime. Records, pipelines, documents, stock, double-entry accounting, payments and automations.
 // All functions mutate the workspace passed in and throw EngineError with a message a person can act on.
+import { allocateFefo, hasLots, lotsOf } from './batches'
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
@@ -776,6 +777,18 @@ export function setLines(ctx: Ctx, rec: Rec, lines: Line[]) {
 function checkLines(lines: Line[]) {
   for (const l of lines) {
     if (!(l.qty > 0)) throw new EngineError(`Quantity must be more than 0 (${l.description || 'line'})`)
+    // the batches an invoice takes are worked out when it is posted, never sent in
+    delete l.lots
+    if (l.lot !== undefined || l.expiry !== undefined) {
+      const lot = String(l.lot ?? '').trim().slice(0, 40)
+      const exp = String(l.expiry ?? '').trim()
+      if (exp && !ISO_DATE.test(exp)) throw new EngineError(`The expiry date isn’t a date (${l.description || 'line'})`)
+      if (exp && !lot) throw new EngineError(`Give the batch number for the expiry date (${l.description || 'line'})`)
+      if (lot) l.lot = lot
+      else delete l.lot
+      if (exp) l.expiry = exp
+      else delete l.expiry
+    }
     if (!(l.price >= 0)) throw new EngineError(`Price can’t be negative (${l.description || 'line'})`)
     if (l.discount < 0 || l.discount > 100) throw new EngineError('Discount must be between 0 and 100%')
     if (l.discAmt !== undefined && !(Number(l.discAmt) >= 0)) throw new EngineError(`The discount amount can’t be negative (${l.description || 'line'})`)
@@ -889,6 +902,12 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   if (mod.role === 'invoices' && !ctx.schema.company.allowNegativeStock) {
     const short = [...qtyBy].filter(([pid, q]) => onHand(ctx.ws, pid) < q)
     if (short.length) throw new EngineError(`Not enough stock: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${onHand(ctx.ws, pid)})`).join(', ')}`)
+    // expired batches are never sold
+    for (const [pid, q] of qtyBy) {
+      if (!hasLots(ctx.ws, pid)) continue
+      const a = allocateFefo(ctx.ws, pid, q, date, onHand(ctx.ws, pid))
+      if (a.short > 0) throw new EngineError(`Only ${round4(q - a.short)} of ${productRec(ctx, pid)?.values.name} can be sold: ${a.expired} are in expired batches. Write the expired batches off first.`)
+    }
   }
 
   // The customer's credit limit (and every group's above it): only an admin can post over it.
@@ -921,7 +940,32 @@ export function postDocument(ctx: Ctx, rec: Rec) {
         left = round2(left - share)
         cogsBy.push({ cc: l.cc, amount: share })
       })
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc: rec.id, ref: number, date }, rec))
+      if (hasLots(ctx.ws, pid)) {
+        // first to expire first: one stock move per batch, the cost shared by quantity, the batches noted on the lines
+        const a = allocateFefo(ctx.ws, pid, q, date, oldQty)
+        const parts = a.short > 0 ? [...a.parts, { qty: a.short }] : a.parts
+        let rest = issue
+        parts.forEach((pt, i) => {
+          const v = i === parts.length - 1 ? round2(rest) : round2((issue * pt.qty) / q)
+          rest = round2(rest - v)
+          ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -pt.qty, cost, value: -v, doc: rec.id, ref: number, date, ...(pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}) }, rec))
+        })
+        const pool = parts.filter((pt) => pt.lot).map((pt) => ({ ...pt }))
+        for (const l of own) {
+          let need = l.qty
+          const got: NonNullable<Line['lots']> = []
+          while (need > 0 && pool.length) {
+            const take = round4(Math.min(need, pool[0].qty))
+            got.push({ lot: pool[0].lot!, ...(pool[0].expiry ? { expiry: pool[0].expiry } : {}), qty: take })
+            pool[0].qty = round4(pool[0].qty - take)
+            need = round4(need - take)
+            if (pool[0].qty <= 0) pool.shift()
+          }
+          if (got.length) l.lots = got
+        }
+      } else {
+        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc: rec.id, ref: number, date }, rec))
+      }
       setValuation(ctx.ws, p, oldValue - issue)
       reorderAlert(ctx, p)
     }
@@ -952,7 +996,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       priceDiff = round2(priceDiff + (oldValue + lineValue - target))
       diffBy.push({ cc: l.cc, amount: round2(oldValue + lineValue - target) })
       received = round2(received + lineValue)
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(unitCost), value: round2(target - oldValue), doc: rec.id, ref: number, date }, rec))
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(unitCost), value: round2(target - oldValue), doc: rec.id, ref: number, date, ...(l.lot ? { lot: l.lot, ...(l.expiry ? { expiry: l.expiry } : {}) } : {}) }, rec))
       setValuation(ctx.ws, p, target)
     }
     journal(ctx, {
@@ -2297,6 +2341,9 @@ export interface Adjustment {
   date: string
   /** stock you had on the day you started with Nasq360 (credited to opening balance equity) */
   opening?: boolean
+  /** the batch added to or taken from (a write-off of an expired batch), and its expiry when adding */
+  lot?: string
+  expiry?: string
 }
 
 /** Changes the stock of one product outside a document (damage, loss, found, opening stock), with its accounting. */
@@ -2312,6 +2359,13 @@ export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
   if (!ISO_DATE.test(date)) throw new EngineError('Choose the date')
   const reason = String(a.reason ?? '').trim()
   if (reason.length < 3) throw new EngineError('Give the reason for the adjustment')
+  const lot = a.lot ? String(a.lot).trim().slice(0, 40) : ''
+  const expiry = a.expiry && ISO_DATE.test(String(a.expiry)) ? String(a.expiry) : undefined
+  if (lot && qty < 0) {
+    const have = lotsOf(ctx.ws, p.id).find((b) => b.lot === lot)?.qty ?? 0
+    if (have < -qty) throw new EngineError(`Batch ${lot} of ${p.values.name} has ${have} on hand`)
+  }
+  const batch = lot ? { lot, ...(expiry ? { expiry } : {}) } : {}
   const number = ref ?? nextNumber(ctx, 'ADJ', date, Boolean(ctx.sample))
   const oldQty = onHand(ctx.ws, p.id)
   const oldValue = stockValue(ctx.ws, p)
@@ -2322,19 +2376,19 @@ export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
     if (!(unit >= 0)) throw new EngineError('The cost per unit can’t be negative')
     const target = oldQty < 0 ? round2((oldQty + qty) * unit) : round2(oldValue + qty * unit)
     const value = round2(target - oldValue)
-    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unit), value, doc: '', ref: number, date }))
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unit), value, doc: '', ref: number, date, ...batch }))
     journal(ctx, { date, ref: number, memo: `${a.opening ? 'Opening stock' : 'Stock adjustment'}: ${p.values.name} +${qty} (${reason})`, lines: [side('1300', value), side(other, -value)] })
     setValuation(ctx.ws, p, target)
   } else {
     const q = -qty
     if (!ctx.schema.company.allowNegativeStock && oldQty < q) throw new EngineError(`Not enough stock of ${p.values.name}: ${oldQty} on hand`)
     const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
-    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost, value: -issue, doc: '', ref: number, date }))
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost, value: -issue, doc: '', ref: number, date, ...batch }))
     journal(ctx, { date, ref: number, memo: `Stock adjustment: ${p.values.name} −${q} (${reason})`, lines: [side(other, issue), side('1300', -issue)] })
     setValuation(ctx.ws, p, oldValue - issue)
     reorderAlert(ctx, p)
   }
-  log(ctx, `adjusted stock by ${qty > 0 ? '+' : ''}${qty} (${reason})`, p)
+  log(ctx, lot ? `adjusted batch ${lot} by ${qty > 0 ? '+' : ''}${qty} (${reason})` : `adjusted stock by ${qty > 0 ? '+' : ''}${qty} (${reason})`, p)
   return number
 }
 
