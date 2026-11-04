@@ -1,5 +1,5 @@
 // Designing an Excel report, used on the Excel reports page and in Customise system: what each row is, the columns
-// (picked list by list, from the row's own list, the lists it links to and the lists that link back to it), the totals,
+// (from any list connected to the row, either way, up to four links away, several records combined), the totals,
 // the filters and the charts, with a live preview. Saving applies at once for everyone who may open it.
 import { useMemo, useState } from 'react'
 import { BarChart3, ChevronDown, ChevronUp, FileSpreadsheet, LineChart, Link2, PieChart, Plus, Save, Search, Trash2, X } from 'lucide-react'
@@ -9,8 +9,9 @@ import { FilterRow, fieldOptions } from '../builder/ReportsTab'
 import { moduleById, uid, type AppSchema } from '../lib/schema'
 import type { User, Workspace } from '../lib/types'
 import {
-  chartTitle, chartValueLabel, columnChoices, columnKind, columnLabel, runSheet, totalOf, unlinkedModules, TOTAL_LABEL,
-  type ColumnChoice, type SheetChart, type SheetChartType, type SheetReportDef, type TotalOp,
+  AGG_NAME, chartTitle, chartValueLabel, columnCombine, columnKind, columnLabel, countColumn, listName, listValues, normalizePath, runSheet, sheetSources,
+  sourceColumn, sourceTitle, totalOf, unlinkedModules, withCombine, TOTAL_LABEL,
+  type Agg, type SheetChart, type SheetChartType, type SheetReportDef, type TotalOp,
 } from '../lib/sheets'
 import { moduleAreas, AREA_INFO } from '../lib/areas'
 import { N_, useLang } from '../lib/i18n'
@@ -22,36 +23,31 @@ const CHART_TYPES: { id: SheetChartType; label: string; icon: typeof BarChart3 }
   { id: 'pie', label: N_('Donut'), icon: PieChart },
 ]
 
-interface Source { key: string; title: string; sub: string; moduleId?: string; back: boolean; items: ColumnChoice[] }
+interface Item { path: string[]; label: string; key: string }
+interface Source { key: string; title: string; sub: string; badge?: string; many: boolean; items: Item[] }
 
-/** The places columns can come from, in the order a person thinks of them: the row, its line, its links, what links back. */
+/** A column's identity in the picker: where it goes and what it reads (not how several values are combined). */
+const pickKey = (path: string[]) => normalizePath(path).filter((s) => !s.startsWith('a:') || s === 'a:count').join('|')
+
+/** Every place on the map of the data a column can come from, with its values ready to add. */
 function sources(schema: AppSchema, sheet: SheetReportDef, tr: (s: string) => string): Source[] {
-  const base = moduleById(schema, sheet.module)
-  const area = (id?: string) => { const m = id ? moduleById(schema, id) : undefined; return m ? moduleAreas(schema, m).map((a) => tr(AREA_INFO[a].name)).join(' · ') : '' }
-  const out = new Map<string, Source>()
-  for (const c of columnChoices(schema, sheet.module, Boolean(sheet.perLine))) {
-    const key = c.via.join('|')
-    let s = out.get(key)
-    if (!s) {
-      const m = c.moduleId ? moduleById(schema, c.moduleId) : undefined
-      let title: string
-      let back = false
-      if (c.via.length === 0) title = tr('This {a}').replace('{a}', base?.singular ?? '')
-      else if (c.via[0] === '#line') title = c.via.length === 1 ? tr('Each line (product sold)') : tr('The product on the line')
-      else if (c.via[0] === '#rev') {
-        back = true
-        const twice = (m?.fields.filter((g) => g.type === 'relation' && g.target === sheet.module).length ?? 0) > 1
-        title = tr('{a} of this {b}').replace('{a}', m?.name ?? '').replace('{b}', base?.singular ?? '') + (twice ? ` (${moduleById(schema, c.via[1])?.fields.find((g) => g.key === c.via[2])?.label})` : '')
-      } else if (c.via[0] === '#revline') { back = true; title = tr('{a}: lines with this product').replace('{a}', m?.name ?? '') }
-      else title = c.via.join(' › ')
-      s = { key, title, sub: [m?.name, area(c.moduleId)].filter(Boolean).join(' · '), moduleId: c.moduleId, back, items: [] }
-      out.set(key, s)
+  const area = (id: string) => { const m = moduleById(schema, id); return m ? moduleAreas(schema, m).map((a) => tr(AREA_INFO[a].name)).join(' · ') : '' }
+  return sheetSources(schema, sheet.module, Boolean(sheet.perLine)).map((src) => {
+    const real = src.list.startsWith('#lines:') ? src.list.slice(7) : src.list
+    const items: Item[] = listValues(schema, src.list).map((v) => { const path = sourceColumn(src, v.key, v.kind); return { path, label: tr(v.label), key: pickKey(path) } })
+    if (src.many) { const path = countColumn(src); items.unshift({ path, label: tr('How many'), key: pickKey(path) }) }
+    return {
+      key: src.key,
+      title: sourceTitle(schema, sheet, src, tr),
+      sub: [listName(schema, src.list, tr), area(real)].filter(Boolean).join(' · '),
+      badge: real,
+      many: src.many,
+      items,
     }
-    s.items.push(c)
-  }
-  return [...out.values()]
+  })
 }
-const choiceLabel = (c: ColumnChoice, tr: (s: string) => string) => tr(c.label).replace('{a}', c.arg ? tr(c.arg) : '')
+
+const COMBINE: Record<string, Agg[]> = { number: ['sum', 'avg', 'min', 'max', 'count', 'list'], date: ['max', 'min', 'count', 'list'], text: ['list', 'count'], none: ['count'] }
 
 export function SheetEditor({ schema, preview, user, sample, initial, isNew, onSave, onRemove, onClose }: {
   schema: AppSchema
@@ -77,13 +73,13 @@ export function SheetEditor({ schema, preview, user, sample, initial, isNew, onS
   const srcs = useMemo(() => sources(schema, sheet, tr), [schema, sheet, tr])
   const current = srcs.find((s) => s.key === src) ?? srcs[0]
   const unlinked = useMemo(() => unlinkedModules(schema, sheet.module, Boolean(sheet.perLine)), [schema, sheet.module, sheet.perLine])
-  const used = new Set(sheet.columns.map((c) => c.path.join('.')))
+  const used = new Set(sheet.columns.map((c) => pickKey(c.path)))
   const result = useMemo(() => runSheet(preview, schema, user, sheet, { tr }), [preview, schema, user, sheet, tr])
   const fields = mod ? fieldOptions(mod) : []
   const needle = q.trim().toLowerCase()
-  const found = needle ? srcs.map((s) => ({ ...s, items: s.items.filter((c) => `${s.title} ${choiceLabel(c, tr)}`.toLowerCase().includes(needle)) })).filter((s) => s.items.length) : []
+  const found = needle ? srcs.map((s) => ({ ...s, items: s.items.filter((c) => `${s.title} ${c.label}`.toLowerCase().includes(needle)) })).filter((s) => s.items.length) : []
   const numericCols = sheet.columns.filter((c) => columnKind(schema, sheet, c) === 'number')
-  const add = (c: ColumnChoice) => edit((s) => { s.columns.push({ id: uid('c'), path: c.path }) })
+  const add = (c: Item) => edit((s) => { s.columns.push({ id: uid('c'), path: c.path }) })
   const moveCol = (i: number, dir: -1 | 1) => edit((s) => {
     const j = i + dir
     if (j < 0 || j >= s.columns.length) return
@@ -101,14 +97,25 @@ export function SheetEditor({ schema, preview, user, sample, initial, isNew, onS
     edit((s) => { s.charts = [...(s.charts ?? []), { id: uid('ch'), type: 'bar', by: by.id, ...(value ? { value: value.id, op: 'sum' as const } : { op: 'count' as const }) }] })
   }
   const setChart = (i: number, patch: Partial<SheetChart>) => edit((s) => { s.charts![i] = { ...s.charts![i], ...patch } })
-  const chips = (items: ColumnChoice[]) => (
+  const chips = (items: Item[]) => (
     <div className="sheet-chips">
-      {items.map((c) => {
-        const k = c.path.join('.')
-        return <button key={k} className={`chip ${used.has(k) ? 'on' : ''}`} disabled={used.has(k)} onClick={() => add(c)}>{used.has(k) ? '✓ ' : '+ '}{choiceLabel(c, tr)}</button>
-      })}
+      {items.map((c) => <button key={c.key} className={`chip ${used.has(c.key) ? 'on' : ''}`} disabled={used.has(c.key)} onClick={() => add(c)}>{used.has(c.key) ? '✓ ' : '+ '}{c.label}</button>)}
     </div>
   )
+  const tab = (s: Source) => {
+    const m = s.badge ? moduleById(schema, s.badge) : undefined
+    const n = s.items.filter((c) => used.has(c.key)).length
+    return (
+      <button key={s.key} role="tab" aria-selected={s.key === current?.key} className={`sheet-source ${s.key === current?.key ? 'on' : ''}`} onClick={() => setSrc(s.key)}>
+        <span className="badge" style={{ background: m?.color ?? 'var(--success)' }}>{m ? <Icon name={m.icon} size={13} /> : <FileSpreadsheet size={13} />}</span>
+        <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+          <b>{s.title}{s.many && <Link2 size={11} style={{ marginInlineStart: 4 }} aria-label={tr('several for each row: combined')} />}</b>
+          <span className="tiny muted">{s.sub}</span>
+        </span>
+        {n > 0 && <span className="count-soft">{n}</span>}
+      </button>
+    )
+  }
 
   return (
     <div className="stack sheet-designer">
@@ -153,25 +160,15 @@ export function SheetEditor({ schema, preview, user, sample, initial, isNew, onS
           ) : (
             <div className="sheet-sources">
               <div className="sheet-source-tabs" role="tablist">
-                {srcs.map((s) => {
-                  const m = s.moduleId ? moduleById(schema, s.moduleId) : undefined
-                  const n = s.items.filter((c) => used.has(c.path.join('.'))).length
-                  return (
-                    <button key={s.key} role="tab" aria-selected={s.key === current?.key} className={`sheet-source ${s.key === current?.key ? 'on' : ''}`} onClick={() => setSrc(s.key)}>
-                      <span className="badge" style={{ background: m?.color ?? 'var(--success)' }}>{m ? <Icon name={m.icon} size={13} /> : <FileSpreadsheet size={13} />}</span>
-                      <span className="stack" style={{ gap: 0, minWidth: 0 }}>
-                        <b>{s.title}{s.back && <Link2 size={11} style={{ marginInlineStart: 4 }} aria-label={tr('links back')} />}</b>
-                        <span className="tiny muted">{s.sub || tr('the line')}</span>
-                      </span>
-                      {n > 0 && <span className="count-soft">{n}</span>}
-                    </button>
-                  )
-                })}
+                <span className="sheet-source-group">{tr('One for each row')}</span>
+                {srcs.filter((x) => !x.many).map(tab)}
+                {srcs.some((x) => x.many) && <span className="sheet-source-group">{tr('Several for each row (counted, added up or listed)')}</span>}
+                {srcs.filter((x) => x.many).map(tab)}
               </div>
               <div className="sheet-source-body">
                 {current && (
                   <>
-                    <span className="tiny muted">{current.back ? tr('Counted and added up for each row: only documents that count (not drafts, voided or declined).') : tr('Click a field to add it as a column.')}</span>
+                    <span className="tiny muted">{current.many ? tr('Each row has several of these: a column adds them up, takes the latest, counts or lists them (you can change how in step 3). Drafts, voided and declined documents are left out.') : tr('Click a field to add it as a column.')}</span>
                     {chips(current.items)}
                   </>
                 )}
@@ -194,6 +191,7 @@ export function SheetEditor({ schema, preview, user, sample, initial, isNew, onS
           {sheet.columns.map((c, i) => {
             const def = columnLabel(schema, sheet, { ...c, label: undefined }, tr)
             const kind = columnKind(schema, sheet, c)
+            const cmb = columnCombine(schema, sheet, c)
             const ops: TotalOp[] = kind === 'number' ? ['sum', 'avg', 'min', 'max', 'none'] : ['none', 'count']
             return (
               <div key={c.id} className="sheet-col">
@@ -202,6 +200,14 @@ export function SheetEditor({ schema, preview, user, sample, initial, isNew, onS
                   <input value={c.label ?? ''} placeholder={def} onChange={(e) => edit((s) => { s.columns[i].label = e.target.value || undefined })} aria-label={tr('Column title')} />
                   <span className="tiny muted">{def}</span>
                 </div>
+                {cmb.many && (
+                  <label className="sheet-total">
+                    <span className="tiny muted">{tr('Combine')}</span>
+                    <select value={cmb.op ?? 'list'} onChange={(e) => edit((s) => { s.columns[i] = withCombine(s.columns[i], e.target.value as Agg) })}>
+                      {COMBINE[cmb.valueKind ?? 'none'].map((o) => <option key={o} value={o}>{tr(AGG_NAME[o])}</option>)}
+                    </select>
+                  </label>
+                )}
                 <label className="sheet-total">
                   <span className="tiny muted">{tr('Total')}</span>
                   <select value={totalOf(schema, sheet, c)} onChange={(e) => edit((s) => { s.columns[i].total = e.target.value as TotalOp })}>

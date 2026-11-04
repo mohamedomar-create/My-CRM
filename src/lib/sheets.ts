@@ -72,194 +72,363 @@ export const LINE_KEYS: Record<string, { label: string; numeric?: boolean }> = {
   net: { label: N_('Net (before VAT)'), numeric: true },
 }
 export const TOTAL_LABEL: Record<TotalOp, string> = { sum: N_('Sum'), avg: N_('Average'), min: N_('Lowest'), max: N_('Highest'), count: N_('Count'), none: N_('No total') }
-const AGG_LABEL = { sum: N_('Sum of {a}'), avg: N_('Average of {a}'), max: N_('Highest {a}'), min: N_('Lowest {a}'), latest: N_('Latest {a}'), earliest: N_('Earliest {a}'), count: N_('Number of {a}') }
-type Agg = 'count' | 'sum' | 'avg' | 'min' | 'max'
-const AGGS: Agg[] = ['count', 'sum', 'avg', 'min', 'max']
+const AGG_LABEL = { sum: N_('Sum of {a}'), avg: N_('Average of {a}'), max: N_('Highest {a}'), min: N_('Lowest {a}'), latest: N_('Latest {a}'), earliest: N_('Earliest {a}'), count: N_('Number of {a}'), list: N_('{a} (all)') }
+export const AGG_NAME: Record<Agg, string> = { sum: N_('Add up'), avg: N_('Average'), min: N_('Lowest / earliest'), max: N_('Highest / latest'), count: N_('Count'), list: N_('List them') }
 /** Documents that never happened, or not yet, are left out of what is added up backwards. */
 const COUNTS = (r: Rec) => !r.status || !['void', 'draft', 'declined'].includes(r.status)
 
 type Tr = (s: string) => string
 const fill = (s: string, a: string, b = '') => s.replace('{a}', a).replace('{b}', b)
-const isRev = (path: string[]) => path[0] === '<' || path[0] === '<line'
-
-/**
- * One column a person can add. `via` names where it comes from (empty = the list itself; ["#line"] = the line;
- * ["#line", "#product"] = the line's product; ["#rev", list, field] = another list that links to it; ["#revline",
- * list] = the lines of documents with this product; otherwise the labels of the links), so the picker can group and
- * title it in the person's language. `label` may hold "{a}", filled with `arg`.
+/* ---------------- the map of the data ----------------
+ * Every list and every link between lists, both ways, with the lines of documents as a list of their own
+ * ("#lines:<document list>", whose links are its product and its document). A column's path walks this map from the
+ * row: "f:<field>" follows a link field to the one record it names, "b:<list>:<field>" goes back to the records of
+ * another list that name the current one (many), "line" is the row's own line (one row per product sold), then
+ * "v:<field>" reads a value and "a:<sum|avg|min|max|count|list>" combines what several records give.
+ * Paths saved by earlier versions (["customer","name"], ["line","qty"], ["<", list, field, op, value]) still work.
  */
-export interface ColumnChoice { path: string[]; label: string; arg?: string; moduleId?: string; via: string[] }
+const LINES = '#lines:'
+export const linesOf = (docModule: string) => `${LINES}${docModule}`
+const isLines = (id: string) => id.startsWith(LINES)
+const docOf = (id: string) => id.slice(LINES.length)
+export type Agg = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'list'
+export const AGGS: Agg[] = ['sum', 'avg', 'min', 'max', 'count', 'list']
+/** The farthest a column may be from the row, in links. */
+export const MAX_HOPS = 4
 
-/** The links from another list to this one (a customer's invoices, deals, quotations). */
-function backLinks(schema: AppSchema, base: ModuleDef) {
-  return schema.modules.filter((r) => r.id !== base.id).flatMap((r) => r.fields.filter((g) => g.type === 'relation' && g.target === base.id).map((g) => ({ r, g })))
+type Step = { t: 'line' } | { t: 'f'; key: string } | { t: 'b'; mod: string; key: string } | { t: 'v'; key: string } | { t: 'a'; op: Agg }
+
+/** A path saved by an earlier version, in today's steps. */
+export function normalizePath(path: string[]): string[] {
+  if (path.every((s) => s === 'line' || /^[fbva]:/.test(s))) return path
+  if (path[0] === '<') {
+    const [, r, g, op, v] = path
+    const out = [`b:${r}:${g}`]
+    if (v?.startsWith('line.')) out.push(`b:${linesOf(r)}:doc`, `v:${v.slice(5)}`)
+    else if (v) out.push(`v:${v}`)
+    return [...out, `a:${op}`]
+  }
+  if (path[0] === '<line') {
+    const [, d, op, lk] = path
+    return op === 'count' ? [`b:${linesOf(d)}:product`, 'f:doc', 'a:count'] : [`b:${linesOf(d)}:product`, `v:${lk}`, `a:${op}`]
+  }
+  const out: string[] = []
+  for (let i = 0; i < path.length; i++) {
+    const k = path[i]
+    if (k === 'line') {
+      out.push('line')
+      const lk = path[i + 1]
+      if (lk === 'product' && path.length > i + 2) { out.push('f:product'); i++; continue }
+      if (lk) out.push(`v:${lk}`)
+      break
+    }
+    out.push(i === path.length - 1 ? `v:${k}` : `f:${k}`)
+  }
+  return out
 }
-
-/**
- * Every column that can be added to a sheet of this list: its own fields, the fields of each list it links to (and of
- * the lists those link to), the lists that link back to it (counted and added up), and for line rows the line's
- * values and its product's fields; for products, what the documents' lines sold and bought.
- */
-export function columnChoices(schema: AppSchema, moduleId: string, perLine: boolean): ColumnChoice[] {
-  const base = moduleById(schema, moduleId)
-  if (!base) return []
-  const out: ColumnChoice[] = []
-  // its title first (the customer's name, the invoice's customer), then the number, status and dates, then the rest
-  const title = base.fields.filter((f) => f.key === base.titleField)
-  for (const f of title) out.push({ path: [f.key], label: f.label, moduleId: base.id, via: [] })
-  for (const [k, v] of Object.entries(RECORD_KEYS)) if (v.applies(base)) out.push({ path: [k], label: v.label, moduleId: base.id, via: [] })
-  for (const f of base.fields.filter((x) => x.key !== base.titleField)) out.push({ path: [f.key], label: f.label, moduleId: base.id, via: [] })
-  if (perLine && base.lines) {
-    for (const [k, v] of Object.entries(LINE_KEYS)) out.push({ path: ['line', k], label: v.label, via: ['#line'] })
-    const products = schema.modules.find((m) => m.role === 'products')
-    if (products) for (const f of products.fields) out.push({ path: ['line', 'product', f.key], label: f.label, moduleId: products.id, via: ['#line', '#product'] })
-  }
-  // One and two links away (the invoice's customer; the deal's customer's owner).
-  for (const f of base.fields.filter((x) => x.type === 'relation' && x.target)) {
-    const t = moduleById(schema, f.target!)
-    if (!t || t.id === base.id) continue
-    for (const g of t.fields) out.push({ path: [f.key, g.key], label: g.label, moduleId: t.id, via: [f.label] })
-    for (const g of t.fields.filter((x) => x.type === 'relation' && x.target && x.target !== base.id && x.target !== t.id)) {
-      const u = moduleById(schema, g.target!)
-      if (!u) continue
-      for (const h of u.fields) out.push({ path: [f.key, g.key, h.key], label: h.label, moduleId: u.id, via: [f.label, g.label] })
-    }
-  }
-  // Backwards: the records of other lists that link to this one, counted and added up.
-  for (const { r, g } of backLinks(schema, base)) {
-    const via = ['#rev', r.id, g.key]
-    const p = (op: Agg, v?: string) => ['<', r.id, g.key, op, ...(v ? [v] : [])]
-    out.push({ path: p('count'), label: AGG_LABEL.count, arg: r.name, moduleId: r.id, via })
-    for (const f of r.fields.filter((x) => isNumeric(x) && x.type !== 'relation')) out.push({ path: p('sum', f.key), label: AGG_LABEL.sum, arg: f.label, moduleId: r.id, via })
-    for (const f of r.fields.filter((x) => x.type === 'date')) out.push({ path: p('max', f.key), label: AGG_LABEL.latest, arg: f.label, moduleId: r.id, via })
-    if (r.lines) for (const lk of ['qty', 'net']) out.push({ path: p('sum', `line.${lk}`), label: AGG_LABEL.sum, arg: LINE_KEYS[lk].label, moduleId: r.id, via })
-  }
-  // A product: what the lines of each kind of document sold or bought.
-  if (base.role === 'products') {
-    for (const d of schema.modules.filter((m) => m.lines)) {
-      const via = ['#revline', d.id]
-      out.push({ path: ['<line', d.id, 'count'], label: AGG_LABEL.count, arg: d.name, moduleId: d.id, via })
-      for (const lk of ['qty', 'net']) out.push({ path: ['<line', d.id, 'sum', lk], label: AGG_LABEL.sum, arg: LINE_KEYS[lk].label, moduleId: d.id, via })
-      out.push({ path: ['<line', d.id, 'avg', 'price'], label: AGG_LABEL.avg, arg: LINE_KEYS.price.label, moduleId: d.id, via })
-    }
+function parse(path: string[]): Step[] | null {
+  const out: Step[] = []
+  for (const s of normalizePath(path)) {
+    if (s === 'line') out.push({ t: 'line' })
+    else if (s.startsWith('f:')) out.push({ t: 'f', key: s.slice(2) })
+    else if (s.startsWith('v:')) out.push({ t: 'v', key: s.slice(2) })
+    else if (s.startsWith('a:')) { const op = s.slice(2) as Agg; if (!AGGS.includes(op)) return null; out.push({ t: 'a', op }) }
+    else if (s.startsWith('b:')) { const rest = s.slice(2); const i = rest.lastIndexOf(':'); if (i <= 0) return null; out.push({ t: 'b', mod: rest.slice(0, i), key: rest.slice(i + 1) }) }
+    else return null
   }
   return out
 }
 
-/** The lists a sheet of this list can't take columns from, because nothing links them to it. */
+/** A list on the map: a real one, or the lines of a kind of document. */
+interface MapList { id: string; real?: ModuleDef; doc?: ModuleDef }
+function mapList(schema: AppSchema, id: string): MapList | null {
+  if (isLines(id)) { const d = moduleById(schema, docOf(id)); return d?.lines ? { id, doc: d } : null }
+  const m = moduleById(schema, id)
+  return m ? { id, real: m } : null
+}
+const products = (schema: AppSchema) => schema.modules.find((m) => m.role === 'products')
+/** The list a view is checked against: the lines of an invoice are seen with the invoice. */
+const viewList = (id: string) => (isLines(id) ? docOf(id) : id)
+
+/** One way out of a list: the step, where it leads, and whether it leads to many records. */
+interface Edge { step: string; to: string; many: boolean }
+function edges(schema: AppSchema, from: string): Edge[] {
+  const here = mapList(schema, from)
+  if (!here) return []
+  const out: Edge[] = []
+  if (here.doc) {
+    const p = products(schema)
+    if (p) out.push({ step: 'f:product', to: p.id, many: false })
+    out.push({ step: 'f:doc', to: here.doc.id, many: false })
+    return out
+  }
+  const m = here.real!
+  for (const f of m.fields) if (f.type === 'relation' && f.target && moduleById(schema, f.target)) out.push({ step: `f:${f.key}`, to: f.target, many: false })
+  for (const r of schema.modules) for (const g of r.fields) if (g.type === 'relation' && g.target === m.id) out.push({ step: `b:${r.id}:${g.key}`, to: r.id, many: true })
+  if (m.lines) out.push({ step: `b:${linesOf(m.id)}:doc`, to: linesOf(m.id), many: true })
+  if (m.role === 'products') for (const d of schema.modules.filter((x) => x.lines)) out.push({ step: `b:${linesOf(d.id)}:product`, to: linesOf(d.id), many: true })
+  return out
+}
+
+/** Where a path of steps (without the value) ends, and whether it reaches many records. Null = a step that no longer exists. */
+function walkHops(schema: AppSchema, base: string, hops: Step[]): { at: string; many: boolean; labels: string[]; lists: string[] } | null {
+  let at = base
+  let many = false
+  const labels: string[] = []
+  const lists: string[] = []
+  for (const h of hops) {
+    const here = mapList(schema, at)
+    if (!here) return null
+    if (h.t === 'line') {
+      if (at !== base || !here.real?.lines) return null
+      at = linesOf(at)
+      continue
+    }
+    if (h.t === 'f') {
+      if (here.doc) {
+        // "Invoices › Its lines › Product" reads "Invoices › Products"; "Lines of Invoices › Invoice" reads "Invoices"
+        const last = labels[labels.length - 1]
+        if (h.key === 'product') { const p = products(schema); if (!p) return null; if (last === LINES_LABEL) { labels.pop(); labels.push(p.name) } else labels.push(p.singular); at = p.id }
+        else if (h.key === 'doc') { if (last?.startsWith(LINES_OF)) { labels.pop(); labels.push(here.doc.name) } else labels.push(here.doc.singular); at = here.doc.id }
+        else return null
+      } else {
+        const f = fieldByKey(here.real, h.key)
+        if (!f || f.type !== 'relation' || !f.target || !moduleById(schema, f.target)) return null
+        labels.push(f.label)
+        at = f.target
+      }
+      lists.push(at)
+      continue
+    }
+    if (h.t === 'b') {
+      const there = mapList(schema, h.mod)
+      if (!there) return null
+      if (there.doc) {
+        if (h.key === 'doc' && here.real?.id === there.doc.id) labels.push(LINES_LABEL)
+        else if (h.key === 'product' && here.real?.role === 'products') labels.push(`${LINES_OF}${there.doc.id}`)
+        else return null
+      } else {
+        const g = fieldByKey(there.real, h.key)
+        if (!g || g.type !== 'relation' || g.target !== here.real?.id) return null
+        const twice = there.real!.fields.filter((x) => x.type === 'relation' && x.target === here.real!.id).length > 1
+        labels.push(twice ? `${there.real!.name} (${g.label})` : there.real!.name)
+      }
+      many = true
+      at = h.mod
+      lists.push(at)
+      continue
+    }
+    return null
+  }
+  return { at, many, labels, lists }
+}
+// placeholders filled in the person's language when the label is made
+const LINES_LABEL = '\u0001lines'
+const LINES_OF = '\u0001linesof:'
+
+/** The values a list on the map has: its fields and the record's own values, or what each line holds. */
+export function listValues(schema: AppSchema, id: string): { key: string; label: string; kind: ColumnKind; numericTotal: boolean }[] {
+  const l = mapList(schema, id)
+  if (!l) return []
+  if (l.doc) return Object.entries(LINE_KEYS).map(([key, v]) => ({ key, label: v.label, kind: v.numeric ? 'number' as const : 'text' as const, numericTotal: key === 'qty' || key === 'net' }))
+  const m = l.real!
+  const own = m.fields.filter((f) => f.key === m.titleField)
+  const rest = m.fields.filter((f) => f.key !== m.titleField)
+  const fk = (f: FieldDef) => ({ key: f.key, label: f.label, kind: (isNumeric(f) && f.type !== 'relation' ? 'number' : f.type === 'date' ? 'date' : 'text') as ColumnKind, numericTotal: !(f.type === 'percent' || f.type === 'rating' || /price|rate|limit|terms|level/i.test(f.key)) })
+  return [
+    ...own.map(fk),
+    ...Object.entries(RECORD_KEYS).filter(([, v]) => v.applies(m)).map(([key, v]) => ({ key, label: v.label, kind: (key === '#created' ? 'date' : 'text') as ColumnKind, numericTotal: false })),
+    ...rest.map(fk),
+  ]
+}
+
+interface Walked { ok: boolean; at: string; many: boolean; labels: string[]; lists: string[]; value?: { key: string; label: string; kind: ColumnKind; numericTotal: boolean }; op?: Agg; steps: Step[] }
+/** Everything a column's path says: where it goes, what it reads, how several values are combined. */
+function walk(schema: AppSchema, base: string, path: string[]): Walked {
+  const steps = parse(path)
+  const bad: Walked = { ok: false, at: base, many: false, labels: [], lists: [], steps: [] }
+  if (!steps || !steps.length) return bad
+  const hops = steps.filter((s) => s.t === 'line' || s.t === 'f' || s.t === 'b')
+  const vi = steps.findIndex((s) => s.t === 'v')
+  const ai = steps.findIndex((s) => s.t === 'a')
+  // hops first, then at most one value, then at most one way of combining
+  if (steps.slice(0, hops.length).some((s) => s.t === 'v' || s.t === 'a') || (vi >= 0 && vi !== hops.length) || (ai >= 0 && ai !== steps.length - 1) || steps.length > hops.length + 2) return bad
+  const w = walkHops(schema, base, hops)
+  if (!w) return bad
+  let value: Walked['value']
+  if (vi >= 0) {
+    const key = (steps[vi] as { key: string }).key
+    value = listValues(schema, w.at).find((v) => v.key === key)
+    if (!value) return bad
+  }
+  const op = ai >= 0 ? (steps[ai] as { op: Agg }).op : undefined
+  if (!value && op !== 'count') return bad
+  if (w.many && !op) return { ...w, ok: true, value, op: 'list', steps }
+  return { ...w, ok: true, value, op, steps }
+}
+
+/** The kind of what a column shows once combined. */
+function walkedKind(w: Walked): ColumnKind {
+  if (w.op === 'count' || w.op === 'sum' || w.op === 'avg') return 'number'
+  if (w.op === 'list') return 'text'
+  return w.value?.kind ?? 'text'
+}
+
+/** One place on the map a sheet can take columns from, with the way there. */
+export interface SheetSource {
+  key: string
+  /** the steps from the row to it */
+  hops: string[]
+  /** the list it is (or "#lines:<list>") */
+  list: string
+  /** several records for each row (their values are combined) */
+  many: boolean
+  /** the names of the links on the way, in the language of the schema (lines labels are placeholders) */
+  labels: string[]
+}
+
+/**
+ * Every place on the map a sheet of this list can take columns from: the row itself, the row's line, and every list
+ * connected to it within MAX_HOPS links, by the most direct ways (one record before many; shorter first), two ways at
+ * most to each list.
+ */
+export function sheetSources(schema: AppSchema, moduleId: string, perLine: boolean): SheetSource[] {
+  const base = moduleById(schema, moduleId)
+  if (!base) return []
+  const out: SheetSource[] = [{ key: '', hops: [], list: base.id, many: false, labels: [] }]
+  const start: { hops: string[]; at: string; many: number; seen: Set<string> }[] = [{ hops: [], at: base.id, many: 0, seen: new Set([base.id]) }]
+  if (perLine && base.lines) {
+    out.push({ key: 'line', hops: ['line'], list: linesOf(base.id), many: false, labels: [] })
+    start.push({ hops: ['line'], at: linesOf(base.id), many: 0, seen: new Set([base.id, linesOf(base.id)]) })
+    start[0].seen.add(linesOf(base.id))
+  }
+  const found = new Map<string, { hops: string[]; many: number }[]>()
+  let frontier = start
+  for (let depth = 0; depth < MAX_HOPS && frontier.length; depth++) {
+    const next: typeof frontier = []
+    for (const p of frontier) {
+      for (const e of edges(schema, p.at)) {
+        // a list's link to itself (a customer's parent company) may be followed once; otherwise no list twice
+        const self = e.to === p.at && !e.many && !p.hops.includes(e.step)
+        if (p.seen.has(e.to) && !self) continue
+        const q = { hops: [...p.hops, e.step], at: e.to, many: p.many + (e.many ? 1 : 0), seen: new Set([...p.seen, e.to]) }
+        const ways = found.get(e.to) ?? []
+        if (ways.length >= 2 && ways.every((w) => w.many <= q.many)) continue
+        ways.push({ hops: q.hops, many: q.many })
+        ways.sort((a, b) => a.many - b.many || a.hops.length - b.hops.length)
+        found.set(e.to, ways.slice(0, 2))
+        // the parent company's own fields, not everything again through it
+        if (!self) next.push(q)
+      }
+    }
+    // keep going only from the ways that are still among the best two
+    frontier = next.filter((q) => (found.get(q.at) ?? []).some((w) => w.hops === q.hops))
+  }
+  const more: SheetSource[] = []
+  for (const [list, ways] of found) {
+    if (list === base.id || (perLine && list === linesOf(base.id) && ways.every((w) => w.many > 0))) continue
+    for (const w of ways) {
+      const hw = walkHops(schema, base.id, w.hops.map((s) => parse([s])![0]))
+      if (!hw) continue
+      more.push({ key: w.hops.join('/'), hops: w.hops, list, many: w.many > 0, labels: hw.labels })
+    }
+  }
+  more.sort((a, b) => Number(a.many) - Number(b.many) || a.hops.length - b.hops.length || a.labels.join().localeCompare(b.labels.join()))
+  return [...out, ...more]
+}
+
+/** The column a source offers for one of its values (several records: added up, the latest date, or a list). */
+export function sourceColumn(src: SheetSource, valueKey: string, kind: ColumnKind): string[] {
+  const path = [...src.hops, `v:${valueKey}`]
+  if (!src.many) return path
+  return [...path, `a:${kind === 'number' ? 'sum' : kind === 'date' ? 'max' : 'list'}`]
+}
+/** "How many": the number of records a source reaches for each row. */
+export const countColumn = (src: SheetSource): string[] => [...src.hops, 'a:count']
+
+/** The lists nothing connects to a sheet's rows, so it can take nothing from them. */
 export function unlinkedModules(schema: AppSchema, moduleId: string, perLine: boolean): ModuleDef[] {
-  const reach = new Set(columnChoices(schema, moduleId, perLine).map((c) => c.moduleId).filter(Boolean))
-  reach.add(moduleId)
+  const reach = new Set(sheetSources(schema, moduleId, perLine).map((s) => viewList(s.list)))
   return schema.modules.filter((m) => !reach.has(m.id))
 }
 
-/** The title of a backwards column ("Invoices › Sum of Total", "Number of Invoices"). */
-function revLabel(schema: AppSchema, base: ModuleDef | undefined, path: string[], tr: Tr): string {
-  const [kind, rid] = path
-  const r = moduleById(schema, rid)
-  if (!r) return '?'
-  const op = (kind === '<' ? path[3] : path[2]) as Agg
-  const v = kind === '<' ? path[4] : path[3] ? `line.${path[3]}` : undefined
-  if (kind === '<' && (!base || !fieldByKey(r, path[2]) || fieldByKey(r, path[2])!.target !== base.id)) return '?'
-  if (kind === '<line' && !r.lines) return '?'
-  if (!AGGS.includes(op)) return '?'
-  // a list linked by two fields ("Deals (Customer)" and "Deals (Partner)") says which
-  const twice = kind === '<' && base && r.fields.filter((g) => g.type === 'relation' && g.target === base.id).length > 1
-  const name = twice ? `${r.name} (${fieldByKey(r, path[2])!.label})` : r.name
-  if (op === 'count') return fill(tr(AGG_LABEL.count), name)
-  let vl: string
-  let date = false
-  if (v?.startsWith('line.')) {
-    const lk = v.slice(5)
-    if (!LINE_KEYS[lk]?.numeric) return '?'
-    vl = tr(LINE_KEYS[lk].label)
-  } else {
-    const f = fieldByKey(r, v)
-    if (!f) return '?'
-    vl = f.label
-    date = f.type === 'date'
-  }
-  const t = op === 'max' ? (date ? AGG_LABEL.latest : AGG_LABEL.max) : op === 'min' ? (date ? AGG_LABEL.earliest : AGG_LABEL.min) : AGG_LABEL[op]
-  return `${name} › ${fill(tr(t), vl)}`
+/** The placeholders of the lines labels, in the person's language. */
+function nameLabels(schema: AppSchema, labels: string[], tr: Tr) {
+  return labels.map((l) => {
+    if (l === LINES_LABEL) return tr('Its lines')
+    if (l.startsWith(LINES_OF)) { const d = moduleById(schema, l.slice(LINES_OF.length)); return fill(tr('Lines of {a}'), d?.name ?? '') }
+    return l
+  })
+}
+/** The title of a source in the picker ("Customer", "Invoices", "Invoices › Its lines › Product"). */
+export function sourceTitle(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, src: SheetSource, tr: Tr = (s) => s) {
+  if (!src.hops.length) return fill(tr('This {a}'), moduleById(schema, sheet.module)?.singular ?? '')
+  if (src.key === 'line') return tr('Each line (product sold)')
+  return nameLabels(schema, src.labels, tr).join(' › ')
+}
+/** The name of a list on the map ("Products", "Lines of Invoices"). */
+export function listName(schema: AppSchema, id: string, tr: Tr = (s) => s) {
+  const l = mapList(schema, id)
+  if (!l) return ''
+  return l.doc ? fill(tr('Lines of {a}'), l.doc.name) : l.real!.name
 }
 
-/** A column's default title: the field, with the link it came through ("Customer › Name"). */
+/** A column's default title: the links on the way and the field ("Customer › Name", "Invoices › Sum of Total"). */
 export function columnLabel(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn, tr: Tr = (s) => s): string {
   if (col.label?.trim()) return col.label.trim()
-  let m = moduleById(schema, sheet.module)
-  if (isRev(col.path)) return revLabel(schema, m, col.path, tr)
-  const names: string[] = []
-  for (let i = 0; i < col.path.length && m; i++) {
-    const k = col.path[i]
-    if (k === 'line') {
-      const lk = col.path[i + 1]
-      if (lk === 'product' && col.path.length > i + 2) { m = schema.modules.find((x) => x.role === 'products'); names.push(m?.singular ?? tr('Product')); i++; continue }
-      names.push(LINE_KEYS[lk] ? tr(LINE_KEYS[lk].label) : '?')
-      break
-    }
-    if (RECORD_KEYS[k]) { names.push(tr(RECORD_KEYS[k].label)); break }
-    const f = fieldByKey(m, k)
-    if (!f) { names.push('?'); break }
-    names.push(f.label)
-    if (f.type === 'relation' && i < col.path.length - 1) m = moduleById(schema, f.target ?? '')
+  const w = walk(schema, sheet.module, col.path)
+  if (!w.ok) return '?'
+  const names = nameLabels(schema, w.labels, tr)
+  const vl = w.value ? tr(w.value.label) : ''
+  if (w.op === 'count' && !w.value) {
+    // "Number of Customers": the list counted, by its plural name
+    names.pop()
+    return [...names, fill(tr(AGG_LABEL.count), listName(schema, w.at, tr))].join(' › ')
   }
-  return names.join(' › ')
+  if (!w.op) return [...names, vl].join(' › ')
+  const date = w.value?.kind === 'date'
+  const t = w.op === 'max' ? (date ? AGG_LABEL.latest : AGG_LABEL.max) : w.op === 'min' ? (date ? AGG_LABEL.earliest : AGG_LABEL.min) : AGG_LABEL[w.op]
+  return [...names, fill(tr(t), vl)].join(' › ')
 }
 
 export type ColumnKind = 'number' | 'date' | 'text'
 /** Whether a column holds numbers, dates or text (for totals, charts and how it is shown). */
 export function columnKind(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): ColumnKind {
-  const p = col.path
-  if (isRev(p)) {
-    const op = p[0] === '<' ? p[3] : p[2]
-    const v = p[0] === '<' ? p[4] : undefined
-    if ((op === 'max' || op === 'min') && v && !v.startsWith('line.') && fieldByKey(moduleById(schema, p[1]), v)?.type === 'date') return 'date'
-    return 'number'
-  }
-  let m = moduleById(schema, sheet.module)
-  for (let i = 0; i < p.length && m; i++) {
-    const k = p[i]
-    if (k === 'line') {
-      if (p[i + 1] === 'product' && p.length > i + 2) { m = schema.modules.find((x) => x.role === 'products'); i++; continue }
-      return LINE_KEYS[p[i + 1]]?.numeric ? 'number' : 'text'
-    }
-    if (k === '#created') return 'date'
-    if (RECORD_KEYS[k]) return 'text'
-    const f = fieldByKey(m, k)
-    if (!f) return 'text'
-    if (f.type === 'relation' && i < p.length - 1) { m = moduleById(schema, f.target ?? ''); continue }
-    return isNumeric(f) && f.type !== 'relation' ? 'number' : f.type === 'date' ? 'date' : 'text'
-  }
-  return 'text'
+  const w = walk(schema, sheet.module, col.path)
+  return w.ok ? walkedKind(w) : 'text'
+}
+/** Whether a column combines several records for each row, and how. */
+export function columnCombine(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): { many: boolean; op?: Agg; valueKind?: ColumnKind } {
+  const w = walk(schema, sheet.module, col.path)
+  return { many: w.ok && w.many, op: w.op, valueKind: w.value?.kind }
+}
+/** The same column, combining its records another way. */
+export function withCombine(col: SheetColumn, op: Agg): SheetColumn {
+  const steps = normalizePath(col.path).filter((s) => !s.startsWith('a:'))
+  return { ...col, path: [...(op === 'count' ? steps.filter((s) => !s.startsWith('v:')) : steps), `a:${op}`], total: undefined }
 }
 
-/** The total a column has when none was chosen: amounts and quantities are added up; prices, rates and text are not. */
+/**
+ * The total a column has when none was chosen: amounts, quantities and counts are added up; prices, rates and text are
+ * not, nor a linked record's own number repeated on every row (a product's price on each line it was sold).
+ */
 export function defaultTotal(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): TotalOp {
-  if (columnKind(schema, sheet, col) !== 'number') return 'none'
-  const p = col.path
-  if (isRev(p)) return (p[0] === '<' ? p[3] : p[2]) === 'avg' ? 'none' : 'sum'
-  if (p[0] === 'line' && p.length === 2) return p[1] === 'qty' || p[1] === 'net' ? 'sum' : 'none'
-  // the field the column ends on
-  let m = moduleById(schema, sheet.module)
-  let f: FieldDef | undefined
-  for (let i = 0; i < p.length && m; i++) {
-    if (p[i] === 'line') { if (p[i + 1] === 'product') { m = schema.modules.find((x) => x.role === 'products'); i++; continue } break }
-    f = fieldByKey(m, p[i])
-    if (f?.type === 'relation') m = moduleById(schema, f.target ?? '')
-  }
-  if (!f || f.type === 'percent' || f.type === 'rating' || /price|rate|limit|terms|level/i.test(f.key)) return 'none'
-  // a product's own numbers (its price, stock) on every line it was sold would be counted again and again
-  if (p[0] === 'line') return 'none'
-  return 'sum'
+  const w = walk(schema, sheet.module, col.path)
+  if (!w.ok || walkedKind(w) !== 'number') return 'none'
+  if (w.op === 'count' || w.op === 'sum') return 'sum'
+  if (w.op) return 'none'
+  const forward = w.steps.some((s) => s.t === 'f')
+  return !forward && w.value?.numericTotal ? 'sum' : 'none'
 }
 export const totalOf = (schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): TotalOp => col.total ?? defaultTotal(schema, sheet, col)
 
 type Cell = string | number
 interface SCtx {
   ws: Workspace; schema: AppSchema; user: User; hideCosts: Set<string>; tr: Tr
-  rev: Map<string, Map<string, Rec[]>>
-  revLines: Map<string, Map<string, { rec: Rec; line: Line }[]>>
+  index: Map<string, Map<string, Node[]>>
 }
+/** A place on the map for one row: a record, or one line of a document. */
+interface Node { rec: Rec; line?: Line }
 
 const STATUS: Record<string, string> = { draft: N_('Draft'), posted: N_('Posted'), partial: N_('Partly paid'), paid: N_('Paid in full'), void: N_('Voided'), sent: N_('Sent'), accepted: N_('Accepted'), declined: N_('Declined'), invoiced: N_('Invoice made') }
 
@@ -272,120 +441,109 @@ function fieldCell(c: SCtx, rec: Rec, f: FieldDef): Cell {
   return displayValue(c.ws, c.schema, f, v)
 }
 
-/** The records of a list that link to each record through a field, gathered once per sheet. */
-function revIndex(c: SCtx, rid: string, gkey: string) {
-  const key = `${rid}|${gkey}`
-  let idx = c.rev.get(key)
-  if (!idx) {
-    idx = new Map()
-    for (const r of list(c.ws, rid)) {
-      if (!COUNTS(r)) continue
-      const to = String(r.values[gkey] ?? '')
-      if (!to) continue
-      const arr = idx.get(to) ?? []
-      arr.push(r)
-      idx.set(to, arr)
-    }
-    c.rev.set(key, idx)
-  }
-  return idx
-}
-function lineIndex(c: SCtx, did: string) {
-  let idx = c.revLines.get(did)
-  if (!idx) {
-    idx = new Map()
-    for (const r of list(c.ws, did)) {
-      if (!COUNTS(r)) continue
+/** The records (or lines) of a list that name each record through a field, gathered once per sheet. */
+function backIndex(c: SCtx, mod: string, key: string): Map<string, Node[]> {
+  const k = `${mod}|${key}`
+  let idx = c.index.get(k)
+  if (idx) return idx
+  idx = new Map()
+  const put = (to: string, n: Node) => { const a = idx!.get(to) ?? []; a.push(n); idx!.set(to, a) }
+  if (isLines(mod)) {
+    for (const r of list(c.ws, docOf(mod))) {
+      if (key === 'product' && !COUNTS(r)) continue
       for (const line of r.lines ?? []) {
-        if (!line.product) continue
-        const arr = idx.get(line.product) ?? []
-        arr.push({ rec: r, line })
-        idx.set(line.product, arr)
+        if (key === 'doc') put(r.id, { rec: r, line })
+        else if (line.product) put(line.product, { rec: r, line })
       }
     }
-    c.revLines.set(did, idx)
+  } else {
+    for (const r of list(c.ws, mod)) {
+      if (!COUNTS(r)) continue
+      const to = String(r.values[key] ?? '')
+      if (to) put(to, { rec: r })
+    }
   }
+  c.index.set(k, idx)
   return idx
 }
 
-/** Counts or adds up what links back to a record. Null = the person may not see that list. */
-function revCell(c: SCtx, rec: Rec, path: string[]): Cell | null {
-  const r = moduleById(c.schema, path[1])
-  if (!r) return ''
-  if (!can(c, r.id, 'view')) return null
-  let items: { rec: Rec; line?: Line }[]
-  let op: Agg
-  let v: string | undefined
-  if (path[0] === '<') {
-    if (!fieldByKey(r, path[2])) return ''
-    items = (revIndex(c, r.id, path[2]).get(rec.id) ?? []).map((x) => ({ rec: x }))
-    op = path[3] as Agg
-    v = path[4]
-  } else {
-    items = lineIndex(c, r.id).get(rec.id) ?? []
-    op = path[2] as Agg
-    v = path[3] ? `line.${path[3]}` : undefined
+/** What one place holds for a value key. */
+function valueOf(c: SCtx, at: string, n: Node, key: string): Cell {
+  if (isLines(at)) {
+    const line = n.line
+    if (!line) return ''
+    if (key === 'product') {
+      const p = line.product ? findRecord(c.ws, line.product) : undefined
+      return p ? String(p.values[moduleById(c.schema, p.module)?.titleField ?? 'name'] ?? line.description ?? '') : line.description ?? ''
+    }
+    if (key === 'net') return lineNet(line)
+    const v = (line as unknown as Record<string, unknown>)[key]
+    return typeof v === 'number' ? v : String(v ?? '')
   }
-  if (op === 'count') return new Set(items.map((x) => x.rec.id)).size
-  if (!v) return ''
-  let nums: number[] = []
-  let dates: string[] = []
-  if (v.startsWith('line.')) {
-    const lk = v.slice(5)
-    for (const it of items) for (const l of it.line ? [it.line] : it.rec.lines ?? []) nums.push(lk === 'net' ? lineNet(l) : Number((l as unknown as Record<string, unknown>)[lk]) || 0)
-  } else {
-    const f = fieldByKey(r, v)
-    if (!f) return ''
-    if (c.hideCosts.has(f.key)) return ''
-    if (f.type === 'date') dates = items.map((it) => String(it.rec.values[f.key] ?? '')).filter(Boolean).sort()
-    else nums = items.map((it) => Number(fieldValue(c.ws, c.schema, it.rec, f))).filter((n) => Number.isFinite(n))
-  }
-  if (dates.length || (op === 'max' || op === 'min') && !nums.length) return op === 'min' ? dates[0] ?? '' : dates[dates.length - 1] ?? ''
-  if (!nums.length) return op === 'sum' ? 0 : ''
-  if (op === 'sum') return round2(nums.reduce((a, b) => a + b, 0))
-  if (op === 'avg') return round2(nums.reduce((a, b) => a + b, 0) / nums.length)
-  return op === 'max' ? Math.max(...nums) : Math.min(...nums)
+  const rec = n.rec
+  const mod = moduleById(c.schema, rec.module)
+  if (!mod) return ''
+  if (key === '#number') return rec.number ?? ''
+  if (key === '#status') return rec.status ? c.tr(STATUS[rec.status] ?? rec.status) : ''
+  if (key === '#created') return rec.createdAt.slice(0, 10)
+  if (key === '#stage') return mod.stages?.find((s) => s.id === rec.stage)?.name ?? ''
+  const f = fieldByKey(mod, key)
+  return f ? fieldCell(c, rec, f) : ''
 }
 
-/** Follows a column's path from a row (a record, and its line on line rows). Null = the person may not see it. */
-function cellFor(c: SCtx, rec: Rec, line: Line | undefined, path: string[]): Cell | null {
-  if (isRev(path)) return revCell(c, rec, path)
-  let cur: Rec | undefined = rec
-  for (let i = 0; i < path.length; i++) {
-    if (!cur) return ''
-    const mod = moduleById(c.schema, cur.module)
-    if (!mod) return ''
-    if (!can(c, mod.id, 'view')) return null
-    const k = path[i]
-    if (k === 'line') {
-      if (!line) return ''
-      const lk = path[i + 1]
-      if (lk === 'product') {
-        const p = line.product ? findRecord(c.ws, line.product) : undefined
-        if (path.length === i + 2) return p ? String(p.values[moduleById(c.schema, p.module)?.titleField ?? 'name'] ?? line.description ?? '') : line.description ?? ''
-        cur = p
-        i++
-        continue
-      }
-      if (lk === 'net') return lineNet(line)
-      const v = (line as unknown as Record<string, unknown>)[lk]
-      return typeof v === 'number' ? v : String(v ?? '')
-    }
-    if (k === '#number') return cur.number ?? ''
-    if (k === '#status') return cur.status ? c.tr(STATUS[cur.status] ?? cur.status) : ''
-    if (k === '#created') return cur.createdAt.slice(0, 10)
-    if (k === '#stage') return mod.stages?.find((s) => s.id === cur!.stage)?.name ?? ''
-    const f = fieldByKey(mod, k)
-    if (!f) return ''
-    if (f.type === 'relation' && i < path.length - 1) {
-      const next = findRecord(c.ws, String(cur.values[f.key] ?? ''))
-      if (next && !can(c, next.module, 'view')) return null
-      cur = next
-      continue
-    }
-    return fieldCell(c, cur, f)
+/** Several values made one: added up, averaged, the lowest or highest (dates: earliest or latest), counted or listed. */
+function combine(op: Agg, vals: Cell[], nodes: number): Cell {
+  if (op === 'count') return vals.length ? vals.filter((v) => v !== '').length : nodes
+  const nums = vals.filter((v): v is number => typeof v === 'number')
+  if (op === 'sum') return round2(nums.reduce((a, b) => a + b, 0))
+  if (op === 'avg') return nums.length ? round2(nums.reduce((a, b) => a + b, 0) / nums.length) : ''
+  if (op === 'list') {
+    const distinct = [...new Set(vals.map((v) => String(v)).filter(Boolean))]
+    return distinct.length > 20 ? `${distinct.slice(0, 20).join(', ')}, …` : distinct.join(', ')
   }
-  return ''
+  if (nums.length) return op === 'max' ? Math.max(...nums) : Math.min(...nums)
+  const s = vals.map(String).filter(Boolean).sort()
+  return op === 'max' ? s[s.length - 1] ?? '' : s[0] ?? ''
+}
+
+/** Follows a column's path from a row (a record, and its line on line rows). Null = the person may not see a list on the way. */
+function cellFor(c: SCtx, rec: Rec, line: Line | undefined, path: string[]): Cell | null {
+  const w = walk(c.schema, rec.module, path)
+  if (!w.ok) return ''
+  let nodes: Node[] = [{ rec }]
+  let at = rec.module
+  for (const s of w.steps) {
+    if (s.t === 'line') { if (!line) return ''; nodes = [{ rec, line }]; at = linesOf(rec.module); continue }
+    if (s.t === 'f') {
+      const next: Node[] = []
+      let to = at
+      if (isLines(at)) {
+        to = s.key === 'product' ? products(c.schema)?.id ?? '' : docOf(at)
+        for (const n of nodes) {
+          if (s.key === 'doc') next.push({ rec: n.rec })
+          else if (n.line?.product) { const p = findRecord(c.ws, n.line.product); if (p) next.push({ rec: p }) }
+        }
+      } else {
+        const f = fieldByKey(moduleById(c.schema, at), s.key)
+        to = f?.target ?? ''
+        for (const n of nodes) { const r = findRecord(c.ws, String(n.rec.values[s.key] ?? '')); if (r) next.push({ rec: r }) }
+      }
+      if (!can(c, viewList(to), 'view')) return null
+      nodes = next
+      at = to
+    } else if (s.t === 'b') {
+      if (!can(c, viewList(s.mod), 'view')) return null
+      const idx = backIndex(c, s.mod, s.key)
+      nodes = nodes.flatMap((n) => idx.get(n.rec.id) ?? [])
+      at = s.mod
+    } else break
+    // the same record reached twice counts once
+    const seen = new Set<string>()
+    nodes = nodes.filter((n) => { const k = `${n.rec.id}|${n.line?.id ?? ''}`; if (seen.has(k)) return false; seen.add(k); return true })
+  }
+  const vals = w.value ? nodes.map((n) => valueOf(c, at, n, w.value!.key)) : []
+  if (w.op) return combine(w.op, vals, nodes.length)
+  return vals[0] ?? ''
 }
 
 export interface SheetResult {
@@ -417,7 +575,7 @@ export function sheetTotals(rows: Cell[][], ops: TotalOp[], hidden: boolean[]): 
 /** The sheet for this person: the rows of the list (or of its lines), filtered, each column followed through its links. */
 export function runSheet(ws: Workspace, schema: AppSchema, user: User, sheet: SheetReportDef, opts: { from?: string; to?: string; dateField?: string; tr?: Tr } = {}): SheetResult {
   const mod = moduleById(schema, sheet.module)
-  const c: SCtx = { ws, schema, user, hideCosts: new Set(canSeeCosts({ schema, user }) ? [] : costKeys(schema)), tr: opts.tr ?? ((x) => x), rev: new Map(), revLines: new Map() }
+  const c: SCtx = { ws, schema, user, hideCosts: new Set(canSeeCosts({ schema, user }) ? [] : costKeys(schema)), tr: opts.tr ?? ((x) => x), index: new Map() }
   const head = sheet.columns.map((col) => columnLabel(schema, sheet, col, opts.tr))
   const kinds = sheet.columns.map((col) => columnKind(schema, sheet, col))
   const totalOps = sheet.columns.map((col) => totalOf(schema, sheet, col))
@@ -487,11 +645,11 @@ export function chartTitle(schema: AppSchema, sheet: SheetReportDef, chart: Shee
   return fill(tr('{a} by {b}'), what, by ? columnLabel(schema, sheet, by, tr) : '?')
 }
 
-/** What a chart adds up: "Sum of Net", or just the column's title when it is already a count or a sum of a linked list. */
+/** What a chart adds up: "Sum of Net", or just the column's title when it is already a count or a sum of linked records. */
 export function chartValueLabel(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn, op: 'sum' | 'avg', tr: Tr = (s) => s) {
   const label = columnLabel(schema, sheet, col, tr)
-  const p = col.path
-  if (op === 'sum' && isRev(p) && ['count', 'sum'].includes(p[0] === '<' ? p[3] : p[2])) return label
+  const cmb = columnCombine(schema, sheet, col)
+  if (op === 'sum' && cmb.many && (cmb.op === 'count' || cmb.op === 'sum')) return label
   return fill(tr(op === 'avg' ? AGG_LABEL.avg : AGG_LABEL.sum), label)
 }
 
@@ -505,33 +663,33 @@ export function brokenColumns(schema: AppSchema, sheet: SheetReportDef): string[
   return out
 }
 
-/** The (list, field) pairs a column's path reads, from the row's list onwards. */
+/** The (list, field) pairs a column's path reads, so a field can't be deleted while a sheet uses it. */
 export function pathFields(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): { module: string; field: string }[] {
   const out: { module: string; field: string }[] = []
-  const p = col.path
-  if (p[0] === '<') {
-    out.push({ module: p[1], field: p[2] })
-    if (p[4] && !p[4].startsWith('line.')) out.push({ module: p[1], field: p[4] })
-    return out
-  }
-  if (p[0] === '<line') return out
-  let m = moduleById(schema, sheet.module)
-  for (let i = 0; i < p.length && m; i++) {
-    const k = p[i]
-    if (k === 'line') {
-      if (p[i + 1] === 'product') { m = schema.modules.find((x) => x.role === 'products'); i++; continue }
-      break
+  const steps = parse(col.path)
+  if (!steps) return out
+  let at = sheet.module
+  for (const s of steps) {
+    if (s.t === 'line') { at = linesOf(at); continue }
+    if (s.t === 'f') {
+      if (isLines(at)) { at = s.key === 'product' ? products(schema)?.id ?? '' : docOf(at); continue }
+      out.push({ module: at, field: s.key })
+      at = fieldByKey(moduleById(schema, at), s.key)?.target ?? ''
+    } else if (s.t === 'b') {
+      if (!isLines(s.mod)) out.push({ module: s.mod, field: s.key })
+      at = s.mod
+    } else if (s.t === 'v') {
+      if (!isLines(at) && !RECORD_KEYS[s.key]) out.push({ module: at, field: s.key })
     }
-    if (RECORD_KEYS[k]) break
-    out.push({ module: m.id, field: k })
-    const f = fieldByKey(m, k)
-    m = f?.type === 'relation' ? moduleById(schema, f.target ?? '') : undefined
   }
   return out
 }
 /** The lists a column reads from, so a list can't be deleted while a sheet uses it. */
-export const pathModules = (schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn) =>
-  [...new Set([...pathFields(schema, sheet, col).map((p) => p.module), ...(isRev(col.path) ? [col.path[1]] : [])])]
+export function pathModules(schema: AppSchema, sheet: Pick<SheetReportDef, 'module'>, col: SheetColumn): string[] {
+  const steps = parse(col.path) ?? []
+  const w = walkHops(schema, sheet.module, steps.filter((s) => s.t === 'line' || s.t === 'f' || s.t === 'b'))
+  return [...new Set([...(w?.lists ?? []).map(viewList), ...pathFields(schema, sheet, col).map((p) => p.module)])]
+}
 
 /**
  * A first sheet to start from: for invoices, one row per product sold with the customer, the product, the date, the
@@ -546,18 +704,18 @@ export function starterSheet(schema: AppSchema, moduleId?: string): SheetReportD
   const date = mod.fields.find((f) => f.type === 'date')
   const charts: SheetChart[] = []
   if (mod.lines) {
-    if (party) columns.push(col('c1', [party.key, moduleById(schema, party.target!)?.titleField ?? 'name']))
-    columns.push(col('c2', ['line', 'product']))
-    columns.push(col('c3', date ? [date.key] : ['#created']))
-    columns.push(col('c4', ['#number']))
-    columns.push(col('c5', ['line', 'qty']), col('c6', ['line', 'net']))
+    if (party) columns.push(col('c1', [`f:${party.key}`, `v:${moduleById(schema, party.target!)?.titleField ?? 'name'}`]))
+    columns.push(col('c2', ['line', 'v:product']))
+    columns.push(col('c3', [`v:${date ? date.key : '#created'}`]))
+    columns.push(col('c4', ['v:#number']))
+    columns.push(col('c5', ['line', 'v:qty']), col('c6', ['line', 'v:net']))
     charts.push({ id: 'ch1', type: 'hbar', by: 'c2', value: 'c6', op: 'sum' })
     if (party) charts.push({ id: 'ch2', type: 'pie', by: 'c1', value: 'c6', op: 'sum' })
     charts.push({ id: 'ch3', type: 'line', by: 'c3', value: 'c6', op: 'sum' })
   } else {
-    columns.push(col('c1', [mod.titleField]))
+    columns.push(col('c1', [`v:${mod.titleField}`]))
     mod.fields.filter((x) => x.key !== mod.titleField).slice(0, 4).forEach((f, i) => {
-      columns.push(col(`c${i + 2}`, f.type === 'relation' && f.target && moduleById(schema, f.target) ? [f.key, moduleById(schema, f.target)!.titleField] : [f.key]))
+      columns.push(col(`c${i + 2}`, f.type === 'relation' && f.target && moduleById(schema, f.target) ? [`f:${f.key}`, `v:${moduleById(schema, f.target)!.titleField}`] : [`v:${f.key}`]))
     })
   }
   return { id: uid('sheet'), name: mod.lines ? `${mod.name}: one row per product sold` : mod.name, module: mod.id, perLine: Boolean(mod.lines) || undefined, columns, filters: [], charts }
