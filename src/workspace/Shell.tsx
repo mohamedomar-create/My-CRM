@@ -116,6 +116,7 @@ export default function Shell() {
           </select>
         )}
         <Link to="/security#companies" className="sidebar-small">{tr('Your companies')}</Link>
+        {companies.length > 1 && <Link to="/app/group" className="sidebar-small">{tr('Your group: all companies together')}</Link>}
         {/* One area at a time: its own lists and pages only; the home shows the areas themselves. */}
         {area ? (
           <>

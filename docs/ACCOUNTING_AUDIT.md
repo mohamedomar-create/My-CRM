@@ -90,5 +90,5 @@ The accounting rules run behind the scenes; people work in plain words.
 | Depreciation methods other than straight line; revaluation (IAS 16); partial disposal | Not yet |
 | Inventory valuation other than moving average (FIFO, standard cost) | Not yet (moving average is accepted under IAS 2) |
 | VAT relief on bad debts | Not applied (Egyptian VAT law gives no general relief) |
-| Consolidation, intercompany | Not yet |
+| Consolidation, intercompany | **Started (Nov 2026):** the group page shows every company side by side and combined statements; balances between group companies (found by tax number) are eliminated and the balance sheet still balances (`group.test.ts`). Still to do: eliminating intercompany sales and the unrealized profit in stock held within the group |
 | Bank feeds | Statement CSV import and reconciliation exist; live feeds don't |

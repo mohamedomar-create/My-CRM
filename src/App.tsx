@@ -34,6 +34,7 @@ import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
 import QuoteOnline from './pages/QuoteOnline'
+import Group from './workspace/Group'
 import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
 import { loadScreen } from './lib/update'
@@ -187,6 +188,7 @@ export default function App() {
         <Route path="new/:moduleId" element={<RecordPage />} />
         <Route path="inventory" element={<NeedsErp><Inventory /></NeedsErp>} />
         <Route path="accounting" element={<NeedsErp><Accounting /></NeedsErp>} />
+        <Route path="group" element={<NeedsErp><Group /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />
         <Route path="reports" element={<SheetReports />} />

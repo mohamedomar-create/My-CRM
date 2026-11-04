@@ -316,6 +316,11 @@ function friendly(message: string) {
   return message
 }
 
+/** Another of the person's companies as they may see it (read only), for the group view. */
+export async function readCompany(id: string): Promise<Workspace> {
+  return (await fetchWorkspace(id)).doc
+}
+
 /** The workspace as this person may see it: the server leaves out what their role can't view. */
 async function fetchWorkspace(id: string): Promise<{ doc: Workspace; version: number }> {
   const { data, error } = await supabase.rpc('open_workspace', { p_id: id })
