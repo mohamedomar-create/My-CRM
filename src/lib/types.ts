@@ -1,7 +1,7 @@
 import type { AppSchema } from './schema'
 import type { Answers } from './recommend'
 
-export type DocStatus = 'draft' | 'posted' | 'partial' | 'paid' | 'void' | 'sent' | 'accepted' | 'declined' | 'invoiced'
+export type DocStatus = 'draft' | 'posted' | 'partial' | 'paid' | 'void' | 'sent' | 'accepted' | 'declined' | 'invoiced' | 'ordered'
 
 export interface Line {
   id: string
@@ -19,6 +19,19 @@ export interface Line {
   from?: string
   /** the cost center its income or expense goes to (P1) */
   cc?: string
+  /** on a purchase bill: the batch (lot) received and its expiry date */
+  lot?: string
+  expiry?: string
+  /** on a posted invoice: the batches the units were taken from, first to expire first */
+  lots?: { lot: string; expiry?: string; qty: number }[]
+  /** on an invoice made from delivery notes (or a bill made from goods received notes): the order line it bills, and
+   * (set by the server when posting) the value already booked for those goods at delivery (1310) or receipt (2160) */
+  dline?: string
+  dcost?: number
+  /** sold or bought in another unit of the product (a carton): its name, and how many base units it holds (set by
+   * the server from the product's units) */
+  unit?: string
+  factor?: number
 }
 
 export interface Rec {
@@ -76,6 +89,28 @@ export interface ImportBatch {
   undoneBy?: string
 }
 
+export interface PendingJournal {
+  id: string
+  date: string
+  memo: string
+  lines: { account: string; debit: number; credit: number; note?: string; cc?: string }[]
+  adjusting?: boolean
+  reverseOn?: string
+  total: number
+  by: string
+  at: string
+}
+
+export interface Warehouse {
+  code: string
+  name: string
+  nameAr?: string
+  kind: 'store' | 'van'
+  /** a van's salesperson: their sales leave from it by default */
+  person?: string
+  active: boolean
+}
+
 export interface StockMove {
   id: string
   product: string
@@ -87,6 +122,11 @@ export interface StockMove {
   /** exact change in the product's stock value (moving average), so a void reverses it to the cent */
   value?: number
   sample?: boolean
+  /** the batch (lot) these units belong to, and its expiry date (see batches.ts) */
+  lot?: string
+  expiry?: string
+  /** the warehouse or van (see warehouses in Workspace); missing = the main store */
+  wh?: string
 }
 
 /** An account of the chart of accounts (see accounts.ts), e.g. '1100' or one the company added. */
@@ -105,6 +145,11 @@ export interface JournalEntry {
   manual?: boolean
   /** this entry cancels the manual entry with this id */
   reverses?: string
+  /** an adjusting entry of the period end (an accrual, a prepayment taken to expense, …) */
+  adjusting?: boolean
+  /** a journal voucher entered by one person and approved by another before it was posted */
+  enteredBy?: string
+  approvedBy?: string
   /** a step in a cheque's life (see Payment.cheque): deposited, cleared or bounced */
   cheque?: { id: string; step: ChequeStep; account?: string }
 }
@@ -131,6 +176,8 @@ export interface Payment {
   cheque?: { id: string; no: string; bank?: string; due: string }
   /** the receipt or payment voucher (RV-/PV-…) when one payment covered several documents */
   voucher?: string
+  /** a document in another currency: the payment's rate, and what it took off the books' carrying amount */
+  fx?: { rate: number; relief: number }
 }
 
 export interface Note {
@@ -160,6 +207,9 @@ export interface Approval {
   fingerprint?: string
   /** approved by an admin without a second person, with the reason in `note` */
   override?: boolean
+  /** a rule with several steps: the step waiting now (0 = the first), and who approved the earlier ones */
+  step?: number
+  trail?: { role: string; by: string; at: string; note?: string }[]
 }
 
 export interface Comment {
@@ -280,6 +330,12 @@ export interface Workspace {
     closedYears?: { year: number; at: string; by: string; entry: string }[]
     /** monthly VAT returns settled: output and input moved to 2210 by the entry */
     vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
+    /** journal vouchers above this amount need a second finance person's approval before they are posted */
+    jvApprovalOver?: number
+    /** journal vouchers waiting for that approval (they have no number yet) */
+    pendingJournals?: PendingJournal[]
+    /** month-end restatements of what is owed in foreign currency (see fx.ts) */
+    revaluations?: import('./fx').Revaluation[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
     /** the balances brought in from the company's old system (Phase H2) */
@@ -295,6 +351,26 @@ export interface Workspace {
   targets?: SalesTarget[]
   /** business plans (P3) */
   plans?: import('./plan').BusinessPlan[]
+  /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
+  landed?: import('./landed').LandedCost[]
+  /** recipes (bills of materials) by product id, and production orders (see production.ts) */
+  recipes?: Record<string, import('./production').Recipe>
+  production?: import('./production').ProductionOrder[]
+  /** earlier versions of revised quotations (see quoteOnline.ts) */
+  quoteRevisions?: import('./quoteOnline').QuoteRevision[]
+  /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
+  units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
+  /** the last exchange rate used for each foreign currency (each document still states its own) */
+  fxRates?: Record<string, { rate: number; date: string }>
+  /** the company's warehouses and delivery vans; none = everything is in the main store */
+  warehouses?: Warehouse[]
+  /** goods received notes: goods received against purchase orders (see purchasing.ts) */
+  receipts?: import('./purchasing').Receipt[]
+  /** delivery notes: goods sent against confirmed sales orders (see orders.ts) */
+  deliveries?: import('./orders').Delivery[]
+  /** the fixed-asset register and its depreciation runs (see assets.ts) */
+  assets?: import('./assets').FixedAsset[]
+  depreciation?: import('./assets').DepreciationRun[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData

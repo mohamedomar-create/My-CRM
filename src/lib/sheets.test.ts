@@ -5,7 +5,12 @@ import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type Rec, type User, type Workspace } from './types'
 import { moduleByRole, type AppSchema } from './schema'
-import { columnChoices, columnLabel, runSheet, starterSheet, visibleSheets, type SheetReportDef } from './sheets'
+import { cleanSheet, columnLabel, countColumn, linesOf, listValues, runSheet, sheetChartData, sheetSources, sourceColumn, starterSheet, unlinkedModules, visibleSheets, type SheetReportDef } from './sheets'
+
+/** Every column the picker offers for a sheet of this list, as joined paths. */
+const offered = (schema: AppSchema, moduleId: string, perLine: boolean) => sheetSources(schema, moduleId, perLine).flatMap((src) => [...(src.many ? [countColumn(src)] : []), ...listValues(schema, src.list).map((v) => sourceColumn(src, v.key, v.kind))]).map((p) => p.join('.'))
+import { sheetWorkbook } from './sheetDownload'
+import { applyCommand } from './commands'
 import { fieldDependents, validate } from './validate'
 import { writeXlsx } from './xlsxWrite'
 import { areaItems } from './areas'
@@ -89,11 +94,25 @@ describe('Excel sheet reports', () => {
     expect(visibleSheets({ ...schema, sheets: [sheet] }, admin)).toHaveLength(1)
   })
 
-  it('offers the fields of the list, of the lists it links to, of the line and of the line’s product', () => {
-    const { schema, inv } = setup()
-    const paths = columnChoices(schema, inv, true).map((c) => c.path.join('.'))
-    for (const p of ['#number', '#status', 'date', 'customer.name', 'customer.governorate', 'line.product', 'line.qty', 'line.product.sku', 'customer.parent']) expect(paths, p).toContain(p)
-    expect(columnChoices(schema, inv, false).some((c) => c.path[0] === 'line')).toBe(false)
+  it('offers the fields of every list connected to the rows, either way, up to four links away', () => {
+    const { schema, inv, acc, prod } = setup()
+    const paths = offered(schema, inv, true)
+    for (const p of ['v:#number', 'v:#status', 'v:date', 'f:customer.v:name', 'f:customer.v:governorate', 'line.v:product', 'line.v:qty', 'line.f:product.v:sku', 'f:customer.f:parent.v:name']) expect(paths, p).toContain(p)
+    expect(paths.some((p) => p.startsWith('line'))).toBe(true)
+    expect(offered(schema, inv, false).some((p) => p.startsWith('line'))).toBe(false)
+    // without one row per line, the invoice's products are listed from its lines
+    expect(offered(schema, inv, false)).toContain(`b:${linesOf(inv)}:doc.f:product.v:name.a:list`)
+    // the customer's other lists (deals, quotations, contacts), several per invoice row
+    const deals = moduleByRole(schema, 'deals')!.id
+    expect(paths.some((p) => p.startsWith(`f:customer.b:${deals}:`))).toBe(true)
+    // the products a customer bought, through its invoices' lines
+    expect(offered(schema, acc, false)).toContain(`b:${inv}:customer.b:${linesOf(inv)}:doc.f:product.v:name.a:list`)
+    // the customers who bought a product, through the lines of invoices
+    expect(offered(schema, prod, false)).toContain(`b:${linesOf(inv)}:product.f:doc.f:customer.v:name.a:list`)
+    // only lists with no link at all to the invoices' side are left out (leads, before they become customers)
+    const left = unlinkedModules(schema, inv, true).map((m) => m.role)
+    expect(left).toContain('leads')
+    for (const r of ['accounts', 'products', 'deals', 'quotes', 'contacts']) expect(left, r).not.toContain(r)
   })
 
   it('the example starter is the invoice per product sold, with the customer, product, date and number', () => {
@@ -101,7 +120,7 @@ describe('Excel sheet reports', () => {
     const s = starterSheet(schema)
     expect(s.module).toBe(inv)
     expect(s.perLine).toBe(true)
-    expect(s.columns.map((c) => c.path.join('.'))).toEqual(['customer.name', 'line.product', 'date', '#number', 'line.qty', 'line.net'])
+    expect(s.columns.map((c) => c.path.join('.'))).toEqual(['f:customer.v:name', 'line.v:product', 'v:date', 'v:#number', 'line.v:qty', 'line.v:net'])
     expect(runSheet(ws, schema, admin, s).rows[0]).toEqual(['Nile Pharmacy', 'Panadol 500', '2026-03-05', 'INV-0001', 10, 500])
     expect(columnLabel(schema, s, { id: 'x', label: ' Client ', path: ['customer', 'name'] })).toBe('Client')
   })
@@ -123,5 +142,89 @@ describe('Excel sheet reports', () => {
     // the workbook is a zip of files stored as they are, so the sheet's XML can be read straight from the bytes
     const xml = new TextDecoder().decode(writeXlsx([{ name: 'A', rows: [['Name', 'Qty'], ['Panadol', 10]], header: true }]))
     expect(xml).toMatch(/<c r="B2"[^>]*><v>10<\/v><\/c>/)
+  })
+
+  it('follows links backwards: a customer’s invoices counted and added up, a product’s quantity sold (drafts left out)', () => {
+    const { ws, schema, acc, prod, inv } = setup()
+    const custPaths = offered(schema, acc, false)
+    for (const p of [`b:${inv}:customer.a:count`, `b:${inv}:customer.v:total.a:sum`, `b:${inv}:customer.v:date.a:max`, `b:${inv}:customer.b:${linesOf(inv)}:doc.v:qty.a:sum`]) expect(custPaths, p).toContain(p)
+    expect(unlinkedModules(schema, acc, false).map((m) => m.id)).not.toContain(inv)
+    const bycust: SheetReportDef = { id: 'sheet_c', name: 'Customers', module: acc, filters: [], columns: [
+      { id: 'a', path: ['name'] },
+      { id: 'b', path: ['<', inv, 'customer', 'count'] },
+      { id: 'c', path: ['<', inv, 'customer', 'sum', 'line.qty'] },
+      { id: 'd', path: ['<', inv, 'customer', 'sum', 'line.net'] },
+      { id: 'e', path: ['<', inv, 'customer', 'max', 'date'] },
+    ] }
+    const out = runSheet(ws, schema, admin, bycust)
+    expect(out.head).toEqual(['Name', 'Number of Invoices', 'Invoices › Its lines › Sum of Quantity', 'Invoices › Its lines › Sum of Net (before VAT)', 'Invoices › Latest Invoice date'])
+    // Delta Stores' only invoice is a draft, so nothing counts yet
+    expect(out.rows).toEqual([['Nile Pharmacy', 1, 14, 788, '2026-03-05'], ['Delta Stores', 0, 0, 0, '']])
+    expect(out.totals).toEqual(['', 1, 14, 788, ''])
+    const byprod: SheetReportDef = { id: 'sheet_p', name: 'Products', module: prod, filters: [], columns: [
+      { id: 'a', path: ['name'] },
+      { id: 'b', path: ['<line', inv, 'sum', 'qty'] },
+      { id: 'c', path: ['<line', inv, 'sum', 'net'] },
+    ] }
+    expect(offered(schema, prod, false)).toContain(`b:${linesOf(inv)}:product.v:qty.a:sum`)
+    expect(runSheet(ws, schema, admin, byprod).rows).toEqual([['Panadol 500', 10, 500], ['Brufen 400', 4, 288]])
+    // a role that can't open invoices gets those columns empty
+    const sales = schema.roles.find((r) => r.name === 'Sales')!
+    sales.access[inv] = []
+    const r = runSheet(ws, schema, { ...admin, id: 'u2', roleId: sales.id }, bycust)
+    expect(r.hidden).toEqual([false, true, true, true, true])
+  })
+
+  it('totals each column as chosen, and charts group the rows', () => {
+    const { ws, schema, inv } = setup()
+    const sheet = example(inv)
+    const out = runSheet(ws, schema, admin, sheet)
+    // quantities and amounts are added up by default; text, dates and the product's SKU are not
+    expect(out.totalOps).toEqual(['none', 'none', 'none', 'none', 'sum', 'sum', 'none'])
+    expect(out.totals).toEqual(['', '', '', '', 16, 888, ''])
+    const avg = runSheet(ws, schema, admin, { ...sheet, columns: sheet.columns.map((c) => (c.id === 'c5' ? { ...c, total: 'avg' as const } : c.id === 'c4' ? { ...c, total: 'count' as const } : c)) })
+    expect(avg.totals[4]).toBe(5.33)
+    expect(avg.totals[3]).toBe(3)
+    expect(sheetChartData(sheet, out, { id: 'x', type: 'bar', by: 'c2', value: 'c6', op: 'sum' })).toEqual([{ label: 'Panadol 500', value: 600 }, { label: 'Brufen 400', value: 288 }])
+    expect(sheetChartData(sheet, out, { id: 'x', type: 'pie', by: 'c1', op: 'count' })).toEqual([{ label: 'Nile Pharmacy', value: 2 }, { label: 'Delta Stores', value: 1 }])
+    // dates are grouped by month, in order
+    expect(sheetChartData(sheet, out, { id: 'x', type: 'line', by: 'c3', value: 'c6', op: 'sum' })).toEqual([{ label: '2026-03', value: 788 }, { label: '2026-04', value: 100 }])
+  })
+
+  it('the Excel file has the totals as formulas and the charts as real Excel charts', () => {
+    const { ws, schema, inv } = setup()
+    const sheet: SheetReportDef = { ...example(inv), charts: [{ id: 'k1', type: 'hbar', by: 'c2', value: 'c6', op: 'sum' }, { id: 'k2', type: 'pie', by: 'c1', op: 'count' }] }
+    const book = sheetWorkbook(schema, sheet, runSheet(ws, schema, admin, sheet))
+    expect(book.map((b) => b.name)).toEqual(['Report A', 'Charts'])
+    const last = book[0].rows[book[0].rows.length - 1]
+    expect(last[0]).toBe('Total')
+    expect(last[4]).toEqual({ f: 'SUBTOTAL(109,E2:E4)', v: 16 })
+    expect(book[1].charts).toHaveLength(2)
+    const xml = new TextDecoder().decode(writeXlsx(book))
+    expect(xml).toContain('<f>SUBTOTAL(109,F2:F4)</f><v>888</v>')
+    expect(xml).toContain('<c:barDir val="bar"/>')
+    expect(xml).toContain('<c:pieChart>')
+    expect(xml).toContain('application/vnd.openxmlformats-officedocument.drawingml.chart+xml')
+  })
+
+  it('an admin saves a report at once (live and in the draft); others can’t; broken or odd reports are refused', () => {
+    const { ws, inv } = setup()
+    ws.draft = structuredClone(ws.published!)
+    const run = (name: string, args: unknown, isAdmin = true) => { const out = applyCommand(ws, { userId: admin.id, isAdmin }, { name, args } as never); Object.assign(ws, out.ws); return out.result }
+    const sheet = { ...example(inv), charts: [{ id: 'k1', type: 'bar', by: 'c2', value: 'c6', op: 'sum' }], extra: 'dropped' }
+    expect(run('sheet.save', { sheet })).toEqual({ id: 'sheet_a', live: true })
+    expect(ws.published!.sheets).toHaveLength(1)
+    expect(ws.draft!.sheets![0].columns).toHaveLength(7)
+    expect('extra' in ws.published!.sheets![0]).toBe(false)
+    expect(ws.data.activity[0].text).toMatch(/added the Excel report “Report A”/)
+    run('sheet.save', { sheet: { ...sheet, name: 'Report B' } })
+    expect(ws.published!.sheets!.map((s) => s.name)).toEqual(['Report B'])
+    expect(() => run('sheet.save', { sheet }, false)).toThrow(/admin/i)
+    expect(() => run('sheet.save', { sheet: { ...sheet, columns: [{ id: 'z', path: ['customer', 'gone'] }], charts: [] } })).toThrow(/points to a field that no longer exists/)
+    expect(() => cleanSheet({ ...sheet, charts: [{ id: 'k', type: 'bar', by: 'nope', op: 'count' }] })).toThrow(/A chart uses a column/)
+    expect(() => cleanSheet({ ...sheet, columns: [] })).toThrow(/at least one column/)
+    run('sheet.remove', { id: 'sheet_a' })
+    expect(ws.published!.sheets).toEqual([])
+    expect(ws.draft!.sheets).toEqual([])
   })
 })

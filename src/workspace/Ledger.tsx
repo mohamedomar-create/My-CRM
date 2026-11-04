@@ -4,14 +4,17 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
+import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, usesWarehouses, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { taxCode } from '../lib/tax'
 import { TYPE_LABEL, typeLabel, whtLabel } from './labels'
-import { chartOf, debitNormal, type AccountType, accountLabel } from '../lib/accounts'
+import { chartOf, debitNormal, normalSign, type AccountType, accountLabel } from '../lib/accounts'
 import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
+import { MonthEndTodo } from './PeriodEnd'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
 
 
 
@@ -34,6 +37,9 @@ export function JournalVoucher() {
   const [date, setDate] = useState(todayISO())
   const [memo, setMemo] = useState('')
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()])
+  // An accrual (an expense of this month billed next month) reverses itself on the day chosen, the 1st of next month by default.
+  const [reverseOn, setReverseOn] = useState('')
+  const nextMonth = (() => { const [y, m] = date.split('-').map(Number); return y && m ? new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) : '' })()
   const dr = round2(rows.reduce((s, r) => s + num(r.debit), 0))
   const cr = round2(rows.reduce((s, r) => s + num(r.credit), 0))
   const set = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -43,10 +49,13 @@ export function JournalVoucher() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
-    const out = act<{ ref: string }>('journal.manual', { date, memo, lines }, tr('Journal voucher posted'), `Journal voucher: ${memo}`)
+    const over = ws.books?.jvApprovalOver
+    const waits = over !== undefined && dr > over
+    const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(reverseOn ? { reverseOn } : {}) }, waits ? tr('Sent for approval: another finance person posts it') : reverseOn ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
       setRows([emptyRow(), emptyRow()])
+      setReverseOn('')
     }
   }
   return (
@@ -57,6 +66,9 @@ export function JournalVoucher() {
         <label className="field" style={{ width: 170 }}>{tr('Date')}<input type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <label className="field grow">{tr('Description')}<input required value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={tr('e.g. Office rent for January')} /></label>
       </div>
+      {reverseOn
+        ? <div className="row small" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><label className="row" style={{ gap: 6 }}>{tr('Reverse it automatically on')}<input type="date" value={reverseOn} min={date} onChange={(e) => setReverseOn(e.target.value)} style={{ width: 160 }} /></label><span className="tiny muted">{tr('For an expense of this month billed next month: when the bill comes, enter it as usual and it isn’t counted twice.')}</span><button type="button" className="ghost small" onClick={() => setReverseOn('')}>{tr('Don’t reverse')}</button></div>
+        : <div><button type="button" className="ghost small" onClick={() => setReverseOn(nextMonth)}><Undo2 size={13} /> {tr('Reverse it automatically next month')}</button></div>}
       <div className="table-wrap">
         <table className="data">
           <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th>{withCc && <th>{tr('Cost center')}</th>}<th>{tr('Note')}</th><th /></tr></thead>
@@ -80,8 +92,53 @@ export function JournalVoucher() {
         const warn = overBudgetWarnings(ws, rows.filter((r) => r.account && num(r.debit) > 0).map((r) => ({ account: r.account, cc: r.cc, amount: num(r.debit), date })), getLang())
         return warn.length > 0 && <div className="note small">{warn.map((w) => <div key={w.account + (w.cc ?? '')}>{tr('Over budget: {account}{cc} would reach {after} this year, against {budget} budgeted so far.', { account: w.name, cc: w.cc ? ` (${w.cc})` : '', after: money(w.after, cur), budget: money(w.budget, cur) })}</div>)}</div>
       })()}
-      <button disabled={!dr || dr !== cr}>{tr('Post journal voucher')}</button>
+      {ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver && <p className="small" style={{ margin: 0 }}>{tr('Above {a}: another finance person approves it before it is posted.', { a: money(ws.books.jvApprovalOver, cur) })}</p>}
+      <button disabled={!dr || dr !== cr}>{ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver ? tr('Send for approval') : tr('Post journal voucher')}</button>
+      <JvApprovalSetting />
     </form>
+  )
+}
+
+/** The admin's setting: journal vouchers above an amount need a second finance person. */
+function JvApprovalSetting() {
+  const { ws, schema, user, act } = useApp()
+  const admin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
+  const over = ws.books?.jvApprovalOver
+  const [amount, setAmount] = useState(over === undefined ? '' : String(over))
+  if (!admin) return over === undefined ? null : <p className="tiny muted" style={{ margin: 0 }}>{tr('Journal vouchers above {a} need a second person.', { a: money(over, schema.company.currency) })}</p>
+  return (
+    <details>
+      <summary className="small muted">{over === undefined ? tr('Need a second person for large journal vouchers?') : tr('Journal vouchers above {a} need a second person.', { a: money(over, schema.company.currency) })}</summary>
+      <div className="row" style={{ gap: 8, marginTop: 8, alignItems: 'end' }}>
+        <label className="field" style={{ width: 200 }}>{tr('Above this amount')}<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="10000" /></label>
+        <button type="button" className="small" onClick={() => act('journal.setApproval', { over: amount === '' ? null : Number(amount) }, tr('Saved'))}>{tr('Save')}</button>
+      </div>
+    </details>
+  )
+}
+
+/** Journal vouchers waiting for a second person: approve (it is numbered and posted) or send back with the reason. */
+export function PendingJournals() {
+  const { ws, schema, user, act } = useApp()
+  const list_ = ws.books?.pendingJournals ?? []
+  if (!list_.length) return null
+  const cur = schema.company.currency
+  const name = (id: string) => ws.users.find((u) => u.id === id)?.name ?? ''
+  return (
+    <div className="card stack" style={{ gap: 8 }}>
+      <h2 style={{ margin: 0 }}>{tr('Journal vouchers waiting for approval')}</h2>
+      {list_.map((p) => (
+        <div key={p.id} className="row between" style={{ gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+          <span className="small"><b>{p.memo}</b> · {p.date} · {money(p.total, cur)} · {tr('entered by {a}', { a: name(p.by) })}<br /><span className="tiny muted">{p.lines.map((l) => `${l.account} ${l.debit ? `Dr ${l.debit}` : `Cr ${l.credit}`}`).join(' · ')}</span></span>
+          {p.by === user.id ? <span className="pill amber">{tr('waiting for someone else')}</span> : (
+            <span className="row" style={{ gap: 6 }}>
+              <button className="success small" onClick={() => act('journal.approve', { id: p.id }, tr('Approved and posted'))}>{tr('Approve and post')}</button>
+              <button className="ghost small" onClick={() => { const why = prompt(tr('Why is it sent back?')); if (why) act('journal.reject', { id: p.id, reason: why }, tr('Sent back')) }}>{tr('Send back')}</button>
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -124,7 +181,7 @@ export function ChartOfAccounts() {
                   <td className="mono">{a.code}</td>
                   <td>{a.name}{a.nameAr && <span className="muted small" dir="rtl"> · {a.nameAr}</span>} {a.control && <span className="pill gray tiny" title={tr('Changed only by documents')}>{tr('by documents')}</span>}</td>
                   <td className="muted">{typeLabel(a.type)}</td>
-                  <td className="num">{money(debitNormal(a.type) ? b : -b, cur)}</td>
+                  <td className="num">{money(normalSign(a) * b, cur)}</td>
                   <td className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                     <button className="ghost small" onClick={() => { const n = prompt(tr('New name'), a.name); if (n) act('accounts.update', { code: a.code, name: n }, tr('Renamed'), `Renamed account ${a.code}`) }}>{tr('Rename')}</button>
                     {!a.system && <button className="ghost small" onClick={() => act('accounts.update', { code: a.code, active: !a.active }, a.active ? tr('Turned off') : tr('Turned on'), `${a.active ? 'Turned off' : 'Turned on'} account ${a.code}`)}>{a.active ? tr('Turn off') : tr('Turn on')}</button>}
@@ -248,12 +305,15 @@ export function StockTools() {
   const [counts, setCounts] = useState<Record<string, string>>({})
   const [countDate, setCountDate] = useState(todayISO())
   const [note, setNote] = useState('')
+  const defaultWh = useDefaultWarehouse()
+  const [wh, setWh] = useState('')
+  const place = usesWarehouses(ws) ? { warehouse: wh || defaultWh } : {}
   if (!products) return null
   const items = list(ws, products.id).filter((p) => p.values.track_stock)
   function adjust(e: React.FormEvent) {
     e.preventDefault()
     const qty = num(adj.qty)
-    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
+    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date, ...place }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
       setAdj({ ...adj, product: '', qty: '', cost: '', reason: '' })
       setMode('')
     }
@@ -261,7 +321,7 @@ export function StockTools() {
   function count(e: React.FormEvent) {
     e.preventDefault()
     const list_ = Object.entries(counts).filter(([, v]) => v !== '').map(([product, v]) => ({ product, counted: num(v) }))
-    const out = act<{ ref: string; adjusted: number }>('stock.count', { date: countDate, counts: list_, note }, undefined, 'Stock count')
+    const out = act<{ ref: string; adjusted: number }>('stock.count', { date: countDate, counts: list_, note, ...place }, undefined, 'Stock count')
     if (out) {
       showToast({ kind: 'ok', text: out.adjusted ? `Count saved: ${out.adjusted} product${out.adjusted > 1 ? 's' : ''} adjusted` : tr('Count saved: everything matched') })
       setCounts({})
@@ -274,6 +334,7 @@ export function StockTools() {
       <div className="row" style={{ gap: 8 }}>
         <button className={mode === 'adjust' ? '' : 'secondary'} onClick={() => setMode(mode === 'adjust' ? '' : 'adjust')}>{tr('Adjust stock')}</button>
         <button className={mode === 'count' ? '' : 'secondary'} onClick={() => setMode(mode === 'count' ? '' : 'count')}>{tr('Stock count')}</button>
+        {mode && <WarehouseSelect value={wh || defaultWh} onChange={setWh} label={tr('Where')} />}
       </div>
       {mode === 'adjust' && (
         <form className="card stack" onSubmit={adjust}>
@@ -377,14 +438,23 @@ export function CloseBooks() {
         {months.length === 0 ? <p className="muted small">{tr('Every month that has ended is already closed.')}</p> : (
           <>
             <label className="field" style={{ width: 220 }}>{tr('Month')}<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
+            <MonthEndTodo month={month} />
             <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0, gap: 6 }}>
-              {checks.map((c) => (
+              {checks.filter((c) => !c.ok).map((c) => (
                 <li key={c.id} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
                   {c.ok ? <CheckCircle2 size={16} color="var(--success)" /> : c.blocking ? <XCircle size={16} color="var(--danger)" /> : <AlertTriangle size={16} color="var(--warning)" />}
                   <span><b>{msg(c.title)}</b> <span className="muted small">· {msg(c.detail)}</span></span>
                 </li>
               ))}
             </ul>
+            {checks.some((c) => c.ok) && (
+              <details>
+                <summary className="small row" style={{ gap: 6, display: 'inline-flex' }}><CheckCircle2 size={15} color="var(--success)" /> {tr('{n} checks passed', { n: checks.filter((c) => c.ok).length })}</summary>
+                <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', gap: 4 }}>
+                  {checks.filter((c) => c.ok).map((c) => <li key={c.id} className="small"><b>{msg(c.title)}</b> <span className="muted">· {msg(c.detail)}</span></li>)}
+                </ul>
+              </details>
+            )}
             <div className="row" style={{ gap: 10 }}>
               <button className="primary" disabled={blocked} onClick={() => confirm(tr('Close {month}? Nothing dated on or before its last day can be posted afterwards; only an admin can reopen it.', { month: label(month) })) && act('books.closeMonth', { month }, tr('{month} closed', { month: label(month) }), `Closed ${month}`)}>
                 <Lock size={14} /> {tr('Close {month}', { month: label(month) })}

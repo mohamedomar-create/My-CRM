@@ -153,7 +153,7 @@ function CashBudget({ year }: { year: number }) {
         ? tr('Months gone: what moved through the cash boxes and bank accounts. This month and those to come: invoices and bills by due date (overdue ones now), cheques by their date, and what the approved budget plans beyond what is already invoiced.')
         : tr('Months gone: what moved through the cash boxes and bank accounts. This month and those to come: invoices and bills by due date (overdue ones now) and cheques by their date. Approve a budget to add what it plans.')}</p>
       {low && <div className="error-box">{tr('Cash goes below zero in {month}: {amount}', { month: new Date(`${low.month}-01T00:00:00Z`).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric', timeZone: 'UTC' }), amount: money(low.closing, cur) })}</div>}
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label={tr('Budget table')}>
         <table className="data" style={{ fontSize: 13 }}>
           <thead><tr><th />{rows.map((r) => <th key={r.month} className="num">{monthName(Number(r.month.slice(5)) - 1)}{r.past ? '' : ' *'}</th>)}</tr></thead>
           <tbody>
@@ -221,7 +221,7 @@ function BudgetGrid({ budget, onProblem }: { budget: Budget; onProblem: (p: stri
         <button onClick={save} disabled={!dirty}>{tr('Save')}</button>
       </div>
       <p className="tiny muted" style={{ margin: 0 }}>{tr('A sheet has an “Account” column (the code), an optional “Cost center” column, and a column per month (January to December, or 1 to 12), or a “Year total” column spread like last year.')}</p>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label={tr('Budget table')}>
         <table className="data" style={{ fontSize: 13 }}>
           <thead><tr><th style={{ minWidth: 200 }}>{tr('Account')}</th><th>{tr('Cost center')}</th>{Array.from({ length: MONTHS }, (_, m) => <th key={m} className="num">{monthName(m)}</th>)}<th className="num">{tr('Year')}</th><th /></tr></thead>
           <tbody>
@@ -293,7 +293,7 @@ export function BudgetVsActual({ budget }: { budget: Budget }) {
         </label>
         {cc && <span className="small muted">{costCenterName(ws, cc, lg)}</span>}
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label={tr('Budget table')}>
         <table className="data statement">
           <thead>
             <tr><th /><th colSpan={2} className="num">{monthName(month - 1, 'long')}</th><th colSpan={4} className="num">{tr('Year to date')}</th><th className="num">{tr('Whole year')}</th></tr>

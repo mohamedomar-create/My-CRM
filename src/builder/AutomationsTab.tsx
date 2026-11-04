@@ -2,6 +2,7 @@ import { Bell, CheckCircle2, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import type { Focus } from './Builder'
 import { useDraft } from './useDraft'
 import { FilterRow, fieldOptions } from './ReportsTab'
+import { AutomationTest } from './AutomationTest'
 import type { ActionDef, ModuleDef, TriggerType, WorkflowDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
 import { N_, tr } from '../lib/i18n'
@@ -177,6 +178,7 @@ function Editor({ wf, onDeleted }: { wf: WorkflowDef; onDeleted: () => void }) {
         </div>
       </div>
       {errs.map((e, i) => <div key={i} className={e.level === 'error' ? 'error-box' : 'note'}>{e.message}</div>)}
+      <AutomationTest wf={wf} />
     </div>
   )
 }

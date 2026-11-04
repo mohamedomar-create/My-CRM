@@ -24,3 +24,5 @@ psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -q -t -A -f "$TESTS" 2>&1 | sed -E 's
 # a new company, then one with 3,000 customers already on file (each save works on the whole company).
 SIM_DATABASE_URL="$DATABASE_URL" npx vitest run src/lib/dbsim.test.ts --silent=false
 SIM_DATABASE_URL="$DATABASE_URL" SIM_SIZE=${SIM_SIZE:-3000} SIM_PEOPLE=${SIM_BIG_PEOPLE:-20} SIM_ROUNDS=${SIM_BIG_ROUNDS:-4} npx vitest run src/lib/dbsim.test.ts --silent=false
+# Three years of past invoices and bills brought in: the company opens as fast, with every figure unchanged.
+SIM_DATABASE_URL="$DATABASE_URL" npx vitest run src/lib/historyScale.test.ts --silent=false

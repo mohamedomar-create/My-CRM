@@ -41,7 +41,7 @@ export default function Landing() {
           <button className="ghost" style={{ color: '#cfe3e3' }} onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}>
             <Languages size={16} /> {lang === 'en' ? 'العربية' : 'English'}
           </button>
-          <Link to="/pricing" className="btn ghost" style={{ color: '#cfe3e3' }}>{tr('Pricing')}</Link>
+          <Link to="/pricing" className="btn ghost on-ink">{tr('Pricing')}</Link>
           <Link to="/signin" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}>{t('signin')}</Link>
           <Link to="/register" className="btn glow">{t('start')}</Link>
         </div>

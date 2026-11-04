@@ -16,6 +16,7 @@ const AreaHome = lazy(loadScreen(() => import('./workspace/Hub').then((m) => ({ 
 const BudgetsPage = lazy(loadScreen(() => import('./workspace/BudgetsPage')))
 const Access = lazy(loadScreen(() => import('./workspace/Access')))
 const SheetReports = lazy(loadScreen(() => import('./workspace/SheetReports')))
+const Doctor = lazy(loadScreen(() => import('./workspace/Doctor')))
 const ModuleView = lazy(loadScreen(() => import('./workspace/ModuleView')))
 const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
@@ -32,6 +33,8 @@ import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signO
 import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
+import QuoteOnline from './pages/QuoteOnline'
+import Group from './workspace/Group'
 import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
 import { loadScreen } from './lib/update'
@@ -164,6 +167,7 @@ export default function App() {
       <Route path="/register" element={<Auth mode="register" />} />
       <Route path="/signin" element={<Auth mode="signin" />} />
       <Route path="/join" element={<Auth mode="join" />} />
+      <Route path="/q/:token" element={<QuoteOnline />} />
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/security" element={<Security />} />
@@ -184,9 +188,11 @@ export default function App() {
         <Route path="new/:moduleId" element={<RecordPage />} />
         <Route path="inventory" element={<NeedsErp><Inventory /></NeedsErp>} />
         <Route path="accounting" element={<NeedsErp><Accounting /></NeedsErp>} />
+        <Route path="group" element={<NeedsErp><Group /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />
         <Route path="reports" element={<SheetReports />} />
+        <Route path="doctor" element={<Doctor />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="audit" element={<Audit />} />
         <Route path="migrate" element={<Migrate />} />

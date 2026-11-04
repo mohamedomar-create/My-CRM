@@ -16,3 +16,7 @@ verify_jwt = false
 [functions.billing]
 # Paymob's payment notices have no login; the function checks their HMAC signature. Checkout checks the login itself.
 verify_jwt = false
+
+[functions.quote]
+# Customers open a shared quotation without a login; the function requires a link whose secret matches a sent quotation.
+verify_jwt = false

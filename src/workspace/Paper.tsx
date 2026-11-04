@@ -30,7 +30,7 @@ const TONE = { blue: ['var(--primary-50)', 'var(--primary-600)'], amber: ['var(-
 /** The document's read-only view. */
 export function PaperView({ rec, mod, onReverse }: { rec: Rec; mod: ModuleDef; onReverse?: (paymentId: string) => void }) {
   const { ws, schema } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const sales = mod.role === 'invoices'
   const partyId = String(rec.values[sales ? 'customer' : 'supplier'] ?? '')
   const party = findRecord(ws, partyId)
@@ -79,10 +79,10 @@ export function PaperView({ rec, mod, onReverse }: { rec: Rec; mod: ModuleDef; o
           <span className="grand">{tr('Total')}</span><span className="grand num">{money(Math.abs(Number(rec.values.total ?? t.total)), cur)}</span>
           {!rec.values.credit_for && Number(rec.values.paid) ? <><span>{tr('Paid')}</span><span className="num">{money(Number(rec.values.paid), cur)}</span></> : null}
           {!rec.values.credit_for && Number(rec.values.credited) ? <><span>{tr('Credited')}</span><span className="num">{money(Number(rec.values.credited), cur)}</span></> : null}
-          {rec.status !== 'void' && <><span><b>{rec.values.credit_for ? tr('Credit left') : tr('Balance due')}</b></span><b className="num">{money(Math.abs(balance), cur)}</b></>}
+          {rec.status !== 'void' && rec.status !== 'ordered' && <><span><b>{rec.values.credit_for ? tr('Credit left') : tr('Balance due')}</b></span><b className="num">{money(Math.abs(balance), cur)}</b></>}
         </div>
       </div>
-      <Timeline rec={rec} mod={mod} onReverse={onReverse} />
+      {rec.status !== 'ordered' && <Timeline rec={rec} mod={mod} onReverse={onReverse} />}
     </div>
   )
 }
@@ -96,7 +96,7 @@ interface Event { date: string; at: number; icon: ReactNode; text: ReactNode; am
 /** Everything that happened to the document, oldest first. */
 function Timeline({ rec, mod, onReverse }: { rec: Rec; mod: ModuleDef; onReverse?: (paymentId: string) => void }) {
   const { ws, schema, user } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const finance = canPost({ schema, user })
   const sales = mod.role === 'invoices'
   const events: Event[] = []

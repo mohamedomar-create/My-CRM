@@ -33,7 +33,7 @@ function setup() {
   return { ws, schema, ctx, mod, customer, supplier, rice, delivery, line }
 }
 
-const ccOf = (ws: Workspace, ref: string) => ws.data.journal.find((j) => j.ref === ref)!.lines.filter((l) => l.cc || ['4000', '5000', '5100', '5200'].includes(l.account)).map((l) => [l.account, l.cc ?? '', l.debit - l.credit])
+const ccOf = (ws: Workspace, ref: string) => ws.data.journal.find((j) => j.ref === ref)!.lines.filter((l) => l.cc || ['4000', '4100', '5000', '5100', '5200'].includes(l.account)).map((l) => [l.account, l.cc ?? '', l.debit - l.credit])
 
 describe('cost centers', () => {
   it('posts each line’s income and costs to its cost center, and the books still balance', () => {
@@ -48,7 +48,7 @@ describe('cost centers', () => {
     expect(ccOf(ws, inv.number!)).toEqual([['4000', 'CAI-SAL', -1800], ['4000', 'ALX', -600], ['4000', '', -50], ['5000', 'CAI-SAL', 1200], ['5000', 'ALX', 400]])
     // A credit note gives back to the cost center of the line it credits.
     const cn = creditNote(ctx, inv.id, { lines: [{ line: inv.lines![1].id, qty: 1 }], date: '2026-10-06', reason: 'Bag returned' })
-    expect(ccOf(ws, cn.number!)).toEqual([['4000', 'ALX', 300], ['5000', 'ALX', -200]])
+    expect(ccOf(ws, cn.number!)).toEqual([['4100', 'ALX', 300], ['5000', 'ALX', -200]])
     // A journal voucher: rent to Cairo; the cash line has no cost center (the balance sheet is the company's).
     manualJournal(ctx, { date: '2026-10-10', memo: 'October rent', lines: [{ account: '5200', debit: 5000, credit: 0, cc: 'CAI' }, { account: '1100', debit: 0, credit: 5000, cc: 'CAI' }] })
     const jv = ws.data.journal[0]
@@ -71,7 +71,7 @@ describe('cost centers', () => {
 
     // Voiding the credit note takes its cost centers back out too.
     voidDocument(ctx, cn)
-    expect(ws.data.journal[0].lines.filter((l) => l.account === '4000').map((l) => [l.cc, l.credit])).toEqual([['ALX', 300]])
+    expect(ws.data.journal[0].lines.filter((l) => l.account === '4100').map((l) => [l.cc, l.credit])).toEqual([['ALX', 300]])
     expect(net('ALX')).toBe(100)
   })
 

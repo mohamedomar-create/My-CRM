@@ -2,6 +2,16 @@
 // responds instantly, and sends it to the server, which runs the same code on the latest saved data and is the only
 // one allowed to save. So business rules (who may post, what is locked, how stock and the books move) are enforced
 // by the server, not by whichever browser happens to send the data.
+import { publishBlockers } from './publishCheck'
+import { allocateLanded, undoLanded, type LandedMethod } from './landed'
+import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
+import { closeOrder, confirmOrder, deliver, invoiceDelivered, undoDelivery } from './orders'
+import { billReceived, closePurchaseOrder, orderPurchase, receiveGoods, undoReceipt } from './purchasing'
+import { revalue, setDocCurrency } from './fx'
+import { reviseQuote, shareQuote } from './quoteOnline'
+import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
+import { reinstate, setAllowance, writeOff } from './badDebts'
+import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
 import type { AppSchema, Permission } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
@@ -13,7 +23,7 @@ import { addRole, removeRole, saveRole } from './access'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
+  addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -33,16 +43,16 @@ type Method = 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
 export interface CommandArgs {
   'record.create': { module: string; values: Record<string, unknown>; lines?: Line[] }
   'record.update': { id: string; values?: Record<string, unknown>; lines?: Line[] }
-  'record.saveAndPost': { id: string; values?: Record<string, unknown>; lines?: Line[] }
+  'record.saveAndPost': { id: string; values?: Record<string, unknown>; lines?: Line[]; warehouse?: string }
   'record.delete': { id: string }
   'record.moveStage': { id: string; stage: string }
   'lead.convert': { id: string }
   'quote.setStatus': { id: string; status: 'sent' | 'accepted' | 'declined' }
   'quote.toInvoice': { id: string }
   'deal.toQuote': { id: string }
-  'doc.post': { id: string }
+  'doc.post': { id: string; warehouse?: string }
   'doc.void': { id: string }
-  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number }
   'payment.voucher': { party: string; date: string; method: Method; account?: string; wht?: number; cheque?: { no: string; bank?: string; due: string }; allocations: { doc: string; amount: number }[] }
   'cheque.deposit': { id: string; account: string; date: string }
   'cheque.clear': { id: string; date: string; account?: string }
@@ -71,13 +81,47 @@ export interface CommandArgs {
   'import.activities': { rows: Record<string, string>[]; batch?: { id: string; file: string }; firstRow?: number; people?: Record<string, string> }
   'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
-  'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
+  'journal.manual': { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }
+  'money.transfer': { from: string; to: string; amount: number; date: string; memo?: string; charges?: number }
+  'asset.add': { name: string; account?: string; date: string; cost: number; salvage?: number; life: number; from: string; cc?: string; accumulated?: number }
+  'asset.depreciate': { month: string }
+  'asset.undoDepreciation': { id: string }
+  'asset.dispose': { id: string; date: string; proceeds?: number; account?: string }
+  'debt.allowance': { date: string; amount: number; note?: string }
+  'debt.writeOff': { id: string; date: string; reason: string }
+  'debt.reinstate': { id: string; date: string }
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
   'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean }
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
+  'sheet.save': { sheet: SheetReportDef }
+  'landed.allocate': { from?: string; to: string[]; method: LandedMethod; amount?: number; date?: string; paid?: { account: string; vat?: number; what?: string } }
+  'landed.undo': { id: string }
+  'order.confirm': { id: string }
+  'order.deliver': { id: string; date: string; lines: { line: string; qty: number }[]; note?: string; warehouse?: string }
+  'order.undoDelivery': { id: string }
+  'order.invoice': { id: string }
+  'order.close': { id: string; reason: string }
+  'po.send': { id: string }
+  'recipe.set': { product: string; recipe: { yield: number; items: { product: string; qty: number }[]; labour?: number } | null }
+  'production.plan': { product: string; qty: number; date?: string; warehouse?: string; note?: string }
+  'production.complete': { id: string; date?: string }
+  'production.cancel': { id: string }
+  'quote.share': { id: string; secret?: string }
+  'quote.revise': { id: string }
+  'journal.setApproval': { over: number | null }
+  'journal.approve': { id: string }
+  'journal.reject': { id: string; reason: string }
+  'product.setUnits': { product: string; units: { name: string; nameAr?: string; factor: number }[] }
+  'fx.setCurrency': { id: string; currency: string; rate?: number }
+  'fx.revalue': { month: string; rates: Record<string, number> }
+  'po.receive': { id: string; date: string; lines: { line: string; qty: number; lot?: string; expiry?: string }[]; supplierRef?: string; warehouse?: string }
+  'po.undoReceipt': { id: string }
+  'po.bill': { id: string }
+  'po.close': { id: string; reason: string }
+  'sheet.remove': { id: string }
   'budget.create': { year: number; name?: string; from?: 'empty' | 'actuals'; growthIncome?: number; growthExpense?: number }
   'budget.setLines': { id: string; lines: BudgetLine[]; name?: string }
   'budget.submit': { id: string }
@@ -104,7 +148,9 @@ export interface CommandArgs {
   'opening.goLive': { reason?: string }
   'opening.reopen': { reason: string }
   'stock.adjust': Adjustment
-  'stock.count': { date: string; counts: { product: string; counted: number }[]; note?: string }
+  'stock.count': { date: string; counts: { product: string; counted: number }[]; note?: string; warehouse?: string }
+  'stock.transfer': { from: string; to: string; date: string; lines: { product: string; qty: number; lot?: string }[]; note?: string }
+  'warehouse.save': { code: string; name: string; nameAr?: string; kind: 'store' | 'van'; person?: string; active?: boolean }
   'doc.creditNote': { id: string; lines: CreditLine[]; date: string; reason: string; restock?: boolean }
   'doc.refund': { id: string; amount: number; date: string; method: Method }
   'payment.reverse': { id: string; reason: string; date?: string }
@@ -179,7 +225,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'record.saveAndPost': {
     run: (ws, u, a) => {
       const c = ctx(ws, u)
-      postDocument(c, edits(c, a.id, a.values, a.lines))
+      postDocument(c, edits(c, a.id, a.values, a.lines), { warehouse: a.warehouse ? String(a.warehouse) : undefined })
     },
   },
   'record.delete': { run: (ws, u, a) => deleteRecord(ctx(ws, u), rec(ws, a.id)) },
@@ -188,9 +234,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'quote.setStatus': { run: (ws, u, a) => setQuoteStatus(ctx(ws, u), rec(ws, a.id), a.status) },
   'quote.toInvoice': { run: (ws, u, a) => ({ id: quoteToInvoice(ctx(ws, u), rec(ws, a.id)).id }) },
   'deal.toQuote': { run: (ws, u, a) => ({ id: dealToQuote(ctx(ws, u), rec(ws, a.id)).id }) },
-  'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id)) },
+  'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id), { warehouse: a.warehouse ? String(a.warehouse) : undefined }) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
-  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque }) },
+  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque, rate: a.rate === undefined ? undefined : Number(a.rate) }) },
   'payment.voucher': { run: (ws, u, a) => moneyVoucher(ctx(ws, u), a) },
   'cheque.deposit': { run: (ws, u, a) => depositCheque(ctx(ws, u), String(a.id), String(a.account), String(a.date)) },
   'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
@@ -261,6 +307,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       // The server runs the health check itself, so a setup with errors can never go live.
       const errors = validate(ws.draft).filter((i) => i.level === 'error')
       if (errors.length) throw new EngineError(`Fix ${errors.length} problem${errors.length > 1 ? 's' : ''} before publishing: ${errors[0].message}`)
+      // …and against the records already there: nothing the data still uses can disappear
+      const orphans = publishBlockers(ws, ws.draft)
+      if (orphans.length) throw new EngineError(`This would leave records behind (${orphans.length}): ${orphans[0].message}`)
       const first = !ws.published
       const version = (ws.published?.version ?? 0) + 1
       const snapshot = structuredClone({ ...ws.draft, version })
@@ -306,7 +355,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   },
   'accounts.add': { run: (ws, u, a) => addAccount(ctx(ws, u), a) },
   'accounts.update': { run: (ws, u, a) => updateAccount(ctx(ws, u), a.code, a) },
-  'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), a) },
+  'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), { date: a.date, memo: a.memo, lines: a.lines, adjusting: Boolean(a.adjusting), reverseOn: a.reverseOn ? String(a.reverseOn) : undefined }) },
   'costCenter.add': { run: (ws, u, a) => addCostCenter(ctx(ws, u), { code: String(a.code ?? ''), name: String(a.name ?? ''), nameAr: a.nameAr === undefined ? undefined : String(a.nameAr), parent: a.parent ? String(a.parent) : undefined }) },
   'costCenter.update': {
     run: (ws, u, a) => void updateCostCenter(ctx(ws, u), String(a.code ?? ''), {
@@ -331,6 +380,40 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
+  'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: a.from ? String(a.from) : undefined, paid: a.paid && typeof a.paid === 'object' ? { account: String(a.paid.account ?? ''), vat: Number(a.paid.vat ?? 0) || 0, what: String(a.paid.what ?? '') } : undefined, to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
+  'landed.undo': { run: (ws, u, a) => void undoLanded(ctx(ws, u), String(a.id ?? '')) },
+  'order.confirm': { run: (ws, u, a) => confirmOrder(ctx(ws, u), String(a.id ?? '')) },
+  'order.deliver': { run: (ws, u, a) => deliver(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0 })) : [], note: a.note === undefined ? undefined : String(a.note), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
+  'order.undoDelivery': { run: (ws, u, a) => void undoDelivery(ctx(ws, u), String(a.id ?? '')) },
+  'order.invoice': { run: (ws, u, a) => ({ id: invoiceDelivered(ctx(ws, u), String(a.id ?? '')).id }) },
+  'order.close': { run: (ws, u, a) => void closeOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'fx.setCurrency': { run: (ws, u, a) => setDocCurrency(ctx(ws, u), String(a.id ?? ''), String(a.currency ?? ''), a.rate === undefined ? undefined : Number(a.rate)) },
+  'fx.revalue': { run: (ws, u, a) => revalue(ctx(ws, u), String(a.month ?? ''), a.rates && typeof a.rates === 'object' ? Object.fromEntries(Object.entries(a.rates).slice(0, 20).map(([k, v]) => [String(k).slice(0, 3), Number(v)])) : {}).ref },
+  'product.setUnits': { run: (ws, u, a) => setUnits(ctx(ws, u), String(a.product ?? ''), Array.isArray(a.units) ? a.units : []) },
+  'journal.setApproval': { admin: true, run: (ws, u, a) => setJvApproval(ctx(ws, u), a.over === null || a.over === undefined ? null : Number(a.over)) },
+  'journal.approve': { run: (ws, u, a) => approveJournal(ctx(ws, u), String(a.id ?? '')) },
+  'journal.reject': { run: (ws, u, a) => void rejectJournal(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'quote.share': { run: (ws, u, a) => shareQuote(ctx(ws, u), String(a.id ?? ''), a.secret === undefined ? undefined : String(a.secret)) },
+  'quote.revise': { run: (ws, u, a) => reviseQuote(ctx(ws, u), String(a.id ?? '')) },
+  'recipe.set': { run: (ws, u, a) => setRecipe(ctx(ws, u), String(a.product ?? ''), a.recipe && typeof a.recipe === 'object' ? { yield: Number(a.recipe.yield) || 1, items: Array.isArray(a.recipe.items) ? a.recipe.items : [], labour: Number(a.recipe.labour ?? 0) || 0 } : null) },
+  'production.plan': { run: (ws, u, a) => planProduction(ctx(ws, u), { product: String(a.product ?? ''), qty: Number(a.qty), date: a.date ? String(a.date) : undefined, warehouse: a.warehouse ? String(a.warehouse) : undefined, note: a.note ? String(a.note) : undefined }).number },
+  'production.complete': { run: (ws, u, a) => void completeProduction(ctx(ws, u), String(a.id ?? ''), a.date ? String(a.date) : undefined) },
+  'production.cancel': { run: (ws, u, a) => void cancelProduction(ctx(ws, u), String(a.id ?? '')) },
+  'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
+  'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
+  'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },
+  'po.bill': { run: (ws, u, a) => ({ id: billReceived(ctx(ws, u), String(a.id ?? '')).id }) },
+  'po.close': { run: (ws, u, a) => void closePurchaseOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0 }) },
+  'asset.add': { run: (ws, u, a) => ({ id: addAsset(ctx(ws, u), { name: String(a.name ?? '').slice(0, 120), account: a.account === undefined ? undefined : String(a.account), date: String(a.date ?? ''), cost: Number(a.cost), salvage: Number(a.salvage ?? 0) || 0, life: Number(a.life), from: String(a.from ?? ''), cc: a.cc ? String(a.cc) : undefined, accumulated: Number(a.accumulated ?? 0) || 0 }).id }) },
+  'asset.depreciate': { run: (ws, u, a) => depreciate(ctx(ws, u), String(a.month ?? '')).number },
+  'asset.undoDepreciation': { run: (ws, u, a) => void undoDepreciation(ctx(ws, u), String(a.id ?? '')) },
+  'asset.dispose': { run: (ws, u, a) => void disposeAsset(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), proceeds: Number(a.proceeds ?? 0) || 0, account: a.account === undefined ? undefined : String(a.account) }) },
+  'debt.allowance': { run: (ws, u, a) => setAllowance(ctx(ws, u), { date: String(a.date ?? ''), amount: Number(a.amount), note: a.note === undefined ? undefined : String(a.note).slice(0, 200) }).ref },
+  'debt.writeOff': { run: (ws, u, a) => writeOff(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), reason: String(a.reason ?? '').slice(0, 300) }).ref },
+  'debt.reinstate': { run: (ws, u, a) => void reinstate(ctx(ws, u), String(a.id ?? ''), String(a.date ?? '')) },
+  'sheet.save': { admin: true, run: (ws, u, a) => saveSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, a.sheet) },
+  'sheet.remove': { admin: true, run: (ws, u, a) => void removeSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },
   'journal.reverse': { run: (ws, u, a) => reverseJournal(ctx(ws, u), a.id, a.date) },
   'opening.balance': { run: (ws, u, a) => void openingBalance(ctx(ws, u), a) },
@@ -352,6 +435,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'opening.reopen': { admin: true, run: (ws, u, a) => void reopenOpening(ctx(ws, u), String(a.reason)) },
   'stock.adjust': { run: (ws, u, a) => adjustStock(ctx(ws, u), a) },
   'stock.count': { run: (ws, u, a) => countStock(ctx(ws, u), a) },
+  'stock.transfer': { run: (ws, u, a) => transferStock(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ product: String(l?.product ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined })) : [], note: a.note === undefined ? undefined : String(a.note) }).ref },
+  'warehouse.save': { run: (ws, u, a) => saveWarehouse(ctx(ws, u), { code: String(a.code ?? ''), name: String(a.name ?? ''), nameAr: a.nameAr === undefined ? undefined : String(a.nameAr), kind: a.kind, person: a.person ? String(a.person) : undefined, active: a.active }) },
   'doc.creditNote': { run: (ws, u, a) => creditNote(ctx(ws, u), a.id, a).id },
   'doc.refund': { run: (ws, u, a) => refundCredit(ctx(ws, u), a.id, Number(a.amount), String(a.date), a.method) },
   'payment.reverse': { run: (ws, u, a) => reversePayment(ctx(ws, u), a.id, String(a.reason ?? ''), a.date) },

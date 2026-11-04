@@ -10,6 +10,7 @@ import { uid } from './schema'
 import { applyCommand, type Actor, type Command, type CommandArgs, type CommandName } from './commands'
 import { billingProblem, PLANS, VAT_RATE, type BillingStatus, type Plan } from './billing'
 import { supabase } from './supabase'
+import { forgetOfflineCopies, isOfflineError, keepOfflineCopy, offlineCopy } from './offline'
 
 const LAST_WS = 'bonyan.workspace'
 
@@ -39,6 +40,8 @@ interface State {
   notice: Notice | null
   /** why the workspace couldn't be opened (network down, no access…), shown with a Retry button */
   loadError: string | null
+  /** opened from the copy kept on this device, with no connection: read only until back online */
+  offline?: { savedAt: string } | null
   prefs: Prefs
   /** the companies this person belongs to (for the company switcher) */
   companies: Company[]
@@ -260,6 +263,7 @@ export function run<N extends CommandName>(name: N, args: CommandArgs[N], label 
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   assertSelf()
+  if (state.offline) throw new Error('You are offline: this is the copy kept on this device. Changes can be made when you are back online.')
   // Read-only after the trial or when unpaid, and no books on the Free plan: said now, not after the server refuses.
   const unpaid = billingProblem(state.billing, ws, name, args)
   if (unpaid) throw new Error(unpaid)
@@ -314,6 +318,11 @@ function friendly(message: string) {
   if (/rate limit|too many/i.test(message)) return 'Too many attempts. Wait a few minutes and try again.'
   if (/failed to fetch|network/i.test(message)) return 'Can\'t reach the server. Check your internet connection and try again.'
   return message
+}
+
+/** Another of the person's companies as they may see it (read only), for the group view. */
+export async function readCompany(id: string): Promise<Workspace> {
+  return (await fetchWorkspace(id)).doc
 }
 
 /** The workspace as this person may see it: the server leaves out what their role can't view. */
@@ -441,10 +450,12 @@ function open(ws: Workspace, user: User) {
     s.loadError = null
     s.prefs = {}
     s.billing = null
+    s.offline = null
   })
   void loadPrefs(ws.id, user.email)
   void refreshBilling(ws.id)
   listen(ws.id)
+  void keepOfflineCopy(user.email, ws, state.companies).catch(() => undefined)
 }
 
 /* ---------------- subscription ---------------- */
@@ -538,6 +549,14 @@ export async function chooseFreePlan(id: string) {
   publish((s) => { s.billing = data as BillingStatus })
 }
 
+/** Asks the doctor function for a short action plan from a check-up's findings (no names or contact details are sent). */
+export async function askDoctor(body: import('./doctorServer').DoctorRequest): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ plan: string }>('doctor', { body })
+  if (error) throw new Error(friendly(await serverMessage(error)))
+  if (!data?.plan) throw new Error('The AI gave no answer. Try again in a moment.')
+  return data.plan
+}
+
 /** Opens Paymob's checkout for a plan, period and number of people; the amount is worked out on the server. */
 export async function startCheckout(workspaceId: string, plan: string, cycle: 'month' | 'year', seats: number): Promise<string> {
   const { data, error } = await supabase.functions.invoke<{ url: string; payment: string }>('billing', { body: { action: 'checkout', workspace: workspaceId, plan, cycle, seats } })
@@ -623,6 +642,12 @@ let watching = false
 export async function init() {
   if (!watching && typeof window !== 'undefined') {
     watching = true
+    // the copy for offline use follows the work: kept whenever the app goes to the background
+    document.addEventListener('visibilitychange', () => {
+      const ws = currentWorkspace()
+      const me = ws?.users.find((u) => u.id === state.session?.selfId)
+      if (document.visibilityState === 'hidden' && ws && me && !state.offline) void keepOfflineCopy(me.email, ws, state.companies).catch(() => undefined)
+    })
     supabase.auth.onAuthStateChange((event) => {
       // Signed out in another tab or the session expired: leave the workspace here too.
       if (event === 'SIGNED_OUT' && state.session) {
@@ -645,8 +670,23 @@ export async function init() {
       if (await codeStillNeeded()) publish((s) => { s.needCode = true })
       else await openFor(data.session.user)
     } catch (e) {
-      // Keep the login; show what went wrong with a Retry button instead of silently signing out.
-      publish((s) => { s.loadError = (e as Error).message })
+      // No connection: open the copy kept on this device, read only, rather than an error screen.
+      const copy = isOfflineError(e) ? await offlineCopy(data.session.user.email ?? '', lastWorkspace()).catch(() => null) : null
+      const user = copy?.ws.users.find((u) => u.email.toLowerCase() === (data.session!.user.email ?? '').toLowerCase())
+      if (copy && user) {
+        publish((s) => {
+          s.companies = copy.companies
+          s.workspaces = { [copy.ws.id]: copy.ws }
+          s.session = { workspaceId: copy.ws.id, userId: user.id, selfId: user.id }
+          s.offline = { savedAt: copy.savedAt }
+          s.loadError = null
+        })
+        // back online: open the company afresh
+        window.addEventListener('online', () => { void init() }, { once: true })
+      } else {
+        // Keep the login; show what went wrong with a Retry button instead of silently signing out.
+        publish((s) => { s.loadError = (e as Error).message })
+      }
     }
   }
   publish((s) => { s.ready = true })
@@ -819,7 +859,16 @@ export async function signIn(email: string, password: string, inviteId?: string)
   }
 }
 
+function lastWorkspace() {
+  try {
+    return localStorage.getItem(LAST_WS)
+  } catch {
+    return null
+  }
+}
+
 export async function signOut() {
+  void forgetOfflineCopies().catch(() => undefined)
   try {
     await flush()
   } finally {

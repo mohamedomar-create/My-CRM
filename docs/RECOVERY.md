@@ -50,7 +50,9 @@ snapshots every 10 minutes for 90 days.
 ### Restore from the off-site backup
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:'YOUR PASSPHRASE' -in nasq360-YYYY-MM-DD.dump.enc -out nasq360.dump
-pg_restore --no-owner --no-privileges --dbname "$NEW_DATABASE_URL" nasq360.dump
+# a new project already has the public schema: restore everything else
+pg_restore -l nasq360.dump | grep -v ' SCHEMA - public ' > restore.list
+pg_restore --no-owner --no-privileges --exit-on-error -L restore.list --dbname "$NEW_DATABASE_URL" nasq360.dump
 ```
 Restore into a new Supabase project first, check it, then switch the app's settings (`src/lib/config.ts`) to it.
 

@@ -2,14 +2,24 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ClipboardList, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
+import { LandedPanel } from './LandedPanel'
+import { OrderPanel } from './OrderPanel'
+import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
+import { CurrencyBar } from './CurrencyBar'
+import { UnitsPanel } from './UnitsPanel'
+import { RecipePanel } from './RecipePanel'
+import { QuoteSharePanel } from './QuoteSharePanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  usesWarehouses, unitsOf, approvalRoles,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -67,7 +77,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const isCredit = Boolean(rec?.values.credit_for)
   const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
-  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
+  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && (rec.status === 'invoiced' || rec.status === 'ordered'))
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
   // On a new document the due date follows the date and the customer's or supplier's payment terms, until changed by hand.
   const partyKey = mod.role === 'purchases' ? 'supplier' : 'customer'
@@ -118,8 +128,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     if (act('record.update', { id: rec!.id, ...edits() }, tr('Saved'))) settle()
   }
 
+  const defaultWh = useDefaultWarehouse()
+  const [pickedWh, setPostWh] = useState('')
+  const postWh = pickedWh || String(rec?.values.warehouse ?? '') || defaultWh
   function saveAndPost() {
-    const ok = act('record.saveAndPost', { id: rec!.id, ...edits() }, tr('Saved and posted. Stock and accounts are updated.'))
+    const ok = act('record.saveAndPost', { id: rec!.id, ...edits(), ...(usesWarehouses(ws) ? { warehouse: postWh } : {}) }, tr('Saved and posted. Stock and accounts are updated.'))
     if (ok) settle()
   }
 
@@ -169,13 +182,18 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               {rec.status === 'draft' && <button disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
               {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
               {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
-              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="secondary" disabled={dirty} title={tr('For goods delivered before the invoice: they are held for this customer, then sent on delivery notes')} onClick={() => act('order.confirm', { id: rec.id }, tr('Confirmed as a sales order: the goods are held'))}><Truck size={15} /> {tr('Confirm as order')}</button>}
+              {rec.status !== 'declined' && rec.status !== 'draft' && rec.status !== 'ordered' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}
+          {mod.role === 'purchases' && rec && rec.status === 'draft' && !rec.values.from_po && !rec.values.credit_for && (rec.lines ?? []).some((l) => l.product) && can({ schema, user }, mod.id, 'edit') && (
+            <button className="secondary" disabled={dirty} title={tr('Order the goods first; receive them when they arrive, then bill what came')} onClick={() => act('po.send', { id: rec.id }, tr('Sent as a purchase order'))}><ClipboardList size={15} /> {tr('Send as purchase order')}</button>
+          )}
+          {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (rec.lines ?? []).some((l) => l.product) && <WarehouseSelect value={postWh} onChange={setPostWh} label={mod.role === 'invoices' ? tr('From') : tr('Into')} />}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
             dirty
               ? <button className="success" onClick={saveAndPost} title={tr('Save your changes and post in one step')}><Lock size={15} /> {tr('Save & post')}</button>
-              : <button className="success" onClick={() => act('doc.post', { id: rec.id }, tr('Posted. Stock and accounts are updated.'))}><Lock size={15} /> {tr('Post')}</button>
+              : <button className="success" onClick={() => act('doc.post', { id: rec.id, ...(usesWarehouses(ws) ? { warehouse: postWh } : {}) }, tr('Posted. Stock and accounts are updated.'))}><Lock size={15} /> {tr('Post')}</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && !isCredit && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> {tr('Register payment')}</button>
@@ -211,7 +229,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {Number(rec.values.balance) < 0 && <> {tr(mod.role === 'invoices' ? '{amount} is left as the customer’s credit (refund it, or keep it for later).' : '{amount} is left as the supplier’s credit (refund it, or keep it for later).', { amount: money(-Number(rec.values.balance), schema.company.currency) })}</>}
         </div>
       )}
-      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && rec.values.credit_for !== 'advance' && (
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && rec.status !== 'ordered' && !rec.values.opening && rec.values.credit_for !== 'advance' && (
         <div className={rec.values.eta_uuid ? 'info row' : mod.role === 'invoices' ? 'warn-box row' : 'info row'} style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
           <FileCheck2 size={16} />
           {rec.values.eta_uuid
@@ -221,6 +239,14 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         </div>
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
+      {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
+      {rec && mod.role === 'products' && <RecipePanel rec={rec} />}
+      {rec && mod.role === 'quotes' && <QuoteSharePanel rec={rec} />}
+      {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && rec.status === 'ordered' && <PurchaseOrderPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && Boolean(rec.values.from_po) && <BillMatch rec={rec} />}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
@@ -258,7 +284,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             </div>
           </div>}
           {mod.role === 'invoices' && (isNew || rec?.status === 'draft') && !isCredit && <CreditWarning customer={String(values.customer ?? '')} lines={lines} />}
-          {mod.lines && !paper && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {mod.lines && !paper && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} currency={String(rec?.values.currency ?? '') || undefined} />}
           {payments.length > 0 && !paper && (
             <div className="card">
               <h2>{tr('Payments')}</h2>
@@ -310,14 +336,14 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               </ul>
             </div>
           )}
-          {rec && can({ schema, user }, mod.id, 'delete') && !paper && (
+          {rec && can({ schema, user }, mod.id, 'delete') && !paper && rec.status !== 'ordered' && (
             <button className="danger" onClick={() => confirm(tr('Delete this {what}?', { what: mod.singular.toLowerCase() })) && act('record.delete', { id: rec.id }, tr('Deleted')) && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> {tr('Delete')}</button>
           )}
         </div>
       </div>
       {paying && rec && (isCredit
         ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, tr('Refund registered'))) setPaying(false) }} />
-        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
+        : <PaymentModal rec={rec} currency={String(rec.values.currency ?? '') || schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
       {advancing && rec && <AdvanceModal party={rec} onClose={() => setAdvancing(false)} />}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
@@ -410,7 +436,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
   }
 }
 
-function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string }) {
+function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currency }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string; currency?: string }) {
   const { user } = useApp()
   // Cost centers (P1): each line's income or cost goes to one; a new line starts with the person's own.
   const withCc = costCenters(ws).some((c) => c.active) || lines.some((l) => l.cc)
@@ -418,7 +444,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
   const products = moduleByRole(schema, 'products')
   const items = products ? list(ws, products.id) : []
   const t = totals(lines)
-  const cur = schema.company.currency
+  const cur = currency || schema.company.currency
   const upd = (i: number, patch: Partial<Line>) => onChange(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
   const pick = (i: number, pid: string) => {
     const p = items.find((x) => x.id === pid)
@@ -449,9 +475,29 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
                   <td>
                     {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} /> : null}
                     {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
-                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
+                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty * (l.factor ?? 1) ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
+                    {mod.role === 'purchases' && Boolean(p?.values.track_stock) && (
+                      <div className="line-batch">
+                        <input value={l.lot ?? ''} onChange={(e) => upd(i, { lot: e.target.value || undefined })} disabled={disabled} placeholder={tr('Batch no.')} aria-label={tr('Batch number')} maxLength={40} />
+                        <input type="date" value={l.expiry ?? ''} onChange={(e) => upd(i, { expiry: e.target.value || undefined })} disabled={disabled} aria-label={tr('Expiry date')} title={tr('Expiry date')} />
+                      </div>
+                    )}
+                    {l.lots && l.lots.length > 0 && <div className="tiny muted">{tr('Batches')}: {l.lots.map((b) => `${b.lot}${b.expiry ? ` (${tr('exp.')} ${b.expiry})` : ''} × ${b.qty}`).join(' · ')}</div>}
                   </td>
-                  <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
+                  <td>
+                    <input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} />
+                    {unitsOf(ws, l.product).length > 0 && (
+                      // another unit of the product (a carton of 12): the price follows it, stock is counted in pieces
+                      <select aria-label={tr('Unit')} value={l.unit ?? ''} disabled={disabled} style={{ width: 90, marginTop: 4 }} onChange={(e) => {
+                        const u = unitsOf(ws, l.product).find((x) => x.name === e.target.value)
+                        const per = l.price / (l.factor ?? 1)
+                        upd(i, u ? { unit: u.name, factor: u.factor, price: round2(per * u.factor) } : { unit: undefined, factor: undefined, price: round2(per) })
+                      }}>
+                        <option value="">{tr('Piece')}</option>
+                        {unitsOf(ws, l.product).map((u) => <option key={u.name} value={u.name}>{(getLang() === 'ar' && u.nameAr) || u.name} ({u.factor})</option>)}
+                      </select>
+                    )}
+                  </td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
                   <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.discAmt ?? ''} placeholder="0" onChange={(e) => upd(i, { discAmt: e.target.value === '' ? undefined : Number(e.target.value) })} disabled={disabled} style={{ width: 90 }} title={tr('An amount off this line, before VAT')} /></td>
@@ -522,7 +568,7 @@ function BudgetWarnings({ lines, date }: { lines: Line[]; date?: string }) {
   )
 }
 
-type PayExtra = { wht: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+type PayExtra = { wht: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number }
 
 function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', extra: PayExtra) => void }) {
   const { ws } = useApp()
@@ -544,7 +590,10 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
   const [chequeNo, setChequeNo] = useState('')
   const [chequeBank, setChequeBank] = useState('')
   const [chequeDue, setChequeDue] = useState(todayISO())
-  const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }) })
+  // a document in another currency: the rate on the day of payment (its own rate to start with)
+  const foreign = Boolean(rec.values.currency)
+  const [rate, setRate] = useState(String(rec.values.carry_rate ?? rec.values.rate ?? ''))
+  const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }), ...(foreign && Number(rate) > 0 ? { rate: Number(rate) } : {}) })
   return (
     <>
       <Modal onClose={onClose}>
@@ -553,7 +602,8 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
           <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
           <label className="field">{tr('Amount')}<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
           <label className="field">{tr('Date')}<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <div className="seg">{(refund ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
+          {foreign && !refund && <label className="field">{tr('Exchange rate today: 1 {a} =', { a: String(rec.values.currency) })}<input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><span className="tiny muted">{tr('{a} in {b}; a difference to the invoice’s rate is an exchange gain or loss', { a: money(round2(amount * (Number(rate) || 0)), ws.published?.company.currency ?? 'EGP'), b: ws.published?.company.currency ?? 'EGP' })}</span></label>}
+          <div className="seg">{(refund || foreign ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
           {method === 'cheque' ? (
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <label className="field" style={{ width: 130 }}>{tr('Cheque no.')}<input required value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
@@ -587,7 +637,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
 /** Credit note (sales) or debit note (purchases): which lines and how many come back, at what price, and why. */
 function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleDef; onClose: () => void; onDone: (id: string) => void }) {
   const { ws, schema, act } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const sales = mod.role === 'invoices'
   const done = (lineId: string) => creditNotesOf(ws, rec).reduce((s, c) => s + (c.lines ?? []).filter((l) => l.from === lineId).reduce((t, l) => t + l.qty, 0), 0)
   const [rows, setRows] = useState<Record<string, { qty: string; price: string }>>({})
@@ -641,7 +691,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const partyId = String(rec.values.customer ?? rec.values.supplier ?? '')
   const party = findRecord(ws, partyId)
   const t = totals(rec.lines ?? [])
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const [both, setBoth] = usePrintBoth()
   const B = (en: string, vars?: Record<string, string | number>) => <Bi en={en} vars={vars} both={both} />
   const draft = rec.status === 'draft' && mod.role !== 'quotes'
@@ -702,7 +752,7 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   const rules = (schema.approvals ?? []).filter((r) => r.module === mod.id)
   if (!rules.length) return null
   const isAdmin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
-  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'own' | 'pending' | 'rejected' | 'needed'; by?: string; override?: string }
+  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'own' | 'pending' | 'rejected' | 'needed'; by?: string; override?: string; step?: number }
   const items = rules.flatMap((r): Item[] => {
     if (r.action === 'post' && rec.status !== 'draft') return []
     const needed = approvalNeeded(ctx, rec, r.action, r.stage)
@@ -712,8 +762,8 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
     }
     const pending = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'pending')
     const rejected = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'rejected')
-    const state = mayActAsApprover(ctx, r, rec) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : canApprove({ schema, user }, r) ? 'own' : 'needed'
-    return [{ r, state }]
+    const state = mayActAsApprover(ctx, r, rec) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : canApprove({ schema, user }, r) && approvalRoles(r).length === 1 ? 'own' : 'needed'
+    return [{ r, state, step: pending?.step ?? 0 }]
   })
   if (!items.length) return null
   const roleName = (id: string) => schema.roles.find((x) => x.id === id)?.name ?? 'an approver'
@@ -724,7 +774,7 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   }
   return (
     <div className="stack" style={{ marginBottom: 14 }}>
-      {items.map(({ r, state, by, override: why }) => (
+      {items.map(({ r, state, by, override: why, step }) => (
         <div key={r.id} className={`row ${state === 'approved' ? 'ok-box' : state === 'rejected' ? 'error-box' : 'note'}`}>
           <ShieldAlert size={16} />
           <span className="grow">
@@ -732,9 +782,9 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
             {state === 'approved' && (why ? `approved by ${by} as an override: “${why}”.` : `approved by ${by}. Changing the record cancels the approval.`)}
             {state === 'self' && `${what(r)} normally needs approval from ${roleName(r.approverRole)}. You can do it yourself.`}
             {state === 'own' && `you made this record, so someone else must approve ${what(r)}.`}
-            {state === 'pending' && `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`}
+            {state === 'pending' && (approvalRoles(r).length > 1 ? `waiting for ${roleName(approvalRoles(r)[step ?? 0])} (step ${(step ?? 0) + 1} of ${approvalRoles(r).length}: ${approvalRoles(r).map(roleName).join(' → ')}).` : `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`)}
             {state === 'rejected' && `rejected. Change the record and request approval again.`}
-            {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
+            {state === 'needed' && `${what(r)} needs approval from ${approvalRoles(r).map(roleName).join(' → ')}.`}
           </span>
           {(state === 'needed' || state === 'rejected' || state === 'own') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, tr('Approval requested'))}><Send size={14} /> {tr('Request approval')}</button>}
           {isAdmin && state !== 'approved' && state !== 'self' && <button className="ghost small" onClick={() => override(r)} title={tr('Approve without a second person, with a reason')}>{tr('Override…')}</button>}

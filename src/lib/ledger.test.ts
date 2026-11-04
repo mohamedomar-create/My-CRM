@@ -213,7 +213,9 @@ describe('credit notes, debit notes, refunds and payment reversals', () => {
     expect(cn.values.total).toBe(-114)
     expect(inv.values.balance).toBe(342)
     expect(onHand(ws, product.id)).toBe(7)
-    expect(accountBalance(ws, '4000')).toBe(-300)
+    // gross sales stay in 4000; the return goes to 4100 Sales returns (a contra revenue account): net 300
+    expect(accountBalance(ws, '4000')).toBe(-400)
+    expect(accountBalance(ws, '4100')).toBe(100)
     expect(accountBalance(ws, '5000')).toBe(90)
     healthy(ws, schema)
   })

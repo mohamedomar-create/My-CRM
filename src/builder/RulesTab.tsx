@@ -143,7 +143,16 @@ function Approvals({ mod }: { mod: ModuleDef }) {
                 {schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </label>
+            {(a.steps ?? []).map((st, k) => (
+              <label key={k} className="field">{tr('Then by')}
+                <span className="row" style={{ gap: 4 }}>
+                  <select value={st} onChange={(e) => setRule(a.id, (x) => { x.steps![k] = e.target.value })}>{schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                  <button type="button" className="ghost icon" aria-label={tr('Remove')} onClick={() => setRule(a.id, (x) => { x.steps!.splice(k, 1); if (!x.steps!.length) delete x.steps })}><Trash2 size={13} /></button>
+                </span>
+              </label>
+            ))}
           </div>
+          {(a.steps ?? []).length < 3 && <button type="button" className="ghost small" onClick={() => setRule(a.id, (x) => { x.steps = [...(x.steps ?? []), schema.roles.find((r) => r.admin)?.id ?? x.approverRole] })}>{tr('+ Another approval after this one')}</button>}
           <p className="small" style={{ margin: '10px 0 4px' }}><b>{tr('Only when')}</b> {a.conditions.length === 0 && <span className="muted">{tr('always')}</span>}</p>
           {a.conditions.map((c, j) => <FilterRow key={j} mod={moduleById(schema, a.module)!} filter={c} label={label(c.field)} onChange={(nc) => setRule(a.id, (x) => (x.conditions[j] = nc))} onRemove={() => setRule(a.id, (x) => x.conditions.splice(j, 1))} />)}
           <FieldPicker mod={mod} onPick={(key) => setRule(a.id, (x) => x.conditions.push({ field: key, op: 'gt', value: '' }))} />

@@ -13,7 +13,7 @@ export default function Approvals() {
   const rule = (id: string) => (schema.approvals ?? []).find((r) => r.id === id)
   const name = (id?: string) => ws.users.find((u) => u.id === id)?.name ?? '—'
   // Maker is never checker: requests you made, or about records you made, wait for someone else.
-  const mine = all.filter((a) => a.status === 'pending' && rule(a.rule) && canApprove({ schema, user }, rule(a.rule)!) && a.requestedBy !== user.id && findRecord(ws, a.record)?.createdBy !== user.id)
+  const mine = all.filter((a) => a.status === 'pending' && rule(a.rule) && canApprove({ schema, user }, rule(a.rule)!, a.step ?? 0) && a.requestedBy !== user.id && findRecord(ws, a.record)?.createdBy !== user.id && !(a.trail ?? []).some((t) => t.by === user.id))
   const requested = all.filter((a) => a.requestedBy === user.id)
   const done = all.filter((a) => a.status !== 'pending').slice(0, 30)
 

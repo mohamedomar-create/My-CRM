@@ -176,7 +176,7 @@ function FieldCard({ field, selected, title, onSelect }: { field: FieldDef; sele
       </div>
       <div className="fake">
         {field.type === 'select' || field.type === 'multiselect' ? (
-          <>{field.options?.slice(0, 3).map((o) => <span key={o.value} className="pill tiny" style={{ background: o.color + '22', color: o.color }}>{o.label}</span>)}<ChevronDown size={14} style={{ marginInlineStart: 'auto' }} /></>
+          <>{field.options?.slice(0, 3).map((o) => <span key={o.value} className="pill tiny tint" style={{ ['--c' as string]: o.color }}>{o.label}</span>)}<ChevronDown size={14} style={{ marginInlineStart: 'auto' }} /></>
         ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ` · ${tr('conditional')}` : ''}</span> : field.type === 'checkbox' ? `☐ ${tr('Yes / No')}` : field.type === 'formula' ? <span className="code tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : msgText(info.hint)}
       </div>
     </div>

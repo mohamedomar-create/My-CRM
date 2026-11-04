@@ -142,7 +142,7 @@ export default function Team() {
                     <td><b>{u.name}</b> {u.demo && <span className="pill gray tiny">{tr('sample')}</span>} {isOwner && <span className="pill amber tiny" title={tr('The owner can’t be removed and is always an admin')}><Crown size={12} /> {tr('Owner')}</span>}</td>
                     <td style={{ maxWidth: 220 }} title={u.email}>{u.email}</td>
                     <td>
-                      <select value={u.roleId} disabled={isOwner || (roleIsAdmin(u.roleId) && admins === 1)} title={isOwner ? tr('The owner is always an admin') : undefined} onChange={(e) => void changeRole(u, e.target.value)}>
+                      <select value={u.roleId} aria-label={tr('Role of {name}', { name: u.name })} disabled={isOwner || (roleIsAdmin(u.roleId) && admins === 1)} title={isOwner ? tr('The owner is always an admin') : undefined} onChange={(e) => void changeRole(u, e.target.value)}>
                         {schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
                     </td>
@@ -219,7 +219,7 @@ function FormerMembers() {
         <div key={u.id} className="stack" style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
           <div><b>{u.name}</b> <span className="tiny muted">{u.formerEmail ?? ''} · {tr('{n} records', { n: owned(u.id) })}</span></div>
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-            <select value={to[u.id] ?? ''} onChange={(e) => setTo({ ...to, [u.id]: e.target.value })} style={{ width: 'auto' }}>
+            <select value={to[u.id] ?? ''} onChange={(e) => setTo({ ...to, [u.id]: e.target.value })} style={{ width: 'auto' }} aria-label={tr('Hand over to…')}>
               <option value="">{tr('Hand over to…')}</option>
               {active.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>

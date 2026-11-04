@@ -26,7 +26,7 @@ describe('the four areas', () => {
     // quotations lead to invoices, so both areas have them
     expect(ops).toContain('quotes')
     expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales', 'reports'])
-    expect(keys(both, admin, 'setup')).toEqual(['migrate', 'team', 'access', 'builder', 'billing', 'audit'])
+    expect(keys(both, admin, 'setup')).toEqual(['doctor', 'migrate', 'team', 'access', 'builder', 'billing', 'audit'])
   })
 
   it('a salesperson works in Customer relations: being allowed to look at invoices does not open Operations', () => {

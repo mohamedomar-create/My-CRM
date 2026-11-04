@@ -1,6 +1,6 @@
 // The nightly run: date-based automations happen for every workspace even when nobody opens the app; runs are logged
 // and one failing workspace doesn't stop the others.
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
@@ -66,4 +66,39 @@ describe('nightly automations', () => {
     expect(results.map((r) => [r.workspace, r.ok])).toEqual([['ws_bad', false], ['ws_good', true]])
     expect(s.runs.find((r) => r.workspace_id === 'ws_bad')!.error).toMatch(/no owner/)
   })
+
+  afterEach(() => { vi.useRealTimers() })
+
+  it('reminders fire over the weekend (Friday and Saturday in Egypt) with nobody signed in, each night its own', async () => {
+    const answers = { ...emptyAnswers('Co'), challenges: ['late_collections'], taxId: '1' }
+    const schema = generateSchema(templateById('distribution'), answers)
+    const ws: Workspace = { id: 'ws_w', createdAt: '', answers, users: [owner], draft: schema, published: schema, history: [], data: emptyData() }
+    const ctx: Ctx = { ws, schema, user: owner }
+    const svc = createRecord(ctx, moduleByRole(schema, 'products')!.id, { name: 'Service', sku: 'S1', price: 100, vat_rate: 14, track_stock: false })
+    const invoice = (name: string, due: string) => {
+      const c = createRecord(ctx, moduleByRole(schema, 'accounts')!.id, { name })
+      const inv = createRecord(ctx, moduleByRole(schema, 'invoices')!.id, { customer: c.id, date: '2026-10-07', due_date: due }, { lines: [{ id: uid('l'), product: svc.id, description: 'Service', qty: 1, price: 100, discount: 0, vat: 14 }] })
+      postDocument(ctx, inv)
+    }
+    invoice('Due Thursday', '2026-11-05')
+    invoice('Due Friday', '2026-11-06')
+    invoice('Due Saturday', '2026-11-07')
+    const tasks = moduleByRole(schema, 'tasks')!.id
+    const s = server({ ws_w: ws }, { ws_w: 'mona@co.eg' })
+    const reminders = () => list(s.rows.ws_w.doc, tasks).map((t) => String(t.values.title).replace('Collect payment from ', '')).sort()
+    // the nightly job at 01:17 UTC (03:17 Cairo); nobody has the app open all weekend
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const night = async (utc: string) => { vi.setSystemTime(new Date(utc)); return (await runAll(s.deps))[0] }
+    expect(await night('2026-11-06T01:17:00Z')).toMatchObject({ ok: true, ran: 1 }) // Friday
+    expect(reminders()).toEqual(['Due Thursday'])
+    expect(await night('2026-11-07T01:17:00Z')).toMatchObject({ ok: true, ran: 1 }) // Saturday
+    expect(reminders()).toEqual(['Due Friday', 'Due Thursday'])
+    expect(await night('2026-11-08T01:17:00Z')).toMatchObject({ ok: true, ran: 1 }) // Sunday
+    // each invoice reminded once, on the night after it fell due; finance told each time; every run logged
+    expect(reminders()).toEqual(['Due Friday', 'Due Saturday', 'Due Thursday'])
+    expect(s.rows.ws_w.doc.data.notes.filter((n) => /overdue/.test(n.message))).toHaveLength(3)
+    expect(s.runs.map((r) => [r.ok, r.ran])).toEqual([[true, 1], [true, 1], [true, 1]])
+    expect(s.audit).toHaveLength(3)
+  })
 })
+

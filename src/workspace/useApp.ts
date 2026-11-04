@@ -3,7 +3,7 @@ import type { AppSchema } from '../lib/schema'
 import { currentUser, currentWorkspace, run, useStore } from '../lib/store'
 import type { CommandArgs, CommandName } from '../lib/commands'
 import type { User, Workspace } from '../lib/types'
-import type { Ctx } from '../lib/engine'
+import { MAIN_STORE, warehouses, type Ctx } from '../lib/engine'
 import { N_, tr, useLang } from '../lib/i18n'
 import { localizeSchema } from '../lib/localize'
 
@@ -54,7 +54,7 @@ export function useApp() {
 }
 
 /** Document and approval statuses, shown in the chosen language. */
-const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
+const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('ordered'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
 export const statusLabel = (s?: string) => {
   const t = s && (STATUS_WORDS as string[]).includes(s) ? tr(s) : s ?? ''
   // Statuses read as words, not codes: "Posted", not "posted".
@@ -67,3 +67,9 @@ export const methodLabel = (m: string) => (METHODS[m] ? tr(METHODS[m]) : m)
 
 /** Who did something: a person's name, or "Automation" for what the system did on its own (in the chosen language). */
 export const actorName = (name: string) => (name === 'Automation' ? tr('Automation') : name)
+
+/** The person's own van, else the main store: the place their documents work from by default. */
+export function useDefaultWarehouse() {
+  const { ws, user } = useApp()
+  return warehouses(ws).find((w) => w.active && w.kind === 'van' && w.person === user.id)?.code ?? MAIN_STORE
+}
