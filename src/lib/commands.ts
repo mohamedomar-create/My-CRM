@@ -21,7 +21,7 @@ import { addRole, removeRole, saveRole } from './access'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
+  addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -103,6 +103,9 @@ export interface CommandArgs {
   'order.invoice': { id: string }
   'order.close': { id: string; reason: string }
   'po.send': { id: string }
+  'journal.setApproval': { over: number | null }
+  'journal.approve': { id: string }
+  'journal.reject': { id: string; reason: string }
   'product.setUnits': { product: string; units: { name: string; nameAr?: string; factor: number }[] }
   'fx.setCurrency': { id: string; currency: string; rate?: number }
   'fx.revalue': { month: string; rates: Record<string, number> }
@@ -379,6 +382,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'fx.setCurrency': { run: (ws, u, a) => setDocCurrency(ctx(ws, u), String(a.id ?? ''), String(a.currency ?? ''), a.rate === undefined ? undefined : Number(a.rate)) },
   'fx.revalue': { run: (ws, u, a) => revalue(ctx(ws, u), String(a.month ?? ''), a.rates && typeof a.rates === 'object' ? Object.fromEntries(Object.entries(a.rates).slice(0, 20).map(([k, v]) => [String(k).slice(0, 3), Number(v)])) : {}).ref },
   'product.setUnits': { run: (ws, u, a) => setUnits(ctx(ws, u), String(a.product ?? ''), Array.isArray(a.units) ? a.units : []) },
+  'journal.setApproval': { admin: true, run: (ws, u, a) => setJvApproval(ctx(ws, u), a.over === null || a.over === undefined ? null : Number(a.over)) },
+  'journal.approve': { run: (ws, u, a) => approveJournal(ctx(ws, u), String(a.id ?? '')) },
+  'journal.reject': { run: (ws, u, a) => void rejectJournal(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },

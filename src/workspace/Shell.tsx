@@ -63,7 +63,7 @@ export default function Shell() {
 
   // Notes addressed to a person go only to them; notes for a role go to that role (and Admin); the rest go to everyone.
   const notes = ws.data.notes.filter((n) => (n.user ? n.user === user.id : !n.role || role?.admin || n.role === user.roleId || (n.role === 'finance' && role?.finance)))
-  const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
+  const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r, a.step ?? 0) : false })()).length
   const readNotes = useStore((s) => s.prefs.readNotes)
   const companies = useStore((s) => s.companies)
   const twoFactor = useStore((s) => s.twoFactor)

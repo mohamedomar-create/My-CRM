@@ -130,6 +130,8 @@ export interface ApprovalRule {
   stage?: string
   conditions: Filter[]
   approverRole: string
+  /** more approvals after the first, in order (each a different person): e.g. sales manager, then finance */
+  steps?: string[]
 }
 
 export type Aggregate = 'count' | 'sum' | 'avg' | 'min' | 'max'

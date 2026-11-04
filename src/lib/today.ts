@@ -53,7 +53,7 @@ export function todayStrip(ws: Workspace, schema: AppSchema, user: User, today: 
   }
 
   // Approvals that are waiting for this person.
-  const waiting = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
+  const waiting = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r, a.step ?? 0) : false })()).length
   push({ id: 'approvals', label: N_('Waiting for your approval: {n}'), n: waiting, tone: 'amber', path: '/app/approvals' })
 
   const finance = canPost({ schema, user })

@@ -11,7 +11,7 @@ import GoLive from './GoLive'
 import CostCenters from './CostCenters'
 import Budgets from './Budgets'
 import { incomeStatement } from '../lib/statements'
-import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
+import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, PendingJournals, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
 import { DoubtfulDebts, FixedAssets } from './PeriodEnd'
 
@@ -115,6 +115,7 @@ export default function Accounting() {
       )}
       {tab === 'journal' && (
         <div className="stack">
+          <PendingJournals />
           {ws.data.journal.slice(0, 60).map((j) => (
             <div className="card" key={j.id} style={{ padding: 12 }}>
               <div className="row between"><b className="mono">{j.ref}{j.adjusting && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{tr('adjusting')}</span>}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
@@ -125,7 +126,7 @@ export default function Accounting() {
           ))}
         </div>
       )}
-      {tab === 'voucher' && <JournalVoucher />}
+      {tab === 'voucher' && <div className="stack"><PendingJournals /><JournalVoucher /></div>}
       {tab === 'chart' && <ChartOfAccounts />}
       {tab === 'cc' && <CostCenters />}
       {tab === 'budget' && <Budgets />}

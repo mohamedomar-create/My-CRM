@@ -17,7 +17,7 @@ import { UnitsPanel } from './UnitsPanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
-  usesWarehouses, unitsOf,
+  usesWarehouses, unitsOf, approvalRoles,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -748,7 +748,7 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   const rules = (schema.approvals ?? []).filter((r) => r.module === mod.id)
   if (!rules.length) return null
   const isAdmin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
-  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'own' | 'pending' | 'rejected' | 'needed'; by?: string; override?: string }
+  type Item = { r: (typeof rules)[number]; state: 'approved' | 'self' | 'own' | 'pending' | 'rejected' | 'needed'; by?: string; override?: string; step?: number }
   const items = rules.flatMap((r): Item[] => {
     if (r.action === 'post' && rec.status !== 'draft') return []
     const needed = approvalNeeded(ctx, rec, r.action, r.stage)
@@ -758,8 +758,8 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
     }
     const pending = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'pending')
     const rejected = (ws.data.approvals ?? []).find((a) => a.rule === r.id && a.record === rec.id && a.status === 'rejected')
-    const state = mayActAsApprover(ctx, r, rec) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : canApprove({ schema, user }, r) ? 'own' : 'needed'
-    return [{ r, state }]
+    const state = mayActAsApprover(ctx, r, rec) ? 'self' : pending ? 'pending' : rejected ? 'rejected' : canApprove({ schema, user }, r) && approvalRoles(r).length === 1 ? 'own' : 'needed'
+    return [{ r, state, step: pending?.step ?? 0 }]
   })
   if (!items.length) return null
   const roleName = (id: string) => schema.roles.find((x) => x.id === id)?.name ?? 'an approver'
@@ -770,7 +770,7 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
   }
   return (
     <div className="stack" style={{ marginBottom: 14 }}>
-      {items.map(({ r, state, by, override: why }) => (
+      {items.map(({ r, state, by, override: why, step }) => (
         <div key={r.id} className={`row ${state === 'approved' ? 'ok-box' : state === 'rejected' ? 'error-box' : 'note'}`}>
           <ShieldAlert size={16} />
           <span className="grow">
@@ -778,9 +778,9 @@ function ApprovalBanner({ rec, mod }: { rec: Rec; mod: ModuleDef }) {
             {state === 'approved' && (why ? `approved by ${by} as an override: “${why}”.` : `approved by ${by}. Changing the record cancels the approval.`)}
             {state === 'self' && `${what(r)} normally needs approval from ${roleName(r.approverRole)}. You can do it yourself.`}
             {state === 'own' && `you made this record, so someone else must approve ${what(r)}.`}
-            {state === 'pending' && `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`}
+            {state === 'pending' && (approvalRoles(r).length > 1 ? `waiting for ${roleName(approvalRoles(r)[step ?? 0])} (step ${(step ?? 0) + 1} of ${approvalRoles(r).length}: ${approvalRoles(r).map(roleName).join(' → ')}).` : `waiting for ${roleName(r.approverRole)} to approve ${what(r)}.`)}
             {state === 'rejected' && `rejected. Change the record and request approval again.`}
-            {state === 'needed' && `${what(r)} needs approval from ${roleName(r.approverRole)}.`}
+            {state === 'needed' && `${what(r)} needs approval from ${approvalRoles(r).map(roleName).join(' → ')}.`}
           </span>
           {(state === 'needed' || state === 'rejected' || state === 'own') && <button className="secondary" onClick={() => act('approval.request', { id: rec.id, rule: r.id }, tr('Approval requested'))}><Send size={14} /> {tr('Request approval')}</button>}
           {isAdmin && state !== 'approved' && state !== 'self' && <button className="ghost small" onClick={() => override(r)} title={tr('Approve without a second person, with a reason')}>{tr('Override…')}</button>}

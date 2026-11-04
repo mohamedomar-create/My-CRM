@@ -89,6 +89,18 @@ export interface ImportBatch {
   undoneBy?: string
 }
 
+export interface PendingJournal {
+  id: string
+  date: string
+  memo: string
+  lines: { account: string; debit: number; credit: number; note?: string; cc?: string }[]
+  adjusting?: boolean
+  reverseOn?: string
+  total: number
+  by: string
+  at: string
+}
+
 export interface Warehouse {
   code: string
   name: string
@@ -135,6 +147,9 @@ export interface JournalEntry {
   reverses?: string
   /** an adjusting entry of the period end (an accrual, a prepayment taken to expense, …) */
   adjusting?: boolean
+  /** a journal voucher entered by one person and approved by another before it was posted */
+  enteredBy?: string
+  approvedBy?: string
   /** a step in a cheque's life (see Payment.cheque): deposited, cleared or bounced */
   cheque?: { id: string; step: ChequeStep; account?: string }
 }
@@ -192,6 +207,9 @@ export interface Approval {
   fingerprint?: string
   /** approved by an admin without a second person, with the reason in `note` */
   override?: boolean
+  /** a rule with several steps: the step waiting now (0 = the first), and who approved the earlier ones */
+  step?: number
+  trail?: { role: string; by: string; at: string; note?: string }[]
 }
 
 export interface Comment {
@@ -312,6 +330,10 @@ export interface Workspace {
     closedYears?: { year: number; at: string; by: string; entry: string }[]
     /** monthly VAT returns settled: output and input moved to 2210 by the entry */
     vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
+    /** journal vouchers above this amount need a second finance person's approval before they are posted */
+    jvApprovalOver?: number
+    /** journal vouchers waiting for that approval (they have no number yet) */
+    pendingJournals?: PendingJournal[]
     /** month-end restatements of what is owed in foreign currency (see fx.ts) */
     revaluations?: import('./fx').Revaluation[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */

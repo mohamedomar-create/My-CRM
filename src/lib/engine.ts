@@ -4,7 +4,7 @@ import { allocateFefo, hasLots, lotsOf } from './batches'
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Warehouse, Workspace } from './types'
+import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, PendingJournal, Rec, User, Warehouse, Workspace } from './types'
 import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind, systemAccount } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
@@ -2619,9 +2619,8 @@ export interface VoucherLine {
 }
 
 /** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
-export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }) {
-  needFinance(ctx, 'enter journal vouchers')
-  noRealPostingOverSamples(ctx)
+/** Everything a journal voucher must satisfy, checked when it is entered and again when it is approved. */
+function checkVoucher(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }) {
   const date = String(v.date ?? '')
   const memo = String(v.memo ?? '').trim()
   if (!ISO_DATE.test(date)) throw new EngineError('Choose the date of the entry')
@@ -2639,14 +2638,80 @@ export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: 
   if (dr !== cr) throw new EngineError(`The entry doesn’t balance: debits ${money(dr, ctx.schema.company.currency)}, credits ${money(cr, ctx.schema.company.currency)}`)
   const reverseOn = v.reverseOn ? String(v.reverseOn) : ''
   if (reverseOn && (!ISO_DATE.test(reverseOn) || reverseOn <= date)) throw new EngineError('The automatic reversal must be dated after the entry (usually the first day of the next month)')
-  const adjusting = Boolean(v.adjusting || reverseOn)
-  const ref = nextNumber(ctx, 'JV', date)
-  journal(ctx, { date, ref, memo, lines, manual: true, ...(adjusting ? { adjusting } : {}) })
+  checkOpenPeriod(ctx, date)
+  return { date, memo, lines, dr, reverseOn, adjusting: Boolean(v.adjusting || reverseOn) }
+}
+
+function postVoucher(ctx: Ctx, c: ReturnType<typeof checkVoucher>, people?: { enteredBy: string; approvedBy: string }) {
+  const ref = nextNumber(ctx, 'JV', c.date)
+  journal(ctx, { date: c.date, ref, memo: c.memo, lines: c.lines, manual: true, ...(c.adjusting ? { adjusting: true } : {}), ...(people ?? {}) })
   const id = ctx.ws.data.journal[0].id
   // An accrual reverses itself on the day given, so the real bill or receipt can be entered as usual then.
-  if (reverseOn) journal(ctx, { date: reverseOn, ref: `REV ${ref}`, memo: `Automatic reversal of ${ref}: ${memo}`, manual: true, reverses: id, lines: lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
-  logLedger(ctx, reverseOn ? `entered adjusting entry ${ref}, reversing on ${reverseOn}: ${memo}` : `entered journal voucher ${ref}: ${memo}`)
+  if (c.reverseOn) journal(ctx, { date: c.reverseOn, ref: `REV ${ref}`, memo: `Automatic reversal of ${ref}: ${c.memo}`, manual: true, reverses: id, lines: c.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+  logLedger(ctx, c.reverseOn ? `entered adjusting entry ${ref}, reversing on ${c.reverseOn}: ${c.memo}` : `entered journal voucher ${ref}: ${c.memo}`)
   return { ref, id }
+}
+
+/**
+ * A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. Above the amount
+ * the company set, it waits (unnumbered) until another finance person approves it: maker and checker are two people.
+ */
+export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }): { ref: string; id: string; pending?: boolean } {
+  needFinance(ctx, 'enter journal vouchers')
+  noRealPostingOverSamples(ctx)
+  const c = checkVoucher(ctx, v)
+  const over = ctx.ws.books?.jvApprovalOver
+  if (over !== undefined && c.dr > over && !ctx.sample) {
+    const p: PendingJournal = { id: uid('pj'), date: c.date, memo: c.memo, lines: c.lines, ...(c.adjusting ? { adjusting: true } : {}), ...(c.reverseOn ? { reverseOn: c.reverseOn } : {}), total: c.dr, by: ctx.user.id, at: nowISO() }
+    ctx.ws.books = { ...ctx.ws.books, pendingJournals: [p, ...(ctx.ws.books?.pendingJournals ?? [])] }
+    for (const r of ctx.schema.roles.filter((x) => x.admin || x.finance)) ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} entered a journal voucher of ${money(c.dr, ctx.schema.company.currency)} for approval: ${c.memo}`, read: false, role: r.id })
+    logLedger(ctx, `entered a journal voucher for approval: ${c.memo}`)
+    return { ref: '', id: p.id, pending: true }
+  }
+  return postVoucher(ctx, c)
+}
+
+/** Journal vouchers above this amount need a second person's approval (admins only; none = no approval needed). */
+export function setJvApproval(ctx: Ctx, over: number | null) {
+  if (!isAdmin(ctx)) throw new EngineError('Only an admin can change this')
+  if (over === null || over === undefined || (over as unknown) === '') {
+    const { jvApprovalOver: _o, ...rest } = ctx.ws.books ?? {}
+    void _o
+    ctx.ws.books = rest
+    logLedger(ctx, 'journal vouchers no longer need a second person')
+    return
+  }
+  const n = round2(Number(over))
+  if (!(n >= 0)) throw new EngineError('Enter the amount above which a second person approves')
+  ctx.ws.books = { ...ctx.ws.books, jvApprovalOver: n }
+  logLedger(ctx, `journal vouchers above ${money(n, ctx.schema.company.currency)} now need a second person`)
+}
+
+/** Another finance person approves a waiting journal voucher: it is checked again, numbered and posted. */
+export function approveJournal(ctx: Ctx, id: string) {
+  needFinance(ctx, 'approve journal vouchers')
+  const list_ = ctx.ws.books?.pendingJournals ?? []
+  const p = list_.find((x) => x.id === id)
+  if (!p) throw new EngineError('That journal voucher is no longer waiting')
+  if (p.by === ctx.user.id) throw new EngineError('You entered this journal voucher: someone else must approve it')
+  const c = checkVoucher(ctx, p)
+  ctx.ws.books = { ...ctx.ws.books, pendingJournals: list_.filter((x) => x.id !== id) }
+  const out = postVoucher(ctx, c, { enteredBy: p.by, approvedBy: ctx.user.id })
+  ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} approved and posted your journal voucher ${out.ref}: ${p.memo}`, read: false, user: p.by })
+  return out
+}
+
+/** A waiting journal voucher is sent back to the person who entered it, with the reason. */
+export function rejectJournal(ctx: Ctx, id: string, reason: string) {
+  needFinance(ctx, 'review journal vouchers')
+  const list_ = ctx.ws.books?.pendingJournals ?? []
+  const p = list_.find((x) => x.id === id)
+  if (!p) throw new EngineError('That journal voucher is no longer waiting')
+  const why = String(reason ?? '').trim()
+  if (why.length < 3) throw new EngineError('Say why it is sent back')
+  ctx.ws.books = { ...ctx.ws.books, pendingJournals: list_.filter((x) => x.id !== id) }
+  ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} sent back your journal voucher (${p.memo}): ${why}`, read: false, user: p.by })
+  logLedger(ctx, `sent back a journal voucher (${p.memo}): ${why}`)
 }
 
 /**
@@ -2989,9 +3054,13 @@ function reorderAlert(ctx: Ctx, p: Rec) {
 
 /* ---------------- approvals ---------------- */
 
-export function canApprove(ctx: Pick<Ctx, 'schema' | 'user'>, rule: ApprovalRule) {
+/** The roles that approve under a rule, in order (most rules have one). */
+export const approvalRoles = (rule: ApprovalRule) => [rule.approverRole, ...(rule.steps ?? [])]
+
+/** Whether this person can decide a rule's approval at a step (the first by default): its role, or an admin. */
+export function canApprove(ctx: Pick<Ctx, 'schema' | 'user'>, rule: ApprovalRule, step = 0) {
   const role = ctx.schema.roles.find((r) => r.id === ctx.user.roleId)
-  return Boolean(role?.admin || role?.id === rule.approverRole)
+  return Boolean(role?.admin || role?.id === approvalRoles(rule)[step])
 }
 
 /**
@@ -3038,6 +3107,8 @@ export function approvalNeeded(ctx: Ctx, rec: Rec, action: 'post' | 'stage', sta
  * else in the company could approve it.
  */
 export function mayActAsApprover(ctx: Pick<Ctx, 'schema' | 'user' | 'ws'>, rule: ApprovalRule, rec: Rec) {
+  // a rule with several steps always goes through them (an admin can override with a reason)
+  if (approvalRoles(rule).length > 1) return false
   if (!canApprove(ctx, rule)) return false
   if (rec.createdBy !== ctx.user.id) return true
   return !ctx.ws.users.some((u) => u.id !== ctx.user.id && !u.demo && canApprove({ schema: ctx.schema, user: u }, rule))
@@ -3071,10 +3142,25 @@ export function decideApproval(ctx: Ctx, approvalId: string, approve: boolean, n
   if (a.status !== 'pending') throw new EngineError('Already decided')
   const rule = (ctx.schema.approvals ?? []).find((r) => r.id === a.rule)
   if (!rule) throw new EngineError('That approval rule no longer exists')
-  if (!canApprove(ctx, rule)) throw new EngineError('Your role can’t decide this approval')
+  const step = a.step ?? 0
+  const roles = approvalRoles(rule)
+  if (!canApprove(ctx, rule, step)) throw new EngineError('Your role can’t decide this step of the approval')
   const rec = findRecord(ctx.ws, a.record)
   // Maker is never checker: not the person who asked, nor the one who made the record (admins override with a reason).
   if (a.requestedBy === ctx.user.id || rec?.createdBy === ctx.user.id) throw new EngineError('You can’t approve your own request or record. Someone else must decide, or an admin can override with a reason.')
+  // each step is a different person, and every step approves the record as it was asked
+  if ((a.trail ?? []).some((t) => t.by === ctx.user.id)) throw new EngineError('You approved an earlier step: someone else must decide this one')
+  if (rec && a.fingerprint && fingerprint(rec) !== a.fingerprint) throw new EngineError('The record changed since approval was asked: request it again')
+  if (approve && step < roles.length - 1) {
+    a.trail = [...(a.trail ?? []), { role: roles[step], by: ctx.user.id, at: nowISO(), ...(note ? { note } : {}) }]
+    a.step = step + 1
+    const next = ctx.schema.roles.find((r) => r.id === roles[step + 1])?.name ?? ''
+    ctx.ws.data.notes.unshift({ id: uid('n'), at: nowISO(), message: `${ctx.user.name} approved step ${step + 1} of ${roles.length} of “${rule.name}” — ${recordTitle(ctx.ws, ctx.schema, rec)}: waiting for ${next}`, read: false, role: roles[step + 1], record: a.record })
+    if (note) log(ctx, `approved step ${step + 1} of ${roles.length} of “${rule.name}” (${note})`, rec)
+    else log(ctx, `approved step ${step + 1} of ${roles.length} of “${rule.name}”`, rec)
+    return
+  }
+  if (roles.length > 1) a.trail = [...(a.trail ?? []), { role: roles[step], by: ctx.user.id, at: nowISO(), ...(note ? { note } : {}) }]
   a.status = approve ? 'approved' : 'rejected'
   a.decidedBy = ctx.user.id
   a.decidedAt = nowISO()

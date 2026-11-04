@@ -49,7 +49,9 @@ export function JournalVoucher() {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
-    const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(reverseOn ? { reverseOn } : {}) }, reverseOn ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
+    const over = ws.books?.jvApprovalOver
+    const waits = over !== undefined && dr > over
+    const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(reverseOn ? { reverseOn } : {}) }, waits ? tr('Sent for approval: another finance person posts it') : reverseOn ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
       setRows([emptyRow(), emptyRow()])
@@ -90,8 +92,53 @@ export function JournalVoucher() {
         const warn = overBudgetWarnings(ws, rows.filter((r) => r.account && num(r.debit) > 0).map((r) => ({ account: r.account, cc: r.cc, amount: num(r.debit), date })), getLang())
         return warn.length > 0 && <div className="note small">{warn.map((w) => <div key={w.account + (w.cc ?? '')}>{tr('Over budget: {account}{cc} would reach {after} this year, against {budget} budgeted so far.', { account: w.name, cc: w.cc ? ` (${w.cc})` : '', after: money(w.after, cur), budget: money(w.budget, cur) })}</div>)}</div>
       })()}
-      <button disabled={!dr || dr !== cr}>{tr('Post journal voucher')}</button>
+      {ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver && <p className="small" style={{ margin: 0 }}>{tr('Above {a}: another finance person approves it before it is posted.', { a: money(ws.books.jvApprovalOver, cur) })}</p>}
+      <button disabled={!dr || dr !== cr}>{ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver ? tr('Send for approval') : tr('Post journal voucher')}</button>
+      <JvApprovalSetting />
     </form>
+  )
+}
+
+/** The admin's setting: journal vouchers above an amount need a second finance person. */
+function JvApprovalSetting() {
+  const { ws, schema, user, act } = useApp()
+  const admin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
+  const over = ws.books?.jvApprovalOver
+  const [amount, setAmount] = useState(over === undefined ? '' : String(over))
+  if (!admin) return over === undefined ? null : <p className="tiny muted" style={{ margin: 0 }}>{tr('Journal vouchers above {a} need a second person.', { a: money(over, schema.company.currency) })}</p>
+  return (
+    <details>
+      <summary className="small muted">{over === undefined ? tr('Need a second person for large journal vouchers?') : tr('Journal vouchers above {a} need a second person.', { a: money(over, schema.company.currency) })}</summary>
+      <div className="row" style={{ gap: 8, marginTop: 8, alignItems: 'end' }}>
+        <label className="field" style={{ width: 200 }}>{tr('Above this amount')}<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="10000" /></label>
+        <button type="button" className="small" onClick={() => act('journal.setApproval', { over: amount === '' ? null : Number(amount) }, tr('Saved'))}>{tr('Save')}</button>
+      </div>
+    </details>
+  )
+}
+
+/** Journal vouchers waiting for a second person: approve (it is numbered and posted) or send back with the reason. */
+export function PendingJournals() {
+  const { ws, schema, user, act } = useApp()
+  const list_ = ws.books?.pendingJournals ?? []
+  if (!list_.length) return null
+  const cur = schema.company.currency
+  const name = (id: string) => ws.users.find((u) => u.id === id)?.name ?? ''
+  return (
+    <div className="card stack" style={{ gap: 8 }}>
+      <h2 style={{ margin: 0 }}>{tr('Journal vouchers waiting for approval')}</h2>
+      {list_.map((p) => (
+        <div key={p.id} className="row between" style={{ gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+          <span className="small"><b>{p.memo}</b> · {p.date} · {money(p.total, cur)} · {tr('entered by {a}', { a: name(p.by) })}<br /><span className="tiny muted">{p.lines.map((l) => `${l.account} ${l.debit ? `Dr ${l.debit}` : `Cr ${l.credit}`}`).join(' · ')}</span></span>
+          {p.by === user.id ? <span className="pill amber">{tr('waiting for someone else')}</span> : (
+            <span className="row" style={{ gap: 6 }}>
+              <button className="success small" onClick={() => act('journal.approve', { id: p.id }, tr('Approved and posted'))}>{tr('Approve and post')}</button>
+              <button className="ghost small" onClick={() => { const why = prompt(tr('Why is it sent back?')); if (why) act('journal.reject', { id: p.id, reason: why }, tr('Sent back')) }}>{tr('Send back')}</button>
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 

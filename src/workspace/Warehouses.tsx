@@ -61,7 +61,7 @@ export function WarehousesPanel() {
             <thead><tr><th>{tr('Code')}</th><th>{tr('Name')}</th><th>{tr('Kind')}</th><th>{tr('Salesperson')}</th><th /></tr></thead>
             <tbody>{places.map((w) => (
               <tr key={w.code} style={w.active ? undefined : { opacity: 0.5 }}>
-                <td className="mono">{w.code}</td><td>{warehouseName(ws, w.code, lang)}</td><td>{w.kind === 'van' ? tr('Van') : tr('Store')}</td>
+                <td className="mono">{w.code}</td><td>{warehouseName(ws, w.code, lang)}</td><td>{w.kind === 'van' ? tr('Van') : tr('Warehouse')}</td>
                 <td>{w.person ? ws.users.find((u) => u.id === w.person)?.name : ''}</td>
                 <td>{finance && w.code !== MAIN_STORE && <button className="ghost small" onClick={() => act('warehouse.save', { ...w, active: !w.active }, w.active ? tr('Turned off') : tr('Turned on'))}>{w.active ? tr('Turn off') : tr('Turn on')}</button>}</td>
               </tr>
