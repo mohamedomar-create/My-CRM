@@ -9,7 +9,7 @@ import type { Line, Rec, Workspace } from './types'
 import { moduleById, uid } from './schema'
 import {
   can, checkLinesPublic, createRecord, EngineError, findRecord, ISO_DATE, journal, lineNet, linkRecords, log, needFinance, nextNumber,
-  noRealPostingOverSamples, nowISO, productRec, putIntoStock, warehouseFor, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
+  noRealPostingOverSamples, nowISO, unitLines, productRec, putIntoStock, warehouseFor, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
 } from './engine'
 
 export interface Receipt {
@@ -73,6 +73,7 @@ export function orderPurchase(ctx: Ctx, id: string) {
   if (!lines.length) throw new EngineError('Add at least one line')
   if (!lines.some((l) => stocked(ctx, l))) throw new EngineError('A purchase order is for stocked goods: post a bill for services instead')
   checkLinesPublic(lines)
+  unitLines(ctx, lines)
   const date = String(o.values.date ?? ctx.today ?? todayISO())
   o.values.po_no = nextNumber(ctx, 'PO', date, Boolean(ctx.sample || o.sample), true)
   o.status = 'ordered'
@@ -115,7 +116,7 @@ export function receiveGoods(ctx: Ctx, id: string, g: { date: string; lines: { l
   for (const t of take) {
     // at the order's price, in the company's currency (an order in another currency at its rate)
     const value = round2(((lineNet(t.l) * t.qty) / t.l.qty) * (o.values.currency ? Number(o.values.rate) || 1 : 1))
-    const into = putIntoStock(ctx, stocked(ctx, t.l)!, t.qty, value, number, rid, date, { lot: t.lot, expiry: t.expiry, wh }, o)
+    const into = putIntoStock(ctx, stocked(ctx, t.l)!, round4(t.qty * (t.l.factor ?? 1)), value, number, rid, date, { lot: t.lot, expiry: t.expiry, wh }, o)
     diff = round2(diff + into.diff)
     lines.push({ line: t.l.id, product: t.l.product!, qty: t.qty, cost: value, ...(t.lot ? { lot: t.lot } : {}), ...(t.expiry ? { expiry: t.expiry } : {}) })
   }

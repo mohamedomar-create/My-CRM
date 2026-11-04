@@ -28,6 +28,10 @@ export interface Line {
    * (set by the server when posting) the value already booked for those goods at delivery (1310) or receipt (2160) */
   dline?: string
   dcost?: number
+  /** sold or bought in another unit of the product (a carton): its name, and how many base units it holds (set by
+   * the server from the product's units) */
+  unit?: string
+  factor?: number
 }
 
 export interface Rec {
@@ -327,6 +331,8 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
+  units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
   /** the last exchange rate used for each foreign currency (each document still states its own) */
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */

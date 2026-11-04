@@ -13,10 +13,11 @@ import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
 import { CurrencyBar } from './CurrencyBar'
+import { UnitsPanel } from './UnitsPanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
-  usesWarehouses,
+  usesWarehouses, unitsOf,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -238,6 +239,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
+      {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
       {rec && mod.role === 'purchases' && rec.status === 'ordered' && <PurchaseOrderPanel rec={rec} />}
       {rec && mod.role === 'purchases' && Boolean(rec.values.from_po) && <BillMatch rec={rec} />}
@@ -469,7 +471,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
                   <td>
                     {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} /> : null}
                     {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
-                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
+                    {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty * (l.factor ?? 1) ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
                     {mod.role === 'purchases' && Boolean(p?.values.track_stock) && (
                       <div className="line-batch">
                         <input value={l.lot ?? ''} onChange={(e) => upd(i, { lot: e.target.value || undefined })} disabled={disabled} placeholder={tr('Batch no.')} aria-label={tr('Batch number')} maxLength={40} />
@@ -478,7 +480,20 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
                     )}
                     {l.lots && l.lots.length > 0 && <div className="tiny muted">{tr('Batches')}: {l.lots.map((b) => `${b.lot}${b.expiry ? ` (${tr('exp.')} ${b.expiry})` : ''} × ${b.qty}`).join(' · ')}</div>}
                   </td>
-                  <td><input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} /></td>
+                  <td>
+                    <input type="number" min={0} step="any" value={l.qty} onChange={(e) => upd(i, { qty: Number(e.target.value) })} disabled={disabled} style={{ width: 80 }} />
+                    {unitsOf(ws, l.product).length > 0 && (
+                      // another unit of the product (a carton of 12): the price follows it, stock is counted in pieces
+                      <select aria-label={tr('Unit')} value={l.unit ?? ''} disabled={disabled} style={{ width: 90, marginTop: 4 }} onChange={(e) => {
+                        const u = unitsOf(ws, l.product).find((x) => x.name === e.target.value)
+                        const per = l.price / (l.factor ?? 1)
+                        upd(i, u ? { unit: u.name, factor: u.factor, price: round2(per * u.factor) } : { unit: undefined, factor: undefined, price: round2(per) })
+                      }}>
+                        <option value="">{tr('Piece')}</option>
+                        {unitsOf(ws, l.product).map((u) => <option key={u.name} value={u.name}>{(getLang() === 'ar' && u.nameAr) || u.name} ({u.factor})</option>)}
+                      </select>
+                    )}
+                  </td>
                   <td><input type="number" min={0} step="0.01" value={l.price} onChange={(e) => upd(i, { price: Number(e.target.value) })} disabled={disabled} style={{ width: 110 }} /></td>
                   <td><input type="number" min={0} max={100} value={l.discount} onChange={(e) => upd(i, { discount: Number(e.target.value) })} disabled={disabled} style={{ width: 70 }} /></td>
                   <td><input type="number" min={0} step="0.01" value={l.discAmt ?? ''} placeholder="0" onChange={(e) => upd(i, { discAmt: e.target.value === '' ? undefined : Number(e.target.value) })} disabled={disabled} style={{ width: 90 }} title={tr('An amount off this line, before VAT')} /></td>

@@ -8,7 +8,7 @@ import type { Line, Rec, Workspace } from './types'
 import { moduleById, moduleByRole, uid, type AppSchema } from './schema'
 import {
   can, createRecord, deliveredQty, EngineError, findRecord, heldForOrders, ISO_DATE, journal, linkRecords, log, needFinance, nextNumber, noRealPostingOverSamples,
-  noteLots, nowISO, onHand, onHandAt, productRec, warehouseFor, warehouseName, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, type Ctx,
+  noteLots, nowISO, unitLines, onHand, onHandAt, productRec, warehouseFor, warehouseName, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, type Ctx,
 } from './engine'
 
 export interface Delivery {
@@ -66,6 +66,7 @@ export function confirmOrder(ctx: Ctx, id: string) {
   if (o.status !== 'sent' && o.status !== 'accepted') throw new EngineError(o.status === 'invoiced' ? 'This quotation is already invoiced' : 'Send the quotation to the customer first')
   if (o.values.valid_until && String(o.values.valid_until) < (ctx.today ?? todayISO())) throw new EngineError(`This quotation expired on ${o.values.valid_until}. Extend “Valid until” or make a new quotation.`)
   if (!(o.lines ?? []).length) throw new EngineError('Add at least one line')
+  unitLines(ctx, o.lines ?? [])
   const date = ctx.today ?? todayISO()
   o.values.order_no = nextNumber(ctx, 'SO', date, Boolean(ctx.sample || o.sample), true)
   o.values.order_date = date
@@ -102,7 +103,7 @@ export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: 
   // Enough on hand, and not held for other orders (this order's own hold is what it delivers from).
   const wh = warehouseFor(ctx, d.warehouse)
   const need = new Map<string, number>()
-  for (const s of send) if (tracked(ctx, s.l)) need.set(s.l.product!, round4((need.get(s.l.product!) ?? 0) + s.qty))
+  for (const s of send) if (tracked(ctx, s.l)) need.set(s.l.product!, round4((need.get(s.l.product!) ?? 0) + s.qty * (s.l.factor ?? 1)))
   for (const [pid, q] of need) {
     if (wh && !ctx.schema.company.allowNegativeStock && onHandAt(ctx.ws, pid, wh) < q) throw new EngineError(`Only ${onHandAt(ctx.ws, pid, wh)} of ${productRec(ctx, pid)?.values.name} are in ${warehouseName(ctx.ws, wh)}`)
     const free = round4(onHand(ctx.ws, pid) - heldForOrders(ctx.ws, ctx.schema, pid, o.id))
@@ -116,7 +117,7 @@ export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: 
   const lines: Delivery['lines'] = []
   for (const s of send) {
     if (!tracked(ctx, s.l)) { lines.push({ line: s.l.id, product: s.l.product ?? '', qty: s.qty, cost: 0 }); continue }
-    const { issue, lots } = takeFromStock(ctx, s.l.product!, s.qty, date, number, did, o, wh)
+    const { issue, lots } = takeFromStock(ctx, s.l.product!, round4(s.qty * (s.l.factor ?? 1)), date, number, did, o, wh)
     const noted = [{ ...s.l, qty: s.qty }]
     noteLots(noted, lots)
     lines.push({ line: s.l.id, product: s.l.product!, qty: s.qty, cost: issue, ...(noted[0].lots ? { lots: noted[0].lots } : {}) })

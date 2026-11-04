@@ -70,7 +70,7 @@ export function recallReport(ws: Workspace, schema: AppSchema, productId: string
   const purchases = moduleByRole(schema, 'purchases')
   for (const b of purchases ? list(ws, purchases.id) : []) {
     if (b.status === 'draft' || b.status === 'void') continue
-    const qty = r4((b.lines ?? []).filter((l) => l.product === productId && l.lot === lot).reduce((s, l) => s + l.qty, 0))
+    const qty = r4((b.lines ?? []).filter((l) => l.product === productId && l.lot === lot).reduce((s, l) => s + l.qty * (l.factor ?? 1), 0))
     if (qty) {
       expiry ??= (b.lines ?? []).find((l) => l.lot === lot)?.expiry
       const sup = findRecord(ws, String(b.values.supplier ?? ''))

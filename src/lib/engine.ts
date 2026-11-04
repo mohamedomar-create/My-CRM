@@ -754,6 +754,37 @@ export function totals(lines: Line[]) {
   return { subtotal, tax, total: round2(subtotal + tax) }
 }
 
+/* ---------------- units of measure ---------------- */
+
+/** A line's quantity in the product's base unit (stock is always kept in it): a carton of 12 is 12. */
+export const baseQty = (l: Pick<Line, 'qty' | 'factor'>) => round4(l.qty * (l.factor ?? 1))
+/** The other units a product is sold or bought in (a carton = 12 pieces). */
+export const unitsOf = (ws: Workspace, productId?: string) => (productId ? ws.units?.[productId] ?? [] : [])
+/** Sets each line's conversion from its product's units; a unit the product doesn't have is refused. */
+export function unitLines(ctx: Ctx, lines: Line[]) {
+  for (const l of lines) {
+    if (!l.unit) { delete l.unit; delete l.factor; continue }
+    const u = unitsOf(ctx.ws, l.product).find((x) => x.name === l.unit)
+    if (!u) throw new EngineError(`${l.description || 'A line'}: the unit “${l.unit}” isn’t one of the product’s units`)
+    l.factor = u.factor
+  }
+}
+/** Sets the units a product is sold and bought in besides its own (up to 5): a name and how many base units it holds. */
+export function setUnits(ctx: Ctx, productId: string, units: { name: string; nameAr?: string; factor: number }[]) {
+  const p = productRec(ctx, productId)
+  if (!p) throw new EngineError('Choose the product')
+  if (!can(ctx, p.module, 'edit')) throw new EngineError('You don’t have permission to change products')
+  const clean = (units ?? []).slice(0, 5).map((u) => ({ name: String(u.name ?? '').trim().slice(0, 20), ...(u.nameAr?.trim() ? { nameAr: u.nameAr.trim().slice(0, 20) } : {}), factor: round4(Number(u.factor)) }))
+  for (const u of clean) {
+    if (!u.name) throw new EngineError('Give each unit a name, e.g. Carton')
+    if (!(u.factor > 0) || u.factor === 1) throw new EngineError(`How many does one ${u.name} hold? (more than 0, not 1)`)
+  }
+  if (new Set(clean.map((u) => u.name.toLowerCase())).size !== clean.length) throw new EngineError('Each unit has its own name')
+  ctx.ws.units = { ...(ctx.ws.units ?? {}), [p.id]: clean }
+  if (!clean.length) delete ctx.ws.units[p.id]
+  log(ctx, clean.length ? `set the units: ${clean.map((u) => `${u.name} = ${u.factor}`).join(', ')}` : 'removed the extra units', p)
+}
+
 /* ---------------- foreign currency (see fx.ts) ---------------- */
 
 /** A document in another currency than the company's: its amounts are in `currency`, the books in the company's. */
@@ -1017,6 +1048,8 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
   lineCostCenters(ctx, lines, true)
   applyTotals(rec)
 
+  // Units (a carton of 12): the conversion comes from the product, never from the browser.
+  unitLines(ctx, lines)
   // Goods already delivered from a sales order: their quantity and cost come from the server's delivery notes.
   orderLines(ctx, rec, lines, mod.role === 'invoices')
   // Quantities per tracked product (goods already delivered left stock with their delivery note)
@@ -1024,7 +1057,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
   for (const l of lines) {
     if (l.dcost !== undefined) continue
     const p = productRec(ctx, l.product)
-    if (p && p.values.track_stock) qtyBy.set(p.id, (qtyBy.get(p.id) ?? 0) + l.qty)
+    if (p && p.values.track_stock) qtyBy.set(p.id, round4((qtyBy.get(p.id) ?? 0) + baseQty(l)))
   }
 
   const sample = Boolean(ctx.sample || rec.sample)
@@ -1080,7 +1113,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       // The cost of the goods follows each line's cost center, by quantity (the last line takes the cents left).
       let left = issue
       own.forEach((l, i) => {
-        const share = i === own.length - 1 ? round2(left) : round2((issue * l.qty) / q)
+        const share = i === own.length - 1 ? round2(left) : round2((issue * baseQty(l)) / q)
         left = round2(left - share)
         cogsBy.push({ cc: l.cc, amount: share })
       })
@@ -1110,7 +1143,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
       const lineValue = B(lineNet(l))
-      const into = putIntoStock(ctx, p, l.qty, lineValue, number, rec.id, date, { lot: l.lot, expiry: l.expiry, wh }, rec)
+      const into = putIntoStock(ctx, p, baseQty(l), lineValue, number, rec.id, date, { lot: l.lot, expiry: l.expiry, wh }, rec)
       priceDiff = round2(priceDiff + into.diff)
       diffBy.push({ cc: l.cc, amount: into.diff })
       received = round2(received + lineValue)
@@ -1125,7 +1158,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       const v = round2(B(lineNet(l)) - Number(l.dcost))
       if (!v) continue
       const p = productRec(ctx, l.product)
-      const ratio = p ? Math.max(0, Math.min(1, onHand(ctx.ws, p.id) / (l.qty || 1))) : 0
+      const ratio = p ? Math.max(0, Math.min(1, onHand(ctx.ws, p.id) / (baseQty(l) || 1))) : 0
       const keep = p ? round2(v * ratio) : 0
       if (p && keep) {
         ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: 0, cost: 0, value: keep, doc: rec.id, ref: number, date }, rec))
@@ -1179,7 +1212,7 @@ export function heldForOrders(ws: Workspace, schema: AppSchema, pid: string, exc
   for (const o of list(ws, quotes.id)) {
     if (o.status !== 'ordered' || o.values.closed || o.id === exceptOrder || !(o.lines ?? []).some((l) => l.product === pid)) continue
     const done = deliveredQty(ws, o.id)
-    for (const l of o.lines ?? []) if (l.product === pid) held += Math.max(0, l.qty - (done.get(l.id) ?? 0))
+    for (const l of o.lines ?? []) if (l.product === pid) held += Math.max(0, l.qty - (done.get(l.id) ?? 0)) * (l.factor ?? 1)
   }
   return round4(held)
 }
@@ -1262,7 +1295,7 @@ export function putIntoStock(ctx: Ctx, p: Rec, qty: number, value: number, ref: 
 export function noteLots(own: Line[], taken: { lot?: string; expiry?: string; qty: number }[]) {
   const pool = taken.map((pt) => ({ ...pt }))
   for (const l of own) {
-    let need = l.qty
+    let need = baseQty(l)
     const got: NonNullable<Line['lots']> = []
     while (need > 0 && pool.length) {
       const take = round4(Math.min(need, pool[0].qty))
@@ -1656,7 +1689,7 @@ function issueCost(ws: Workspace, rec: Rec, product: string) {
   if (qty) return value / qty
   // goods that left on a delivery note: the cost the invoice moved to cost of sales
   const delivered = (rec.lines ?? []).filter((l) => l.product === product && l.dcost !== undefined)
-  const dq = delivered.reduce((s, l) => s + l.qty, 0)
+  const dq = delivered.reduce((s, l) => s + baseQty(l), 0)
   return dq ? delivered.reduce((s, l) => s + Number(l.dcost), 0) / dq : 0
 }
 
@@ -1702,7 +1735,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
     if (!(price >= 0) || price > ol.price) throw new EngineError(`The price for “${ol.description}” can be lowered, but not above the original ${money(ol.price, ctx.schema.company.currency)}`)
     // An amount off the original line is given back in proportion to the quantity credited.
     const discAmt = ol.discAmt ? round2((ol.discAmt * qty) / ol.qty) : 0
-    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, ...(discAmt ? { discAmt } : {}), vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
+    lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, ...(ol.unit ? { unit: ol.unit, factor: ol.factor } : {}), price, discount: ol.discount, ...(discAmt ? { discAmt } : {}), vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
   }
   if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
   const foreign = isForeign(orig)
@@ -1735,9 +1768,9 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
       for (const l of lines) {
         const p = productRec(ctx, l.product)
         if (!p || !p.values.track_stock) continue
-        const value = round2(l.qty * issueCost(ctx.ws, orig, p.id))
+        const value = round2(baseQty(l) * issueCost(ctx.ws, orig, p.id))
         const oldValue = stockValue(ctx.ws, p)
-        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date, ...(orig.values.warehouse ? { wh: String(orig.values.warehouse) } : {}) }, rec))
+        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: baseQty(l), cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date, ...(orig.values.warehouse ? { wh: String(orig.values.warehouse) } : {}) }, rec))
         setValuation(ctx.ws, p, oldValue + value)
         jl.push(side('1300', value), { ...side('5000', -value), ...(l.cc ? { cc: l.cc } : {}) })
       }
@@ -1754,12 +1787,13 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
       // Goods sent back leave stock at the price they were bought for.
       const owh = orig.values.warehouse ? String(orig.values.warehouse) : undefined
       const have = owh ? onHandAt(ctx.ws, p.id, owh) : onHand(ctx.ws, p.id)
-      if (have < l.qty) throw new EngineError(`Only ${have} ${p.values.name} are in stock to send back`)
+      const bq = baseQty(l)
+      if (have < bq) throw new EngineError(`Only ${have} ${p.values.name} are in stock to send back`)
       const oldValue = stockValue(ctx.ws, p)
       const value = round2(net)
-      if (onHand(ctx.ws, p.id) - l.qty > 0 && oldValue - value < 0) throw new EngineError(`${p.values.name} was already charged to sales at a lower cost; record the return with less value or as a price reduction`)
-      const out = onHand(ctx.ws, p.id) === l.qty ? oldValue : value
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -l.qty, cost: round4(net / l.qty), value: -out, doc: rec.id, ref: number, date, ...(owh ? { wh: owh } : {}) }, rec))
+      if (onHand(ctx.ws, p.id) - bq > 0 && oldValue - value < 0) throw new EngineError(`${p.values.name} was already charged to sales at a lower cost; record the return with less value or as a price reduction`)
+      const out = onHand(ctx.ws, p.id) === bq ? oldValue : value
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -bq, cost: round4(net / bq), value: -out, doc: rec.id, ref: number, date, ...(owh ? { wh: owh } : {}) }, rec))
       setValuation(ctx.ws, p, oldValue - out)
       jl.push(side('1300', -out))
       if (round2(value - out)) jl.push({ ...side('5000', round2(out - value)), ...tag_ })
