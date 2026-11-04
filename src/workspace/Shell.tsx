@@ -9,6 +9,7 @@ import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore
 import { Invitations } from '../components/Invitations'
 import { CommandPalette } from './CommandPalette'
 import { BillingBanner } from './BillingBanner'
+import { InstallApp, OfflineStrip } from './InstallApp'
 import { AREA_INFO, AREAS, areaItems, areaOfPath, areasFor, type AreaId } from '../lib/areas'
 import { AreaBadge } from './Hub'
 import { PAGE_ICON } from './areaIcons'
@@ -42,6 +43,7 @@ export default function Shell() {
   const { ws, user, schema, act } = useApp()
   const self = useStore((s) => selfUser(s))
   const sync = useStore((s) => s.sync)
+  const offline = useStore((s) => s.offline)
   const nav = useNavigate()
   const toast = useToast()
   const { lang, setLang, tr, msg } = useLang()
@@ -116,6 +118,7 @@ export default function Shell() {
           </select>
         )}
         <Link to="/security#companies" className="sidebar-small">{tr('Your companies')}</Link>
+        <InstallApp />
         {companies.length > 1 && <Link to="/app/group" className="sidebar-small">{tr('Your group: all companies together')}</Link>}
         {/* One area at a time: its own lists and pages only; the home shows the areas themselves. */}
         {area ? (
@@ -212,6 +215,7 @@ export default function Shell() {
           <Invitations />
         </div>
         <main id="main" tabIndex={-1} style={{ outline: 'none' }}>
+          {offline && <OfflineStrip savedAt={offline.savedAt} />}
           <Outlet />
         </main>
       </div>

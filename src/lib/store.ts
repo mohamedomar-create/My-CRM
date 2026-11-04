@@ -10,6 +10,7 @@ import { uid } from './schema'
 import { applyCommand, type Actor, type Command, type CommandArgs, type CommandName } from './commands'
 import { billingProblem, PLANS, VAT_RATE, type BillingStatus, type Plan } from './billing'
 import { supabase } from './supabase'
+import { forgetOfflineCopies, isOfflineError, keepOfflineCopy, offlineCopy } from './offline'
 
 const LAST_WS = 'bonyan.workspace'
 
@@ -39,6 +40,8 @@ interface State {
   notice: Notice | null
   /** why the workspace couldn't be opened (network down, no access…), shown with a Retry button */
   loadError: string | null
+  /** opened from the copy kept on this device, with no connection: read only until back online */
+  offline?: { savedAt: string } | null
   prefs: Prefs
   /** the companies this person belongs to (for the company switcher) */
   companies: Company[]
@@ -260,6 +263,7 @@ export function run<N extends CommandName>(name: N, args: CommandArgs[N], label 
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   assertSelf()
+  if (state.offline) throw new Error('You are offline: this is the copy kept on this device. Changes can be made when you are back online.')
   // Read-only after the trial or when unpaid, and no books on the Free plan: said now, not after the server refuses.
   const unpaid = billingProblem(state.billing, ws, name, args)
   if (unpaid) throw new Error(unpaid)
@@ -446,10 +450,12 @@ function open(ws: Workspace, user: User) {
     s.loadError = null
     s.prefs = {}
     s.billing = null
+    s.offline = null
   })
   void loadPrefs(ws.id, user.email)
   void refreshBilling(ws.id)
   listen(ws.id)
+  void keepOfflineCopy(user.email, ws, state.companies).catch(() => undefined)
 }
 
 /* ---------------- subscription ---------------- */
@@ -636,6 +642,12 @@ let watching = false
 export async function init() {
   if (!watching && typeof window !== 'undefined') {
     watching = true
+    // the copy for offline use follows the work: kept whenever the app goes to the background
+    document.addEventListener('visibilitychange', () => {
+      const ws = currentWorkspace()
+      const me = ws?.users.find((u) => u.id === state.session?.selfId)
+      if (document.visibilityState === 'hidden' && ws && me && !state.offline) void keepOfflineCopy(me.email, ws, state.companies).catch(() => undefined)
+    })
     supabase.auth.onAuthStateChange((event) => {
       // Signed out in another tab or the session expired: leave the workspace here too.
       if (event === 'SIGNED_OUT' && state.session) {
@@ -658,8 +670,23 @@ export async function init() {
       if (await codeStillNeeded()) publish((s) => { s.needCode = true })
       else await openFor(data.session.user)
     } catch (e) {
-      // Keep the login; show what went wrong with a Retry button instead of silently signing out.
-      publish((s) => { s.loadError = (e as Error).message })
+      // No connection: open the copy kept on this device, read only, rather than an error screen.
+      const copy = isOfflineError(e) ? await offlineCopy(data.session.user.email ?? '', lastWorkspace()).catch(() => null) : null
+      const user = copy?.ws.users.find((u) => u.email.toLowerCase() === (data.session!.user.email ?? '').toLowerCase())
+      if (copy && user) {
+        publish((s) => {
+          s.companies = copy.companies
+          s.workspaces = { [copy.ws.id]: copy.ws }
+          s.session = { workspaceId: copy.ws.id, userId: user.id, selfId: user.id }
+          s.offline = { savedAt: copy.savedAt }
+          s.loadError = null
+        })
+        // back online: open the company afresh
+        window.addEventListener('online', () => { void init() }, { once: true })
+      } else {
+        // Keep the login; show what went wrong with a Retry button instead of silently signing out.
+        publish((s) => { s.loadError = (e as Error).message })
+      }
     }
   }
   publish((s) => { s.ready = true })
@@ -832,7 +859,16 @@ export async function signIn(email: string, password: string, inviteId?: string)
   }
 }
 
+function lastWorkspace() {
+  try {
+    return localStorage.getItem(LAST_WS)
+  } catch {
+    return null
+  }
+}
+
 export async function signOut() {
+  void forgetOfflineCopies().catch(() => undefined)
   try {
     await flush()
   } finally {

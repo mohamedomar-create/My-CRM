@@ -20,6 +20,10 @@ applyTheme()
 // A file a screen needs has gone because a new version went live: reload once to get it.
 window.addEventListener('vite:preloadError', (e) => { if (reloadForUpdate()) e.preventDefault() })
 void init()
+// installable and opens offline (production builds only: in development every file changes all the time)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js').catch(() => undefined) })
+// the browser offers to install: kept so the app can show its own "Install" button
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); (window as unknown as { installPrompt?: Event }).installPrompt = e; window.dispatchEvent(new Event('installable')) })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

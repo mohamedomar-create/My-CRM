@@ -4702,4 +4702,8 @@ export const AR: Record<string, string> = {
   'Your group: all companies together': 'مجموعتك: كل الشركات معًا',
   '{n} companies keep their books in another currency and are not in the combined statements.': '{n} شركات تمسك دفاترها بعملة أخرى وليست في القوائم المجمّعة.',
   'Of the revenue, {a} are sales between the group’s companies: sales to customers outside the group are {b}. The profit on goods one company still holds from another isn’t taken out yet.': 'من الإيرادات، {a} مبيعات بين شركات المجموعة: المبيعات لعملاء خارج المجموعة {b}. ربح البضاعة التي ما زالت لدى شركة من شركة أخرى لم يُستبعد بعد.',
+  'In Safari, tap Share, then “Add to Home Screen”.': 'في Safari، اضغط مشاركة ثم «إضافة إلى الشاشة الرئيسية».',
+  'Install on this phone': 'تثبيت على هذا الهاتف',
+  'You are offline: this is the copy kept on this device from {a}. You can look at everything; changes can be made when you are back online.': 'أنت غير متصل: هذه النسخة المحفوظة على هذا الجهاز من {a}. يمكنك الاطلاع على كل شيء، والتعديل عند عودة الاتصال.',
+  'You are offline: this is the copy kept on this device. Changes can be made when you are back online.': 'أنت غير متصل: هذه النسخة المحفوظة على هذا الجهاز. يمكن التعديل عند عودة الاتصال.',
 }
