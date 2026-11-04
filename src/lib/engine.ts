@@ -1830,7 +1830,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
 }
 
 /** Pays back a credit: money to the customer for a credit note, or from the supplier for a debit note. */
-export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method']) {
+export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method'], account?: string) {
   needFinance(ctx, 'register refunds')
   const rec = findRecord(ctx.ws, id)
   const mod = rec ? moduleById(ctx.schema, rec.module) : undefined
@@ -1845,7 +1845,7 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   noFutureDate(ctx, date, 'refund')
   if (method === 'cheque') throw new EngineError('Refund by cash or bank transfer')
   const sales = mod.role === 'invoices'
-  const cash = moneyAccountFor(ctx, method, !sales)
+  const cash = moneyAccountFor(ctx, method, !sales, account)
   const ref = `REF-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
   ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref, account: cash }, rec))
   journal(ctx, {
@@ -4634,6 +4634,7 @@ export function removeSampleData(ctx: Ctx) {
   if (ws.production) ws.production = ws.production.filter((m) => !m.sample)
   if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
   if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
+  if (ws.pos) ws.pos = { ...ws.pos, sessions: ws.pos.sessions.filter((x) => !x.sample) }
   if (ws.books?.recurring) ws.books.recurring = ws.books.recurring.filter((r) => !r.sample)
   if (ws.books?.deferrals) ws.books.deferrals = ws.books.deferrals.filter((d) => !d.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))

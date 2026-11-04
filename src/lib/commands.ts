@@ -11,6 +11,7 @@ import { revalue, setDocCurrency } from './fx'
 import { reviseQuote, shareQuote } from './quoteOnline'
 import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
 import { reinstate, setAllowance, writeOff } from './badDebts'
+import { closeCounter, counterReturn, openCounter, saveCounter, sell, type CounterPay, type SaleLine } from './pos'
 import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
@@ -94,7 +95,7 @@ export interface CommandArgs {
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
-  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean }
+  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean; pos?: boolean }
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
   'sheet.save': { sheet: SheetReportDef }
@@ -117,6 +118,11 @@ export interface CommandArgs {
   'recurring.postDue': Record<string, never>
   'spread.create': { kind?: 'income' | 'expense'; doc?: string; memo?: string; amount: number; months: number; start?: string; holding?: string; account?: string; cc?: string }
   'spread.stop': { id: string; releaseRest: boolean }
+  'pos.saveCounter': { id?: string; name: string; cash?: string; bank?: string; warehouse?: string; maxDiscount?: number; active?: boolean }
+  'pos.open': { counter: string; float: number }
+  'pos.sell': { session: string; receipt: string; customer?: string; lines: SaleLine[]; payments: { method: CounterPay; amount: number }[] }
+  'pos.return': { session: string; invoice: string; lines: { line: string; qty: number }[]; method?: CounterPay; ref?: string }
+  'pos.close': { session: string; counted: number }
   'quote.share': { id: string; secret?: string }
   'quote.revise': { id: string }
   'journal.setApproval': { over: number | null }
@@ -385,7 +391,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'plan.create': { run: (ws, u, a) => createPlan(ctx(ws, u), { name: a.name === undefined ? undefined : String(a.name), startYear: Number(a.startYear), years: a.years === undefined ? undefined : Number(a.years), fromBooks: a.fromBooks !== false, labels: planLabels(a.labels) }) },
   'plan.save': { run: (ws, u, a) => void savePlan(ctx(ws, u), String(a.id ?? ''), a.plan) },
   'plan.delete': { run: (ws, u, a) => void deletePlan(ctx(ws, u), String(a.id ?? '')) },
-  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs }) },
+  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs, pos: a.pos }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
   'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: a.from ? String(a.from) : undefined, paid: a.paid && typeof a.paid === 'object' ? { account: String(a.paid.account ?? ''), vat: Number(a.paid.vat ?? 0) || 0, what: String(a.paid.what ?? '') } : undefined, to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
@@ -413,6 +419,11 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
   'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
   'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'pos.saveCounter': { admin: true, run: (ws, u, a) => saveCounter(ctx(ws, u), { id: a.id ? String(a.id) : undefined, name: a.name, cash: a.cash, bank: a.bank, warehouse: a.warehouse || undefined, maxDiscount: a.maxDiscount, active: a.active }) },
+  'pos.open': { run: (ws, u, a) => openCounter(ctx(ws, u), { counter: String(a.counter ?? ''), float: Number(a.float) }) },
+  'pos.sell': { run: (ws, u, a) => sell(ctx(ws, u), { session: String(a.session ?? ''), receipt: String(a.receipt ?? ''), customer: a.customer ? String(a.customer) : undefined, lines: a.lines, payments: a.payments }) },
+  'pos.return': { run: (ws, u, a) => counterReturn(ctx(ws, u), { session: String(a.session ?? ''), invoice: String(a.invoice ?? ''), lines: a.lines, method: a.method, ref: a.ref ? String(a.ref) : undefined }) },
+  'pos.close': { run: (ws, u, a) => closeCounter(ctx(ws, u), { session: String(a.session ?? ''), counted: Number(a.counted) }) },
   'spread.stop': { run: (ws, u, a) => void stopSpread(ctx(ws, u), String(a.id ?? ''), Boolean(a.releaseRest)) },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },

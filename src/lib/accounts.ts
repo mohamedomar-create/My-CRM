@@ -64,6 +64,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('5310', 'Production labour and overhead absorbed', 'تكاليف إنتاج محمّلة على المنتجات', 'expense', false, true),
   own('5400', 'Utilities', 'المرافق', 'expense'),
   own('5500', 'Bank charges', 'مصروفات بنكية', 'expense'),
+  sys('5510', 'Cash over and short', 'عجز وزيادة النقدية', 'expense'),
   sys('5600', 'Depreciation', 'مصروف الإهلاك', 'expense'),
   sys('5700', 'Bad and doubtful debts', 'الديون المعدومة والمشكوك في تحصيلها', 'expense'),
   sys('5900', 'Inventory adjustments', 'تسويات المخزون', 'expense'),

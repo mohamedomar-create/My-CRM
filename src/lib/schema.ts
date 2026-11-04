@@ -186,6 +186,8 @@ export interface RoleDef {
   finance?: boolean
   /** can see purchase costs, stock value and margins (always true for admin and finance) */
   costs?: boolean
+  /** can sell at the counter (point of sale), without other finance rights */
+  pos?: boolean
 }
 
 export interface CompanyProfile {

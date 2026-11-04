@@ -14,6 +14,7 @@ import { plans } from '../lib/plan'
 import { N_, useLang } from '../lib/i18n'
 
 const PAGE_TEXT: Record<string, string> = {
+  pos: N_('Sell at the counter: cash, card or InstaPay, receipts, returns and the drawer count'),
   stock: N_('On hand, reorder levels, adjustments and counts'),
   accounting: N_('Statements, journal, payments, bank, VAT and closing the books'),
   approvals: N_('What is waiting for a decision'),

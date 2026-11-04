@@ -325,6 +325,8 @@ export interface Workspace {
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
   /** closing the books: nothing can be posted on or before lockDate; the years closed to retained earnings */
+  /** the shop counters and their sessions (see pos.ts) */
+  pos?: { counters: import('./pos').Counter[]; sessions: import('./pos').PosSession[] }
   books?: {
     lockDate?: string
     closedYears?: { year: number; at: string; by: string; entry: string }[]
