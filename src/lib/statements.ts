@@ -1,7 +1,7 @@
 // Phase 2A.7: the financial statements, built from the journal: profit and loss, balance sheet, cash-flow statement
 // (direct method) and the general ledger they all drill down to. Pure functions, so the server and tests can use them.
 import type { JournalEntry, Workspace } from './types'
-import { account, accountName, chartOf, moneyKind, type Account } from './accounts'
+import { account, accountName, chartOf, moneyKind, normalSign, type Account } from './accounts'
 import { costCenter, costCenterCodes, costCenters, isClosingEntry, isHistoryBalance, round2 } from './engine'
 import { N_ } from './i18n'
 
@@ -222,7 +222,7 @@ export interface LedgerLine {
 /** One account's movements from…to with the balance brought forward and a running balance, oldest first. */
 export function generalLedger(ws: Workspace, code: string, from: string, to: string) {
   const a = account(ws, code)
-  const sign = a && (a.type === 'asset' || a.type === 'expense') ? 1 : -1
+  const sign = a ? normalSign(a) : -1
   const isPl = a?.type === 'income' || a?.type === 'expense'
   let opening = 0
   const lines: LedgerLine[] = []

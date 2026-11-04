@@ -36,11 +36,50 @@ export default function Treasury() {
         ))}
         <div className="card"><h2>{tr('Cheques in hand and under collection')}</h2><div className="kpi-value">{money(round2(accountBalance(ws, '1150') + accountBalance(ws, '1160')), cur)}</div><div className="kpi-sub">{tr('Issued, not yet cashed: {amount}', { amount: money(-accountBalance(ws, '2150'), cur) })}</div></div>
       </div>
-      <p className="small muted" style={{ margin: 0 }}>{tr('Add another cash box or bank account in the Chart of accounts (an asset account that payments can go through). Moving money between them, or paying the Tax Authority, is a journal voucher.')}</p>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Add another cash box or bank account in the Chart of accounts (an asset account that payments can go through). Paying the Tax Authority is a journal voucher.')}</p>
+      <Transfer />
       <Voucher />
       <ChequeRegister />
       <Reconcile />
     </div>
+  )
+}
+
+/* ---------------- moving money between the company's own accounts (a contra entry) ---------------- */
+
+function Transfer() {
+  const { ws, schema, act } = useApp()
+  const cur = schema.company.currency
+  const accounts = moneyAccounts(ws)
+  const [from, setFrom] = useState(accounts[0]?.code ?? '')
+  const [to, setTo] = useState(accounts[1]?.code ?? '')
+  const [amount, setAmount] = useState('')
+  const [charges, setCharges] = useState('')
+  const [date, setDate] = useState(todayISO())
+  const [memo, setMemo] = useState('')
+  if (accounts.length < 2) return null
+  const name = (code: string) => { const a = accounts.find((x) => x.code === code); return a ? `${a.code} ${accountLabel(a, getLang())}` : code }
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const out = act<{ ref: string }>('money.transfer', { from, to, amount: Number(amount), date, memo, charges: Number(charges) || 0 }, tr('Transfer posted'), `Transfer ${from} → ${to}`)
+    if (out) { setAmount(''); setCharges(''); setMemo('') }
+  }
+  return (
+    <details className="card">
+      <summary><b>{tr('Move money between cash and bank')}</b> <span className="small muted">{tr('Cash deposited at the bank, cash drawn from it, or a transfer between banks')}</span></summary>
+      <form className="stack" style={{ marginTop: 12 }} onSubmit={submit}>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+          <label className="field" style={{ minWidth: 200 }}>{tr('From')}<select value={from} onChange={(e) => setFrom(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{name(a.code)}</option>)}</select></label>
+          <label className="field" style={{ minWidth: 200 }}>{tr('To')}<select value={to} onChange={(e) => setTo(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{name(a.code)}</option>)}</select></label>
+          <label className="field" style={{ width: 140 }}>{tr('Amount')}<input inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} style={{ textAlign: 'end' }} /></label>
+          <label className="field" style={{ width: 140 }}>{tr('Bank charges')}<input inputMode="decimal" value={charges} onChange={(e) => setCharges(e.target.value)} style={{ textAlign: 'end' }} /></label>
+          <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" required value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></label>
+          <label className="field grow">{tr('Note')}<input value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
+        </div>
+        {Number(amount) > 0 && from !== to && <p className="tiny muted" style={{ margin: 0 }}>{tr('Debit {to} {amount}; credit {from} {total}', { to: name(to), from: name(from), amount: money(Number(amount), cur), total: money(round2(Number(amount) + (Number(charges) || 0)), cur) })}{Number(charges) > 0 ? ` · ${tr('bank charges {amount} to 5500', { amount: money(Number(charges), cur) })}` : ''}</p>}
+        <div><button disabled={!(Number(amount) > 0) || from === to}>{tr('Post transfer')}</button></div>
+      </form>
+    </details>
   )
 }
 

@@ -4,6 +4,8 @@
 // by the server, not by whichever browser happens to send the data.
 import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
+import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
+import { reinstate, setAllowance, writeOff } from './badDebts'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
 import type { AppSchema, Permission } from './schema'
@@ -16,7 +18,7 @@ import { addRole, removeRole, saveRole } from './access'
 import {
   EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
-  addAccount, updateAccount, manualJournal, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
+  addAccount, updateAccount, manualJournal, transferMoney, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
 } from './engine'
 import type { AccountType } from './accounts'
@@ -74,7 +76,15 @@ export interface CommandArgs {
   'import.activities': { rows: Record<string, string>[]; batch?: { id: string; file: string }; firstRow?: number; people?: Record<string, string> }
   'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
-  'journal.manual': { date: string; memo: string; lines: VoucherLine[] }
+  'journal.manual': { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }
+  'money.transfer': { from: string; to: string; amount: number; date: string; memo?: string; charges?: number }
+  'asset.add': { name: string; account?: string; date: string; cost: number; salvage?: number; life: number; from: string; cc?: string; accumulated?: number }
+  'asset.depreciate': { month: string }
+  'asset.undoDepreciation': { id: string }
+  'asset.dispose': { id: string; date: string; proceeds?: number; account?: string }
+  'debt.allowance': { date: string; amount: number; note?: string }
+  'debt.writeOff': { id: string; date: string; reason: string }
+  'debt.reinstate': { id: string; date: string }
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
@@ -316,7 +326,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   },
   'accounts.add': { run: (ws, u, a) => addAccount(ctx(ws, u), a) },
   'accounts.update': { run: (ws, u, a) => updateAccount(ctx(ws, u), a.code, a) },
-  'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), a) },
+  'journal.manual': { run: (ws, u, a) => manualJournal(ctx(ws, u), { date: a.date, memo: a.memo, lines: a.lines, adjusting: Boolean(a.adjusting), reverseOn: a.reverseOn ? String(a.reverseOn) : undefined }) },
   'costCenter.add': { run: (ws, u, a) => addCostCenter(ctx(ws, u), { code: String(a.code ?? ''), name: String(a.name ?? ''), nameAr: a.nameAr === undefined ? undefined : String(a.nameAr), parent: a.parent ? String(a.parent) : undefined }) },
   'costCenter.update': {
     run: (ws, u, a) => void updateCostCenter(ctx(ws, u), String(a.code ?? ''), {
@@ -343,6 +353,14 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
   'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: String(a.from ?? ''), to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
   'landed.undo': { run: (ws, u, a) => void undoLanded(ctx(ws, u), String(a.id ?? '')) },
+  'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0 }) },
+  'asset.add': { run: (ws, u, a) => ({ id: addAsset(ctx(ws, u), { name: String(a.name ?? '').slice(0, 120), account: a.account === undefined ? undefined : String(a.account), date: String(a.date ?? ''), cost: Number(a.cost), salvage: Number(a.salvage ?? 0) || 0, life: Number(a.life), from: String(a.from ?? ''), cc: a.cc ? String(a.cc) : undefined, accumulated: Number(a.accumulated ?? 0) || 0 }).id }) },
+  'asset.depreciate': { run: (ws, u, a) => depreciate(ctx(ws, u), String(a.month ?? '')).number },
+  'asset.undoDepreciation': { run: (ws, u, a) => void undoDepreciation(ctx(ws, u), String(a.id ?? '')) },
+  'asset.dispose': { run: (ws, u, a) => void disposeAsset(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), proceeds: Number(a.proceeds ?? 0) || 0, account: a.account === undefined ? undefined : String(a.account) }) },
+  'debt.allowance': { run: (ws, u, a) => setAllowance(ctx(ws, u), { date: String(a.date ?? ''), amount: Number(a.amount), note: a.note === undefined ? undefined : String(a.note).slice(0, 200) }).ref },
+  'debt.writeOff': { run: (ws, u, a) => writeOff(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), reason: String(a.reason ?? '').slice(0, 300) }).ref },
+  'debt.reinstate': { run: (ws, u, a) => void reinstate(ctx(ws, u), String(a.id ?? ''), String(a.date ?? '')) },
   'sheet.save': { admin: true, run: (ws, u, a) => saveSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, a.sheet) },
   'sheet.remove': { admin: true, run: (ws, u, a) => void removeSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },

@@ -113,6 +113,8 @@ export interface JournalEntry {
   manual?: boolean
   /** this entry cancels the manual entry with this id */
   reverses?: string
+  /** an adjusting entry of the period end (an accrual, a prepayment taken to expense, …) */
+  adjusting?: boolean
   /** a step in a cheque's life (see Payment.cheque): deposited, cleared or bounced */
   cheque?: { id: string; step: ChequeStep; account?: string }
 }
@@ -305,6 +307,9 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** the fixed-asset register and its depreciation runs (see assets.ts) */
+  assets?: import('./assets').FixedAsset[]
+  depreciation?: import('./assets').DepreciationRun[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData

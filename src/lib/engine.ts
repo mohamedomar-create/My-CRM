@@ -5,7 +5,7 @@ import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRol
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
 import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
-import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind } from './accounts'
+import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind, systemAccount } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
 export class EngineError extends Error {}
@@ -636,7 +636,7 @@ export function costCenterTree(list: CostCenter[]) {
 }
 
 /** A cost center to post with: one that exists and is on. */
-function activeCostCenter(ctx: Ctx, code: string) {
+export function activeCostCenter(ctx: Ctx, code: string) {
   const c = costCenter(ctx.ws, code)
   if (!c) throw new EngineError(`Cost center ${code} doesn’t exist`)
   if (!c.active) throw new EngineError(`Cost center ${c.code} ${c.name} is turned off`)
@@ -804,7 +804,9 @@ function checkLines(lines: Line[]) {
   }
 }
 
-export function nextNumber(ctx: Ctx, prefix: string, date: string, sample = false) {
+export function nextNumber(ctx: Ctx, prefix: string, date: string, sample = false, notBooks = false) {
+  // A number is never taken for a date the books are closed on: the posting would be refused, leaving a gap.
+  if (!notBooks) checkOpenPeriod(ctx, date)
   // Sample documents use their own series, so the first real invoice is always …-0001.
   const series = `${prefix}-${date.slice(0, 4)}`
   const key = sample ? `sample:${series}` : series
@@ -841,7 +843,7 @@ export function ccSides(account: AccountCode, parts: { cc?: string; amount: numb
 }
 
 /** A debit or credit of `amount` on one account, whichever way round the sign says. */
-function side(account: AccountCode, amount: number) {
+export function side(account: AccountCode, amount: number) {
   return amount >= 0 ? { account, debit: amount, credit: 0 } : { account, debit: 0, credit: -amount }
 }
 
@@ -1140,6 +1142,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (Number(rec.values.paid) > 0) throw new EngineError(rec.values.credit_for ? 'This credit note was refunded. Reverse the refund before voiding.' : 'This document has payments. Reverse them before voiding.')
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
   if (usesOf(rec).length) throw new EngineError('A credit was used on this document. Take it back first.')
+  if (Number(rec.values.written_off ?? 0)) throw new EngineError('This invoice was written off as a bad debt. Reinstate it first.')
   const lc = (ctx.ws.landed ?? []).find((l) => !l.undone && (l.from === rec.id || l.to.includes(rec.id)))
   if (lc) throw new EngineError(`This bill is part of landed cost ${lc.number}. Undo the landed cost first.`)
   const date = ctx.today ?? todayISO()
@@ -1209,7 +1212,7 @@ function moneyAccountFor(ctx: Ctx, method: PayMethod, incoming: boolean, account
   return moneyAccounts(ctx.ws, kind)[0]?.code ?? '1100'
 }
 
-function noFutureDate(ctx: Ctx, date: string, what: string) {
+export function noFutureDate(ctx: Ctx, date: string, what: string) {
   if (!ISO_DATE.test(String(date))) throw new EngineError(`Choose the date of the ${what}`)
   if (date > (ctx.today ?? todayISO())) throw new EngineError(`A ${what} can’t be dated in the future. For a post-dated cheque, use today’s date and put the cheque’s own date as its due date.`)
 }
@@ -1319,7 +1322,7 @@ export function setQuoteStatus(ctx: Ctx, quote: Rec, status: 'sent' | 'accepted'
   if (quote.status === 'invoiced') throw new EngineError('This quotation is already invoiced')
   if (status === 'sent') {
     if (!(quote.lines ?? []).length) throw new EngineError('Add at least one line before sending')
-    if (!quote.number) quote.number = nextNumber(ctx, mod.numberPrefix || 'QT', String(quote.values.date ?? todayISO()), Boolean(ctx.sample || quote.sample))
+    if (!quote.number) quote.number = nextNumber(ctx, mod.numberPrefix || 'QT', String(quote.values.date ?? todayISO()), Boolean(ctx.sample || quote.sample), true)
   }
   if (status === 'accepted' && quote.status !== 'sent') throw new EngineError('Send the quotation before marking it accepted')
   quote.status = status
@@ -1350,13 +1353,13 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
  * What is still owed on a document. Invoices and bills: total − paid − credited by credit notes. Credit notes (their
  * total is negative): the credit not yet used against the original document or refunded, as a negative balance.
  */
-function refreshBalance(rec: Rec) {
+export function refreshBalance(rec: Rec) {
   const total = Number(rec.values.total ?? 0)
   const paid = Number(rec.values.paid ?? 0)
   if (rec.values.credit_for) {
     rec.values.balance = round2(total + Number(rec.values.applied ?? 0) + paid)
   } else {
-    rec.values.balance = round2(total - paid - Number(rec.values.credited ?? 0))
+    rec.values.balance = round2(total - paid - Number(rec.values.credited ?? 0) - Number(rec.values.written_off ?? 0))
   }
   if (rec.status === 'void' || rec.status === 'draft') return
   rec.status = rec.values.balance === 0 ? 'paid' : paid !== 0 || Number(rec.values.credited ?? 0) !== 0 ? 'partial' : 'posted'
@@ -1400,6 +1403,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   if (!orig || !mod || (mod.role !== 'invoices' && mod.role !== 'purchases')) throw new EngineError('Credit notes are issued on posted invoices and bills')
   if (orig.values.credit_for) throw new EngineError('A credit note can’t be credited again')
   if (orig.status === 'draft' || orig.status === 'void') throw new EngineError('Only a posted document can be credited')
+  if (Number(orig.values.written_off ?? 0)) throw new EngineError('This invoice was written off as a bad debt. Reinstate it before crediting it.')
   noRealPostingOverSamples(ctx)
   const sales = mod.role === 'invoices'
   const date = String(n.date ?? '')
@@ -1437,7 +1441,9 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   const restock = n.restock !== false
   const jl: { account: string; debit: number; credit: number; cc?: string }[] = []
   if (sales) {
-    jl.push(...ccSides('4000', lines.map((l) => ({ cc: l.cc, amount: lineNet(l) }))), { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
+    // Sales returns and allowances (a contra revenue account) keep the gross sales visible, as the statements show them.
+    const returns = systemAccount(ctx.ws, '4100') ? '4100' : '4000'
+    jl.push(...ccSides(returns, lines.map((l) => ({ cc: l.cc, amount: lineNet(l) }))), { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
     if (restock) {
       for (const l of lines) {
         const p = productRec(ctx, l.product)
@@ -1845,7 +1851,7 @@ export interface HealthCheck {
   blocking: boolean
 }
 
-const monthEnd = (month: string) => {
+export const monthEnd = (month: string) => {
   const [y, m] = month.split('-').map(Number)
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
 }
@@ -1921,6 +1927,18 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   const held = (st: ChequeState) => round2(reg.filter((c) => c.state === st).reduce((s, c) => s + c.amount, 0))
   const chequesOk = held('in_hand') === accountBalance(ws, '1150') && held('deposited') === accountBalance(ws, '1160') && held('issued') === round2(-accountBalance(ws, '2150'))
   checks.push({ id: 'cheques', ok: chequesOk, blocking: true, title: 'Cheques match the register', detail: chequesOk ? `In hand ${money(held('in_hand'), cur)}, under collection ${money(held('deposited'), cur)}, issued ${money(held('issued'), cur)}` : 'The cheque accounts (1150, 1160, 2150) differ from the cheque register. Contact support before closing.' })
+  // The fixed-asset register against the books: its depreciation against 1590 (fed only by the register), its cost
+  // against the fixed-asset accounts. A warning, since opening balances or journal vouchers may hold assets not listed.
+  const assetsHeld = (ws.assets ?? []).filter((a) => !a.disposed && a.date <= end)
+  if (assetsHeld.length || accountBalance(ws, '1590') !== 0) {
+    const dep = round2(assetsHeld.reduce((s, a) => s + a.accumulated, 0))
+    const cost = round2(assetsHeld.reduce((s, a) => s + a.cost, 0))
+    const codes = new Set(assetsHeld.map((a) => a.account))
+    const books = round2([...codes].reduce((s, c) => s + accountBalance(ws, c), 0))
+    const acc = round2(-accountBalance(ws, '1590'))
+    const ok = dep === acc && cost === books
+    checks.push({ id: 'assets', ok, blocking: false, title: 'Fixed assets match the register', detail: ok ? `Cost ${money(cost, cur)}, accumulated depreciation ${money(dep, cur)}` : `Register: cost ${money(cost, cur)}, depreciation ${money(dep, cur)}. Books: fixed assets ${money(books, cur)}, account 1590 ${money(acc, cur)}. Add the missing assets to the register.` })
+  }
   const sample = ws.data.journal.some((j) => j.sample)
   checks.push({ id: 'sample', ok: !sample, blocking: true, title: 'No sample data in the books', detail: sample ? 'Remove the sample data first.' : 'Only real figures.' })
   const noEInvoice = missingEInvoices(ws, schema, start, end)
@@ -1961,7 +1979,9 @@ export function closeYear(ctx: Ctx, year: number) {
   if (lock && lock > end) throw new EngineError(`The books are closed up to ${lock}, after this year`)
   const failed = booksHealth(ctx.ws, ctx.schema, `${year}-12`).filter((c) => c.blocking && !c.ok)
   if (failed.length) throw new EngineError(`Can’t close yet: ${failed.map((c) => c.title.toLowerCase()).join('; ')}`)
-  const pl = profitAndLoss(ctx.ws, `${year}-01-01`, end)
+  // Everything not closed yet: this year, and any earlier year that was never closed (so no income or expense is left behind).
+  const lastClosed = Math.max(0, ...(ctx.ws.books?.closedYears ?? []).map((c) => c.year))
+  const pl = profitAndLoss(ctx.ws, lastClosed ? `${lastClosed + 1}-01-01` : '0000-01-01', end)
   const lines = [
     ...pl.income.map((r) => side(r.code, r.amount)),
     ...pl.expenses.map((r) => side(r.code, -r.amount)),
@@ -2194,14 +2214,14 @@ export function form41Csv(ws: Workspace, year: number, quarter: 1 | 2 | 3 | 4) {
 
 /* ---------------- ledger: chart of accounts, journal vouchers, opening balances, stock adjustments ---------------- */
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const TYPES: AccountType[] = ['asset', 'liability', 'equity', 'income', 'expense']
 
 export function needFinance(ctx: Ctx, what: string) {
   if (!canPost(ctx)) throw new EngineError(`Only Admin and finance roles can ${what}`)
 }
 
-function noRealPostingOverSamples(ctx: Ctx) {
+export function noRealPostingOverSamples(ctx: Ctx) {
   if (!ctx.sample && ctx.ws.data.journal.some((j) => j.sample)) {
     throw new EngineError('Remove the sample data before entering real figures, so your books start clean (use “Remove sample data” at the top of the app).')
   }
@@ -2258,7 +2278,7 @@ export interface VoucherLine {
 }
 
 /** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
-export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[] }) {
+export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }) {
   needFinance(ctx, 'enter journal vouchers')
   noRealPostingOverSamples(ctx)
   const date = String(v.date ?? '')
@@ -2276,9 +2296,43 @@ export function manualJournal(ctx: Ctx, v: { date: string; memo: string; lines: 
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
   if (dr !== cr) throw new EngineError(`The entry doesn’t balance: debits ${money(dr, ctx.schema.company.currency)}, credits ${money(cr, ctx.schema.company.currency)}`)
+  const reverseOn = v.reverseOn ? String(v.reverseOn) : ''
+  if (reverseOn && (!ISO_DATE.test(reverseOn) || reverseOn <= date)) throw new EngineError('The automatic reversal must be dated after the entry (usually the first day of the next month)')
+  const adjusting = Boolean(v.adjusting || reverseOn)
   const ref = nextNumber(ctx, 'JV', date)
-  journal(ctx, { date, ref, memo, lines, manual: true })
-  logLedger(ctx, `entered journal voucher ${ref}: ${memo}`)
+  journal(ctx, { date, ref, memo, lines, manual: true, ...(adjusting ? { adjusting } : {}) })
+  const id = ctx.ws.data.journal[0].id
+  // An accrual reverses itself on the day given, so the real bill or receipt can be entered as usual then.
+  if (reverseOn) journal(ctx, { date: reverseOn, ref: `REV ${ref}`, memo: `Automatic reversal of ${ref}: ${memo}`, manual: true, reverses: id, lines: lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+  logLedger(ctx, reverseOn ? `entered adjusting entry ${ref}, reversing on ${reverseOn}: ${memo}` : `entered journal voucher ${ref}: ${memo}`)
+  return { ref, id }
+}
+
+/**
+ * Money moved between two of the company's own cash boxes and bank accounts (a contra entry, قيد عكسي بين النقدية
+ * والبنك): cash deposited at the bank, cash drawn from it, or a transfer between banks, with any bank charge.
+ */
+export function transferMoney(ctx: Ctx, t: { from: string; to: string; amount: number; date: string; memo?: string; charges?: number }) {
+  needFinance(ctx, 'move money between accounts')
+  noRealPostingOverSamples(ctx)
+  if (!ISO_DATE.test(String(t.date ?? ''))) throw new EngineError('Choose the date of the transfer')
+  if (String(t.date) > (ctx.today ?? todayISO())) throw new EngineError('A transfer can’t be dated in the future')
+  const own = moneyAccounts(ctx.ws)
+  const from = own.find((a) => a.code === String(t.from))
+  const to = own.find((a) => a.code === String(t.to))
+  if (!from || !to) throw new EngineError('Choose a cash box or bank account on both sides')
+  if (from.code === to.code) throw new EngineError('Choose two different accounts')
+  const amount = round2(Number(t.amount))
+  const charges = round2(Number(t.charges ?? 0) || 0)
+  if (!(amount > 0)) throw new EngineError('The amount must be more than 0')
+  if (charges < 0) throw new EngineError('Bank charges can’t be negative')
+  const charge = findAccount(ctx.ws, '5500')
+  if (charges && !(charge?.active && charge.type === 'expense')) throw new EngineError('Bank charges need the expense account 5500 Bank charges')
+  const date = String(t.date)
+  const ref = nextNumber(ctx, 'TRF', date)
+  const memo = String(t.memo ?? '').trim() || `${from.name} → ${to.name}`
+  journal(ctx, { date, ref, memo: `Transfer: ${memo}`, lines: [{ account: to.code, debit: amount, credit: 0 }, { account: '5500', debit: charges, credit: 0 }, { account: from.code, debit: 0, credit: round2(amount + charges) }] })
+  logLedger(ctx, `moved ${money(amount, ctx.schema.company.currency)} from ${from.code} to ${to.code} (${ref})`)
   return { ref }
 }
 
@@ -4138,6 +4192,8 @@ export function removeSampleData(ctx: Ctx) {
   ws.data.stock = ws.data.stock.filter((m) => !m.sample)
   ws.data.payments = ws.data.payments.filter((p) => !p.sample)
   if (ws.landed) ws.landed = ws.landed.filter((l) => !l.sample)
+  if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
+  if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))
   ws.data.activity = ws.data.activity.filter((a) => !a.sample && !gone.has(a.record ?? ''))
   if (ws.data.approvals) ws.data.approvals = ws.data.approvals.filter((a) => !gone.has(a.record) && !demo.has(a.requestedBy))

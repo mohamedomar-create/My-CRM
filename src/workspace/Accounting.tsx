@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Calculator, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { methodLabel, useApp } from './useApp'
 import { accountBalance, ageing, canPost, money, round2, todayISO, trialBalance } from '../lib/engine'
-import { account, accountName, debitNormal } from '../lib/accounts'
+import { account, accountName, normalSign } from '../lib/accounts'
 import { msg, N_, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
@@ -13,12 +13,13 @@ import Budgets from './Budgets'
 import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
+import { DoubtfulDebts, FixedAssets } from './PeriodEnd'
 
-type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'
+type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets' | 'debts'
 const GROUPS: { name: string; tabs: { id: Tab; label: string }[] }[] = [
   { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
   { name: N_('Day to day'), tabs: [{ id: 'payments', label: N_('Payments') }, { id: 'bank', label: N_('Bank & cash') }, { id: 'voucher', label: N_('New journal voucher') }, { id: 'tax', label: N_('VAT & withholding') }] },
-  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
+  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'debts', label: N_('Doubtful debts') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
 ]
 
 export default function Accounting() {
@@ -30,11 +31,11 @@ export default function Accounting() {
   const tb = trialBalance(ws)
   const dr = round2(tb.reduce((s, [, r]) => s + r.debit, 0))
   const cr = round2(tb.reduce((s, [, r]) => s + r.credit, 0))
-  /** an account's balance on its usual side (assets and expenses: debits − credits; the rest the other way) */
+  /** an account's balance on its usual side (assets and expenses: debits − credits; the rest, and contra accounts, the other way) */
   const bal = (code: string) => {
     const b = accountBalance(ws, code)
     const a = account(ws, code)
-    return a && !debitNormal(a.type) ? round2(-b) : b
+    return a ? round2(normalSign(a) * b) : b
   }
   const name = (code: string) => accountName(ws, code, lang)
   const reversed = new Set(ws.data.journal.filter((j) => j.reverses).map((j) => j.reverses))
@@ -57,7 +58,7 @@ export default function Accounting() {
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
         {dr === cr ? tr('Books balance: total debits = total credits = {amount} across {n} journal entries.', { amount: money(dr, cur), n: ws.data.journal.length }) : tr('Books do not balance ({dr} vs {cr}). Contact support.', { dr, cr })}
       </div>
-      {/* Thirteen screens in three groups, so it is clear where each one is: first the group, then the screen. */}
+      {/* Fifteen screens in three groups, so it is clear where each one is: first the group, then the screen. */}
       <nav className="tab-groups no-print" aria-label={tr('Accounting')}>
         <div className="seg" role="tablist">
           {GROUPS.map((g) => (
@@ -112,7 +113,7 @@ export default function Accounting() {
         <div className="stack">
           {ws.data.journal.slice(0, 60).map((j) => (
             <div className="card" key={j.id} style={{ padding: 12 }}>
-              <div className="row between"><b className="mono">{j.ref}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
+              <div className="row between"><b className="mono">{j.ref}{j.adjusting && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{tr('adjusting')}</span>}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
               <table className="lines" style={{ marginTop: 6 }}>
                 <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}{l.cc && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{l.cc}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
               </table>
@@ -134,6 +135,8 @@ export default function Accounting() {
         </div>
       )}
       {tab === 'close' && <CloseBooks />}
+      {tab === 'assets' && <FixedAssets />}
+      {tab === 'debts' && <DoubtfulDebts />}
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}
       {tab === 'reports' && <Statements />}
