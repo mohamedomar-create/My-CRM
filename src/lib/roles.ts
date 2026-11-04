@@ -218,6 +218,7 @@ export function systemFields(role: ModuleRole, vatRate: number): FieldDef[] {
         sys(f('Track stock', 'checkbox', { key: 'track_stock', help: 'Turn off for services' })),
         ro(f('On hand', 'number', { key: 'stock', inList: true, help: 'Kept by the system from posted invoices and bills' })),
         f('Reorder level', 'number', { key: 'reorder_level' }),
+        f('Reorder quantity', 'number', { key: 'reorder_qty', help: 'How many to order each time (empty: up to the reorder level plus a month of sales)' }),
         f('Unit', 'select', { options: opts('Piece', 'Box', 'Kg', 'Litre', 'Metre', 'Hour', 'Visit') }),
       ]
     case 'quotes':

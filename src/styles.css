@@ -1260,3 +1260,4 @@ p a:not(.btn), li a:not(.btn), .note a:not(.btn), .info a:not(.btn) { text-decor
   body.printing-receipt .receipt { position: absolute; inset-inline-start: 0; top: 0; width: 72mm; border: none; box-shadow: none; padding: 0; }
 }
 pre.code { white-space: pre-wrap; word-break: break-all; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; margin: 0; }
+.scan-video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-md); background: #000; }

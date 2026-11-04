@@ -11,6 +11,7 @@ import { revalue, setDocCurrency } from './fx'
 import { reviseQuote, shareQuote } from './quoteOnline'
 import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
 import { reinstate, setAllowance, writeOff } from './badDebts'
+import { orderSuggested, setBarcodes } from './scan'
 import { closeCounter, counterReturn, openCounter, saveCounter, sell, type CounterPay, type SaleLine } from './pos'
 import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
@@ -118,6 +119,8 @@ export interface CommandArgs {
   'recurring.postDue': Record<string, never>
   'spread.create': { kind?: 'income' | 'expense'; doc?: string; memo?: string; amount: number; months: number; start?: string; holding?: string; account?: string; cc?: string }
   'spread.stop': { id: string; releaseRest: boolean }
+  'product.setBarcodes': { id: string; codes: { code: string; unit?: string }[] }
+  'po.fromSuggestions': { supplier: string; lines: { product: string; qty: number; price?: number }[] }
   'pos.saveCounter': { id?: string; name: string; cash?: string; bank?: string; warehouse?: string; maxDiscount?: number; active?: boolean }
   'pos.open': { counter: string; float: number }
   'pos.sell': { session: string; receipt: string; customer?: string; lines: SaleLine[]; payments: { method: CounterPay; amount: number }[] }
@@ -419,6 +422,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
   'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
   'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'product.setBarcodes': { run: (ws, u, a) => void setBarcodes(ctx(ws, u), String(a.id ?? ''), a.codes) },
+  'po.fromSuggestions': { run: (ws, u, a) => orderSuggested(ctx(ws, u), { supplier: String(a.supplier ?? ''), lines: a.lines }) },
   'pos.saveCounter': { admin: true, run: (ws, u, a) => saveCounter(ctx(ws, u), { id: a.id ? String(a.id) : undefined, name: a.name, cash: a.cash, bank: a.bank, warehouse: a.warehouse || undefined, maxDiscount: a.maxDiscount, active: a.active }) },
   'pos.open': { run: (ws, u, a) => openCounter(ctx(ws, u), { counter: String(a.counter ?? ''), float: Number(a.float) }) },
   'pos.sell': { run: (ws, u, a) => sell(ctx(ws, u), { session: String(a.session ?? ''), receipt: String(a.receipt ?? ''), customer: a.customer ? String(a.customer) : undefined, lines: a.lines, payments: a.payments }) },

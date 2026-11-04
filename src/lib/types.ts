@@ -366,6 +366,8 @@ export interface Workspace {
   quoteRevisions?: import('./quoteOnline').QuoteRevision[]
   /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
   units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
+  /** barcodes → the product (and unit) they stand for (see scan.ts) */
+  barcodes?: Record<string, { product: string; unit?: string }>
   /** the last exchange rate used for each foreign currency (each document still states its own) */
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */

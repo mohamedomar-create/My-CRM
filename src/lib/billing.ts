@@ -60,7 +60,7 @@ export const TRIAL_DAYS = 14
 
 /** Commands that are the books (invoices, bills, payments, stock, accounting, plans and budgets): the ERP part. */
 const BOOKS = /^(doc|payment|cheque|credit|bank|accounts|journal|costCenter|budget|target|plan|opening|stock|books|vat|landed|money|asset|debt|order|po|warehouse|fx|recipe|production|recurring|spread|pos)\./
-const BOOKS_EXACT = new Set(['quote.toInvoice', 'record.saveAndPost', 'team.setCostCenter', 'product.setUnits'])
+const BOOKS_EXACT = new Set(['quote.toInvoice', 'record.saveAndPost', 'team.setCostCenter', 'product.setUnits', 'product.setBarcodes'])
 /** Lists whose records are documents of the books. */
 const DOCUMENT_ROLES = new Set<ModuleRole>(['invoices', 'purchases'])
 

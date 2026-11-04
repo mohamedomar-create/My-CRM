@@ -3,7 +3,7 @@
 // the receipt. With no connection the counter keeps selling: sales wait on this device and are sent when it's back.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, Minus, Plus, Printer, RotateCcw, Search, Smartphone, Store, Trash2, WifiOff, X } from 'lucide-react'
-import { useApp } from './useApp'
+import { showToast, useApp } from './useApp'
 import { useStore, counterQueueSize } from '../lib/store'
 import { canPost, isAdmin, list, money, onHand, onHandAt, round2, totals, usesWarehouses } from '../lib/engine'
 import { moneyAccounts, accountLabel } from '../lib/accounts'
@@ -12,6 +12,8 @@ import { getLang, tr } from '../lib/i18n'
 import type { Line, Rec } from '../lib/types'
 import { canSell, countersOf, expectedCash, openSession, posOf, receiptNumber, saleByReceipt, sessionReport, type CounterPay, type PosSession } from '../lib/pos'
 import { WarehouseSelect } from './Warehouses'
+import { ScanButton } from './Scanner'
+import { findByCode } from '../lib/scan'
 
 const COUNTER_KEY = 'nasq360.counter'
 interface CartLine { product: string; name: string; price: number; vat: number; qty: number; discount: number }
@@ -122,19 +124,23 @@ function Till({ session, onClosed }: { session: PosSession; onClosed: (id: strin
   const stock = (p: Rec) => (p.values.track_stock ? (counter.warehouse ? onHandAt(ws, p.id, counter.warehouse) : onHand(ws, p.id)) : undefined)
   const words = q.trim().toLowerCase()
   const shown = (words ? products.filter((p) => [p.values.name, p.values.sku, p.values.barcode].some((v) => String(v ?? '').toLowerCase().includes(words))) : products).slice(0, 48)
-  const add = (p: Rec) => {
+  const add = (p: Rec, n = 1) => {
     setCart((c) => {
       const at = c.findIndex((l) => l.product === p.id && !l.discount)
-      if (at >= 0) return c.map((l, i) => (i === at ? { ...l, qty: l.qty + 1 } : l))
-      return [...c, { product: p.id, name: String(p.values.name), price: Number(p.values.price ?? 0), vat: Number(p.values.vat_rate ?? schema.company.vatRate ?? 0) || 0, qty: 1, discount: 0 }]
+      if (at >= 0) return c.map((l, i) => (i === at ? { ...l, qty: l.qty + n } : l))
+      return [...c, { product: p.id, name: String(p.values.name), price: Number(p.values.price ?? 0), vat: Number(p.values.vat_rate ?? schema.company.vatRate ?? 0) || 0, qty: n, discount: 0 }]
     })
     setQ('')
   }
-  // a barcode scanner types the code and presses Enter: an exact code adds that product, otherwise the first match
+  // a code (scanned with the camera, or typed by a USB scanner ending with Enter): a carton's barcode adds a carton
+  const byCode = (code: string) => {
+    const hit = findByCode(ws, schema, code)
+    if (hit) { add(hit.product, hit.unit?.factor ?? 1); return true }
+    return false
+  }
   const enter = () => {
-    const exact = products.find((p) => words && [p.values.sku, p.values.barcode].some((v) => String(v ?? '').toLowerCase() === words))
-    const p = exact ?? shown[0]
-    if (p) add(p)
+    if (words && byCode(q)) return
+    if (shown[0]) add(shown[0])
   }
   const lines: Line[] = cart.map((l, i) => ({ id: String(i), product: l.product, description: l.name, qty: l.qty, price: l.price, discount: l.discount, vat: l.vat }))
   const t = totals(lines)
@@ -162,6 +168,7 @@ function Till({ session, onClosed }: { session: PosSession; onClosed: (id: strin
       <div className="card stack" style={{ gap: 10 }}>
         <div className="row" style={{ gap: 8 }}>
           <label className="row grow pos-search"><Search size={16} aria-hidden /><input ref={search} aria-label={tr('Search or scan a product')} placeholder={tr('Search or scan a product')} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); enter() } }} /></label>
+          <ScanButton continuous onCode={(c) => { if (!byCode(c)) showToast({ kind: 'error', text: tr('No product has the code {c}', { c }) }) }} />
         </div>
         <div className="pos-products">
           {shown.map((p) => {

@@ -13,6 +13,8 @@ import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
 import { MonthEndTodo } from './PeriodEnd'
+import { ScanButton } from './Scanner'
+import { findByCode } from '../lib/scan'
 import { EVERY_LABEL, type Every } from '../lib/recurring'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
@@ -377,9 +379,15 @@ export function StockTools() {
         <form className="card stack" onSubmit={count}>
           <h2>{tr('Stock count')}</h2>
           <p className="small muted">{tr('Type what you counted. Only the products you fill in are changed; each difference is adjusted under one count number.')}</p>
-          <div className="row" style={{ gap: 8 }}>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <input type="date" value={countDate} onChange={(e) => setCountDate(e.target.value)} style={{ width: 160 }} />
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr('Note (e.g. month-end count)')} style={{ minWidth: 240 }} />
+            {/* walking the shelves: each scan counts one more (a carton's barcode counts a carton) */}
+            <ScanButton continuous onCode={(c) => {
+              const hit = findByCode(ws, schema, c)
+              if (!hit || !hit.product.values.track_stock) return showToast({ kind: 'error', text: tr('No product has the code {c}', { c }) })
+              setCounts((cs) => ({ ...cs, [hit.product.id]: String(round2(num(cs[hit.product.id] ?? '0') + (hit.unit?.factor ?? 1))) }))
+            }} />
           </div>
           <div className="table-wrap">
             <table className="data">
