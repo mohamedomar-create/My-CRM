@@ -10,6 +10,7 @@ import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
 import { SpreadPanel } from './Recurring'
 import { ScanButton } from './Scanner'
+import { WhatsAppPanel } from './WhatsAppPanel'
 import { findByCode } from '../lib/scan'
 import { OrderPanel } from './OrderPanel'
 import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
@@ -247,6 +248,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
       {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
       {rec && mod.role === 'products' && <BarcodesPanel rec={rec} />}
+      {rec && ws.whatsapp && ['accounts', 'contacts', 'leads', 'quotes', 'invoices'].includes(String(mod.role)) && !isCredit && <WhatsAppPanel rec={rec} />}
       {rec && mod.role === 'products' && <RecipePanel rec={rec} />}
       {rec && mod.role === 'quotes' && <QuoteSharePanel rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}

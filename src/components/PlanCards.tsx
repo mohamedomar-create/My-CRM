@@ -10,7 +10,7 @@ const INCLUDES: Record<PlanId, string[]> = {
   crm: [N_('As many people as you pay for'), N_('Customers, contacts, leads and deals'), N_('Quotations, tasks, service tickets and automations'), N_('Pipelines, forecasts and sales reports')],
   erp: [N_('As many people as you pay for'), N_('Invoices, bills, payments and cheques'), N_('Stock, VAT, withholding tax and e-invoice numbers'), N_('Accounting, budgets and the business plan')],
   growth: [N_('Everything in CRM and ERP together'), N_('From the first lead to the posted invoice'), N_('Stock, VAT, withholding tax and e-invoice numbers'), N_('Accounting, budgets and the business plan')],
-  pro: [N_('Everything in CRM + ERP'), N_('AI system doctor (coming)'), N_('WhatsApp messages (coming)'), N_('Multi-step approvals (coming)')],
+  pro: [N_('Everything in CRM + ERP'), N_('AI system doctor'), N_('WhatsApp inbox and messages'), N_('Multi-step approvals')],
 }
 
 export function PlanCards({ plans, cycle, vatRate, seats = 1, current, recommend, action }: {

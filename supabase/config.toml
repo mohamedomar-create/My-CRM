@@ -24,3 +24,7 @@ verify_jwt = false
 [functions.api]
 # Other systems call the public API with an API key, not a login; the function checks the key (its hash) itself.
 verify_jwt = false
+
+[functions.whatsapp]
+# Meta calls it without a login (checked by the company's verify token and app-secret signature); sends check the login itself.
+verify_jwt = false

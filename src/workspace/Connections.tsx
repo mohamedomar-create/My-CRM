@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react'
 import { Copy, KeyRound, Plug, Trash2, Webhook } from 'lucide-react'
 import { useApp, showToast } from './useApp'
+import { useStore } from '../lib/store'
 import { dateLocale, tr } from '../lib/i18n'
 import { API_BASE, deleteHook, listHooks, listKeys, makeKey, recentDeliveries, revokeKey, saveHook, type DeliveryRow, type HookRow, type KeyRow } from '../lib/connections'
 import { EVENTS, isWebhookUrl } from '../lib/webhooks'
+import { callbackUrl, waConnect, waDisconnect, waStatus, type WaStatus } from '../lib/whatsappClient'
+import { MessageCircle } from 'lucide-react'
 
 const copy = (text: string) => { void navigator.clipboard?.writeText(text).then(() => showToast({ kind: 'ok', text: tr('Copied') })) }
 const when = (s: string | null) => (s ? new Date(s).toLocaleString(dateLocale()) : '—')
@@ -18,6 +21,7 @@ export default function Connections() {
     <div className="page stack">
       <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Plug size={20} /></span>{tr('Connections')}</h1></div>
       <p className="small muted" style={{ margin: 0 }}>{tr('Connect your web shop, bank, courier or reporting tool: they read and write through the API with a key, and webhooks tell them as soon as something happens.')}</p>
+      <WhatsAppCard />
       <Keys ws={ws.id} />
       <Hooks ws={ws.id} />
       <HowTo />
@@ -156,5 +160,63 @@ function HowTo() {
         <p style={{ margin: 0 }}>{tr('Each webhook message carries the header Nasq360-Signature: t=<time>,v1=<HMAC-SHA256 of "<time>.<body>" with your secret>. Check it, and that the time is within 5 minutes, before trusting the message.')}</p>
       </div>
     </details>
+  )
+}
+
+/** WhatsApp Business: the company's own number, through Meta's WhatsApp Cloud API. */
+function WhatsAppCard() {
+  const { ws, act } = useApp()
+  const [st, setSt] = useState<WaStatus | null>(null)
+  const [f, setF] = useState({ phoneNumberId: '', displayPhone: '', token: '', appSecret: '' })
+  const [open, setOpen] = useState(false)
+  const billing = useStore((x) => x.billing)
+  const pro = !billing || billing.features.includes('whatsapp')
+  useEffect(() => { waStatus(ws.id).then(setSt).catch(() => setSt({ connected: false })) }, [ws.id])
+  const done = (s: WaStatus) => {
+    setSt(s); setOpen(false); setF({ phoneNumberId: '', displayPhone: '', token: '', appSecret: '' })
+    // the menu shows the inbox once connected (only the display number goes into the company file)
+    act('whatsapp.setShown', { phone: s.connected ? s.display_phone ?? '' : null })
+  }
+  const ok = /^\d{6,30}$/.test(f.phoneNumberId.trim()) && f.displayPhone.trim().length >= 6 && f.token.trim().length >= 20 && /^[a-f0-9]{32}$/i.test(f.appSecret.trim())
+  return (
+    <div className="card stack" style={{ gap: 10 }}>
+      <h2 style={{ margin: 0 }}><MessageCircle size={17} /> {tr('WhatsApp Business')}</h2>
+      {st?.connected ? (
+        <>
+          <p className="small" style={{ margin: 0 }}>{tr('Connected: {p}. Customers’ messages arrive in the WhatsApp inbox.', { p: st.display_phone ?? '' })}</p>
+          <div className="note stack small" style={{ gap: 6 }}>
+            <b>{tr('In Meta for Developers → your app → WhatsApp → Configuration, set:')}</b>
+            <span>{tr('Callback URL')}: <code dir="ltr" style={{ wordBreak: 'break-all' }}>{callbackUrl(ws.id)}</code> <button className="ghost small" onClick={() => copy(callbackUrl(ws.id))}><Copy size={12} /></button></span>
+            {st.verify_token && <span>{tr('Verify token')}: <code dir="ltr">{st.verify_token}</code> <button className="ghost small" onClick={() => copy(st.verify_token!)}><Copy size={12} /></button></span>}
+            <span>{tr('Then subscribe to the “messages” field.')}</span>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="ghost small" onClick={() => setOpen(!open)}>{tr('Change the number or token')}</button>
+            <button className="ghost small" onClick={() => { if (confirm(tr('Disconnect WhatsApp? Messages already received stay.'))) waDisconnect(ws.id).then(done).catch((e: Error) => showToast({ kind: 'error', text: e.message })) }}>{tr('Disconnect')}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="small muted" style={{ margin: 0 }}>{tr('Answer customers’ WhatsApp messages from here, linked to each customer, and send quotations and invoices on WhatsApp. It uses your own WhatsApp Business number through Meta (WhatsApp Cloud API).')}</p>
+          {!pro && <p className="small" style={{ margin: 0 }}>{tr('WhatsApp messages come with the Pro plan (Billing page).')}</p>}
+          {!open && <button style={{ alignSelf: 'flex-start' }} disabled={!pro} onClick={() => setOpen(true)}>{tr('Connect WhatsApp')}</button>}
+        </>
+      )}
+      {open && (
+        <div className="stack" style={{ gap: 8 }}>
+          <p className="small muted" style={{ margin: 0 }}>{tr('From Meta for Developers → your app → WhatsApp → API Setup: the phone number ID and a permanent access token (a system user’s); from App settings → Basic: the app secret. They are kept on the server and never shown again.')}</p>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <label className="field" style={{ width: 220 }}>{tr('Phone number ID')}<input dir="ltr" inputMode="numeric" value={f.phoneNumberId} onChange={(e) => setF({ ...f, phoneNumberId: e.target.value })} /></label>
+            <label className="field" style={{ width: 200 }}>{tr('The number customers see')}<input dir="ltr" value={f.displayPhone} onChange={(e) => setF({ ...f, displayPhone: e.target.value })} placeholder="+20 100 000 0000" /></label>
+          </div>
+          <label className="field">{tr('Access token')}<input dir="ltr" type="password" autoComplete="off" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} /></label>
+          <label className="field" style={{ maxWidth: 360 }}>{tr('App secret')}<input dir="ltr" type="password" autoComplete="off" value={f.appSecret} onChange={(e) => setF({ ...f, appSecret: e.target.value })} /></label>
+          <div className="row" style={{ gap: 8 }}>
+            <button disabled={!ok} onClick={() => waConnect(ws.id, { phoneNumberId: f.phoneNumberId.trim(), displayPhone: f.displayPhone.trim(), token: f.token.trim(), appSecret: f.appSecret.trim().toLowerCase() }).then(done).catch((e: Error) => showToast({ kind: 'error', text: e.message }))}>{tr('Connect')}</button>
+            <button className="ghost" onClick={() => setOpen(false)}>{tr('Cancel')}</button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

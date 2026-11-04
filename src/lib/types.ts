@@ -366,6 +366,8 @@ export interface Workspace {
   quoteRevisions?: import('./quoteOnline').QuoteRevision[]
   /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
   units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
+  /** WhatsApp is connected (its display number; the token stays on the server): the inbox shows in the menu */
+  whatsapp?: { phone: string }
   /** barcodes → the product (and unit) they stand for (see scan.ts) */
   barcodes?: Record<string, { product: string; unit?: string }>
   /** the last exchange rate used for each foreign currency (each document still states its own) */

@@ -29,6 +29,7 @@ const PAGE_TEXT: Record<string, string> = {
   builder: N_('Lists, fields, pipelines, reports, automations and roles'),
   billing: N_('Your plan, seats and payments'),
   audit: N_('Who changed what, and when'),
+  inbox: N_('Customers’ WhatsApp messages, answered by the team'),
   connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
 }
 
@@ -98,9 +99,9 @@ function ItemIcon({ it, size = 16 }: { it: AreaItem; size?: number }) {
 }
 
 function AreaTile({ area }: { area: AreaId }) {
-  const { schema, user } = useApp()
+  const { ws, schema, user } = useApp()
   const { tr } = useLang()
-  const items = areaItems(schema, user, area)
+  const items = areaItems(schema, user, area, ws)
   const facts = useFacts(area)
   return (
     <section className="hub-tile" style={{ ['--a' as string]: AREA_INFO[area].color }}>
@@ -119,9 +120,9 @@ function AreaTile({ area }: { area: AreaId }) {
 
 /** /app: the four areas this person works in, as big doors. */
 export function Hub() {
-  const { schema, user } = useApp()
+  const { ws, schema, user } = useApp()
   const { tr } = useLang()
-  const areas = areasFor(schema, user)
+  const areas = areasFor(schema, user, ws)
   const role = schema.roles.find((r) => r.id === user.roleId)
   const [hour] = useState(() => new Date().getHours())
   return (
@@ -181,11 +182,11 @@ function Flow({ title, note, steps, arrows = true }: { title: string; note?: Rea
 /** /app/a/:area: the area's work laid out as its business process. */
 export function AreaHome() {
   const { area } = useParams()
-  const { schema, user } = useApp()
+  const { ws, schema, user } = useApp()
   const { tr } = useLang()
   if (!AREAS.includes(area as AreaId)) return <Navigate to="/app" replace />
   const a = area as AreaId
-  const items = areaItems(schema, user, a)
+  const items = areaItems(schema, user, a, ws)
   if (!items.length) return <Navigate to="/app" replace />
   const used = new Set<string>()
   const pick = (...keys: string[]) => keys.flatMap((k) => {

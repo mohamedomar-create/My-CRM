@@ -630,6 +630,30 @@ set role service_role;
 select pg_temp.check('a revoked key no longer works', public.api_key_use(repeat('ab', 32)) is null);
 reset role;
 
+-- WhatsApp: only admins connect it, its token never comes back, and only the inbox's people read messages.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('an admin connects WhatsApp', $q$select public.whatsapp_connect('ws_test123456', '123456789012', '+20 100 000 0000', repeat('t', 40), repeat('ab', 16))$q$);
+select pg_temp.check('the status never shows the access token or app secret', (select not (s ? 'access_token') and not (s ? 'token') and not (s ? 'app_secret') and (s ->> 'connected')::boolean and s ? 'verify_token' from (select public.whatsapp_status('ws_test123456') s) x));
+select pg_temp.blocked('reading the WhatsApp accounts directly', $q$select access_token from public.whatsapp_accounts$q$);
+select pg_temp.blocked('reading messages directly', $q$select body from public.whatsapp_messages$q$);
+select pg_temp.blocked('getting the token from the app (server only)', $q$select public.whatsapp_account_for('ws_test123456')$q$);
+reset role;
+set role service_role;
+select pg_temp.allowed('the server stores a customer''s message', $q$select public.whatsapp_store('[{"workspace":"ws_test123456","waId":"201001234567","name":"Ahmed","direction":"in","kind":"text","body":"Hello","waMessageId":"wamid.1","status":"received"}]')$q$);
+select pg_temp.allowed('the same message stored twice is kept once', $q$select public.whatsapp_store('[{"workspace":"ws_test123456","waId":"201001234567","direction":"in","kind":"text","body":"Hello","waMessageId":"wamid.1","status":"received"}]')$q$);
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.check('the admin sees the conversation, unread', (select t -> 0 ->> 'wa_id' = '201001234567' and (t -> 0 ->> 'unread')::int = 1 and t -> 0 ->> 'name' = 'Ahmed' from (select public.whatsapp_threads('ws_test123456') t) x));
+select pg_temp.check('the conversation opens', jsonb_array_length(public.whatsapp_thread('ws_test123456', '201001234567')) = 1);
+select pg_temp.check('opening it read it', public.whatsapp_unread('ws_test123456') = 0);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a stranger reads the inbox', $q$select public.whatsapp_threads('ws_test123456')$q$);
+select pg_temp.blocked('a stranger connects their own number', $q$select public.whatsapp_connect('ws_test123456', '999999999999', '+1 555', repeat('x', 40), repeat('cd', 16))$q$);
+select pg_temp.check('a stranger counts no unread messages', public.whatsapp_unread('ws_test123456') = 0);
+reset role;
+
 -- The product is Nasq360: no message from the database says the old name.
 select pg_temp.check('no database message names the old product name', not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private') and p.prosrc like '%Bonyan%'));
