@@ -150,7 +150,7 @@ export function recordTitle(ws: Workspace, schema: AppSchema, rec: Rec | undefin
   const m = moduleById(schema, rec.module)
   if (m?.lines) {
     const cust = findRecord(ws, String(rec.values.customer ?? rec.values.supplier ?? ''))
-    return `${rec.number ?? 'Draft'} · ${cust ? recordTitle(ws, schema, cust) : ''}`.trim()
+    return `${rec.number ?? (rec.status === 'ordered' && rec.values.po_no ? String(rec.values.po_no) : 'Draft')} · ${cust ? recordTitle(ws, schema, cust) : ''}`.trim()
   }
   const v = rec.values[m?.titleField ?? 'name']
   return v === undefined || v === '' ? '(untitled)' : String(v)
@@ -775,6 +775,9 @@ export function setLines(ctx: Ctx, rec: Rec, lines: Line[]) {
   rec.updatedAt = nowISO()
 }
 
+/** The same checks a document's lines get before posting (quantities, prices, discounts, VAT, batches). */
+export const checkLinesPublic = (lines: Line[]) => checkLines(lines)
+
 function checkLines(lines: Line[]) {
   for (const l of lines) {
     if (!(l.qty > 0)) throw new EngineError(`Quantity must be more than 0 (${l.description || 'line'})`)
@@ -891,7 +894,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   applyTotals(rec)
 
   // Goods already delivered from a sales order: their quantity and cost come from the server's delivery notes.
-  if (mod.role === 'invoices') deliveredLines(ctx, rec, lines)
+  orderLines(ctx, rec, lines, mod.role === 'invoices')
   // Quantities per tracked product (goods already delivered left stock with their delivery note)
   const qtyBy = new Map<string, number>()
   for (const l of lines) {
@@ -972,30 +975,44 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     let priceDiff = 0
     const diffBy: { cc?: string; amount: number }[] = []
     for (const l of lines) {
+      if (l.dcost !== undefined) continue
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
       const lineValue = lineNet(l)
-      const unitCost = l.qty ? lineValue / l.qty : 0
-      const oldQty = onHand(ctx.ws, p.id)
-      const oldValue = stockValue(ctx.ws, p)
-      // If units were sold before they were bought (negative stock), they were costed at the old price.
-      // The difference to the real price goes to cost of sales now, so inventory ends at the right value.
-      const target = oldQty < 0 ? round2((oldQty + l.qty) * unitCost) : round2(oldValue + lineValue)
-      priceDiff = round2(priceDiff + (oldValue + lineValue - target))
-      diffBy.push({ cc: l.cc, amount: round2(oldValue + lineValue - target) })
+      const into = putIntoStock(ctx, p, l.qty, lineValue, number, rec.id, date, l, rec)
+      priceDiff = round2(priceDiff + into.diff)
+      diffBy.push({ cc: l.cc, amount: into.diff })
       received = round2(received + lineValue)
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(unitCost), value: round2(target - oldValue), doc: rec.id, ref: number, date, ...(l.lot ? { lot: l.lot, ...(l.expiry ? { expiry: l.expiry } : {}) } : {}) }, rec))
-      setValuation(ctx.ws, p, target)
+    }
+    // Goods already received on a goods received note: their value moves off "received, not yet billed"; a different
+    // price on the bill corrects the stock still on hand, and cost of sales for what was sold since.
+    const got = lines.filter((l) => l.dcost !== undefined)
+    let gotValue = 0
+    let varStock = 0
+    for (const l of got) {
+      gotValue = round2(gotValue + Number(l.dcost))
+      const v = round2(lineNet(l) - Number(l.dcost))
+      if (!v) continue
+      const p = productRec(ctx, l.product)
+      const ratio = p ? Math.max(0, Math.min(1, onHand(ctx.ws, p.id) / (l.qty || 1))) : 0
+      const keep = p ? round2(v * ratio) : 0
+      if (p && keep) {
+        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: 0, cost: 0, value: keep, doc: rec.id, ref: number, date }, rec))
+        setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) + keep))
+      }
+      varStock = round2(varStock + keep)
+      diffBy.push({ cc: l.cc, amount: round2(v - keep) })
     }
     journal(ctx, {
       date, ref: number, memo: `Purchase bill ${number}`, doc: rec.id,
       lines: [
         { account: '1300', debit: received, credit: 0 },
-        ...ccSides('5100', lines.filter((l) => !productRec(ctx, l.product)?.values.track_stock).map((l) => ({ cc: l.cc, amount: lineNet(l) }))),
+        { account: '2160', debit: gotValue, credit: 0 },
+        ...ccSides('5100', lines.filter((l) => l.dcost === undefined && !productRec(ctx, l.product)?.values.track_stock).map((l) => ({ cc: l.cc, amount: lineNet(l) }))),
         { account: '1400', debit: t.tax, credit: 0 },
         { account: '2100', debit: 0, credit: t.total },
         ...ccSides('5000', diffBy),
-        side('1300', -priceDiff),
+        side('1300', round2(varStock - priceDiff)),
       ],
     }, rec)
   }
@@ -1039,10 +1056,18 @@ export function heldForOrders(ws: Workspace, schema: AppSchema, pid: string, exc
  * An invoice made from delivery notes: each delivered order line must be on it with the quantity delivered, and the
  * cost of those goods (from the delivery notes, never from the browser) is set on the line. Other lines are ordinary.
  */
-function deliveredLines(ctx: Ctx, rec: Rec, lines: Line[]) {
+function orderLines(ctx: Ctx, rec: Rec, lines: Line[], sales: boolean) {
   for (const l of lines) delete l.dcost
-  const notes = (ctx.ws.deliveries ?? []).filter((d) => d.invoice === rec.id && !d.undone)
+  const notes = sales ? (ctx.ws.deliveries ?? []).filter((d) => d.invoice === rec.id && !d.undone) : (ctx.ws.receipts ?? []).filter((r) => r.bill === rec.id && !r.undone)
   if (!notes.length) return
+  // the purchase order's price: a bill above it needs an admin (the price part of the three-way match)
+  if (!sales && !isAdmin(ctx)) {
+    const po = findRecord(ctx.ws, notes[0].order)
+    for (const l of lines) {
+      const ol = po?.lines?.find((x) => x.id === l.dline)
+      if (ol && ol.qty && l.qty && round4(lineNet(l) / l.qty) > round4(lineNet(ol) / ol.qty)) throw new EngineError(`${l.description}: the bill’s price is above the purchase order’s (${round4(lineNet(ol) / ol.qty)}). Only an admin can post it.`)
+    }
+  }
   const by = new Map<string, { product: string; qty: number; cost: number }>()
   for (const d of notes) for (const x of d.lines) {
     const v = by.get(x.line) ?? { product: x.product, qty: 0, cost: 0 }
@@ -1050,7 +1075,7 @@ function deliveredLines(ctx: Ctx, rec: Rec, lines: Line[]) {
   }
   for (const [lineId, v] of by) {
     const l = lines.find((x) => x.dline === lineId)
-    if (!l || l.product !== v.product || round4(l.qty) !== v.qty) throw new EngineError(`The delivered goods must stay on the invoice as delivered (${productRec(ctx, v.product)?.values.name ?? 'a product'}: ${v.qty}). Change the price if needed, not the quantity.`)
+    if (!l || l.product !== v.product || round4(l.qty) !== v.qty) throw new EngineError(sales ? `The delivered goods must stay on the invoice as delivered (${productRec(ctx, v.product)?.values.name ?? 'a product'}: ${v.qty}). Change the price if needed, not the quantity.` : `The received goods must stay on the bill as received (${productRec(ctx, v.product)?.values.name ?? 'a product'}: ${v.qty}). Change the price if needed, not the quantity.`)
     l.dcost = v.cost
   }
 }
@@ -1084,6 +1109,21 @@ export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, re
   setValuation(ctx.ws, p, oldValue - issue)
   reorderAlert(ctx, p)
   return { issue, lots }
+}
+
+/**
+ * Puts units of a product into stock for `value` (moving average). If units were sold before they were bought (negative
+ * stock), they were costed at the old price: the difference to the real price is returned for cost of sales, so
+ * inventory ends at the right value.
+ */
+export function putIntoStock(ctx: Ctx, p: Rec, qty: number, value: number, ref: string, doc: string, date: string, batch: { lot?: string; expiry?: string }, from?: { sample?: boolean }) {
+  const unitCost = qty ? value / qty : 0
+  const oldQty = onHand(ctx.ws, p.id)
+  const oldValue = stockValue(ctx.ws, p)
+  const target = oldQty < 0 ? round2((oldQty + qty) * unitCost) : round2(oldValue + value)
+  ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unitCost), value: round2(target - oldValue), doc, ref, date, ...(batch.lot ? { lot: batch.lot, ...(batch.expiry ? { expiry: batch.expiry } : {}) } : {}) }, from))
+  setValuation(ctx.ws, p, target)
+  return { diff: round2(oldValue + value - target) }
 }
 
 /** Notes on each line the batches its units came from (in line order). */
@@ -1222,6 +1262,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
   if (usesOf(rec).length) throw new EngineError('A credit was used on this document. Take it back first.')
   if (Number(rec.values.written_off ?? 0)) throw new EngineError('This invoice was written off as a bad debt. Reinstate it first.')
+  if (rec.status === 'ordered') throw new EngineError('This is a purchase order: close it instead')
   const lc = (ctx.ws.landed ?? []).find((l) => !l.undone && (l.from === rec.id || l.to.includes(rec.id)))
   if (lc) throw new EngineError(`This bill is part of landed cost ${lc.number}. Undo the landed cost first.`)
   const date = ctx.today ?? todayISO()
@@ -2017,6 +2058,12 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
     const pending = round2(ws.deliveries.filter((d) => !d.undone).filter((d) => { const inv = d.invoice ? findRecord(ws, d.invoice) : undefined; return !inv || inv.status === 'void' || inv.status === 'draft' }).reduce((s, d) => s + d.lines.reduce((t, l) => t + l.cost, 0), 0))
     const book = accountBalance(ws, '1310')
     checks.push({ id: 'deliveries', ok: pending === book, blocking: true, title: 'Delivered goods match their account', detail: pending === book ? `Delivered, not yet invoiced: ${money(book, cur)}` : `Delivery notes ${money(pending, cur)}, account 1310 ${money(book, cur)}. Contact support before closing.` })
+  }
+  // Goods received and not yet billed by a posted bill, against 2160 (fed only by goods received notes and their bills).
+  if (ws.receipts?.length) {
+    const pending = round2(ws.receipts.filter((r) => !r.undone).filter((r) => { const b = r.bill ? findRecord(ws, r.bill) : undefined; return !b || b.status === 'void' || b.status === 'draft' }).reduce((s, r) => s + r.lines.reduce((t, l) => t + l.cost, 0), 0))
+    const book = round2(-accountBalance(ws, '2160'))
+    checks.push({ id: 'receipts', ok: pending === book, blocking: true, title: 'Received goods match their account', detail: pending === book ? `Received, not yet billed: ${money(book, cur)}` : `Goods received notes ${money(pending, cur)}, account 2160 ${money(book, cur)}. Contact support before closing.` })
   }
   // The fixed-asset register against the books: its depreciation against 1590 (fed only by the register), its cost
   // against the fixed-asset accounts. A warning, since opening balances or journal vouchers may hold assets not listed.
@@ -4284,6 +4331,7 @@ export function removeSampleData(ctx: Ctx) {
   ws.data.payments = ws.data.payments.filter((p) => !p.sample)
   if (ws.landed) ws.landed = ws.landed.filter((l) => !l.sample)
   if (ws.deliveries) ws.deliveries = ws.deliveries.filter((d) => !d.sample)
+  if (ws.receipts) ws.receipts = ws.receipts.filter((r) => !r.sample)
   if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
   if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))

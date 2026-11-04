@@ -24,8 +24,8 @@ export interface Line {
   expiry?: string
   /** on a posted invoice: the batches the units were taken from, first to expire first */
   lots?: { lot: string; expiry?: string; qty: number }[]
-  /** on an invoice made from delivery notes: the order line it bills, and (set by the server when posting) the cost of
-   * the goods already delivered for it, which moves from 1310 to cost of sales */
+  /** on an invoice made from delivery notes (or a bill made from goods received notes): the order line it bills, and
+   * (set by the server when posting) the value already booked for those goods at delivery (1310) or receipt (2160) */
   dline?: string
   dcost?: number
 }
@@ -311,6 +311,8 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** goods received notes: goods received against purchase orders (see purchasing.ts) */
+  receipts?: import('./purchasing').Receipt[]
   /** delivery notes: goods sent against confirmed sales orders (see orders.ts) */
   deliveries?: import('./orders').Delivery[]
   /** the fixed-asset register and its depreciation runs (see assets.ts) */

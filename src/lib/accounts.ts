@@ -42,6 +42,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('1590', 'Accumulated depreciation', 'مجمع الإهلاك', 'asset', true, true),
   sys('2100', 'Accounts payable', 'الموردون (ذمم دائنة)', 'liability', true),
   sys('2150', 'Cheques issued (not yet cashed)', 'أوراق الدفع (شيكات صادرة)', 'liability', true),
+  sys('2160', 'Goods received, not yet billed', 'بضاعة مستلمة لم تصل فاتورتها', 'liability', true),
   sys('2200', 'VAT output (payable)', 'ضريبة القيمة المضافة على المبيعات', 'liability'),
   sys('2210', 'VAT due to the Tax Authority', 'ضريبة القيمة المضافة المستحقة لمصلحة الضرائب', 'liability'),
   own('2250', 'Accrued expenses', 'مصروفات مستحقة', 'liability'),

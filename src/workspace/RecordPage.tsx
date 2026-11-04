@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ClipboardList, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
 import { OrderPanel } from './OrderPanel'
+import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
@@ -175,6 +176,9 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               {rec.status !== 'declined' && rec.status !== 'draft' && rec.status !== 'ordered' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}
+          {mod.role === 'purchases' && rec && rec.status === 'draft' && !rec.values.from_po && !rec.values.credit_for && (rec.lines ?? []).some((l) => l.product) && can({ schema, user }, mod.id, 'edit') && (
+            <button className="secondary" disabled={dirty} title={tr('Order the goods first; receive them when they arrive, then bill what came')} onClick={() => act('po.send', { id: rec.id }, tr('Sent as a purchase order'))}><ClipboardList size={15} /> {tr('Send as purchase order')}</button>
+          )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
             dirty
               ? <button className="success" onClick={saveAndPost} title={tr('Save your changes and post in one step')}><Lock size={15} /> {tr('Save & post')}</button>
@@ -214,7 +218,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {Number(rec.values.balance) < 0 && <> {tr(mod.role === 'invoices' ? '{amount} is left as the customer’s credit (refund it, or keep it for later).' : '{amount} is left as the supplier’s credit (refund it, or keep it for later).', { amount: money(-Number(rec.values.balance), schema.company.currency) })}</>}
         </div>
       )}
-      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && !rec.values.opening && rec.values.credit_for !== 'advance' && (
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && rec.status !== 'draft' && rec.status !== 'void' && rec.status !== 'ordered' && !rec.values.opening && rec.values.credit_for !== 'advance' && (
         <div className={rec.values.eta_uuid ? 'info row' : mod.role === 'invoices' ? 'warn-box row' : 'info row'} style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
           <FileCheck2 size={16} />
           {rec.values.eta_uuid
@@ -226,6 +230,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && rec.status === 'ordered' && <PurchaseOrderPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && Boolean(rec.values.from_po) && <BillMatch rec={rec} />}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}

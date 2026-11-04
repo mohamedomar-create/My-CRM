@@ -140,7 +140,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
           <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }} aria-label={mod.stages ? tr('Stage') : tr('Status')}>
             <option value="">{mod.stages ? tr('All stages') : tr('All statuses')}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'ordered', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'ordered', 'declined', 'invoiced'] : (mod.role === 'purchases' ? ['draft', 'ordered', 'posted', 'partial', 'paid', 'void'] : ['draft', 'posted', 'partial', 'paid', 'void'])).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         )}
         {groups.length > 0 && (

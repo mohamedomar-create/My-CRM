@@ -6,6 +6,7 @@ import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
 import { closeOrder, confirmOrder, deliver, invoiceDelivered, undoDelivery } from './orders'
+import { billReceived, closePurchaseOrder, orderPurchase, receiveGoods, undoReceipt } from './purchasing'
 import { reinstate, setAllowance, writeOff } from './badDebts'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
@@ -100,6 +101,11 @@ export interface CommandArgs {
   'order.undoDelivery': { id: string }
   'order.invoice': { id: string }
   'order.close': { id: string; reason: string }
+  'po.send': { id: string }
+  'po.receive': { id: string; date: string; lines: { line: string; qty: number; lot?: string; expiry?: string }[]; supplierRef?: string }
+  'po.undoReceipt': { id: string }
+  'po.bill': { id: string }
+  'po.close': { id: string; reason: string }
   'sheet.remove': { id: string }
   'budget.create': { year: number; name?: string; from?: 'empty' | 'actuals'; growthIncome?: number; growthExpense?: number }
   'budget.setLines': { id: string; lines: BudgetLine[]; name?: string }
@@ -364,6 +370,11 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'order.undoDelivery': { run: (ws, u, a) => void undoDelivery(ctx(ws, u), String(a.id ?? '')) },
   'order.invoice': { run: (ws, u, a) => ({ id: invoiceDelivered(ctx(ws, u), String(a.id ?? '')).id }) },
   'order.close': { run: (ws, u, a) => void closeOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
+  'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef) }).number },
+  'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },
+  'po.bill': { run: (ws, u, a) => ({ id: billReceived(ctx(ws, u), String(a.id ?? '')).id }) },
+  'po.close': { run: (ws, u, a) => void closePurchaseOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
   'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0 }) },
   'asset.add': { run: (ws, u, a) => ({ id: addAsset(ctx(ws, u), { name: String(a.name ?? '').slice(0, 120), account: a.account === undefined ? undefined : String(a.account), date: String(a.date ?? ''), cost: Number(a.cost), salvage: Number(a.salvage ?? 0) || 0, life: Number(a.life), from: String(a.from ?? ''), cc: a.cc ? String(a.cc) : undefined, accumulated: Number(a.accumulated ?? 0) || 0 }).id }) },
   'asset.depreciate': { run: (ws, u, a) => depreciate(ctx(ws, u), String(a.month ?? '')).number },
