@@ -20,3 +20,7 @@ verify_jwt = false
 [functions.quote]
 # Customers open a shared quotation without a login; the function requires a link whose secret matches a sent quotation.
 verify_jwt = false
+
+[functions.api]
+# Other systems call the public API with an API key, not a login; the function checks the key (its hash) itself.
+verify_jwt = false

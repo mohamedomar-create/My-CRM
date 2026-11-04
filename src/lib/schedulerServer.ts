@@ -13,6 +13,8 @@ export interface SchedulerDeps {
   save: (workspace: string, base: number, write: { setup: ReturnType<typeof setupPart>; changes: Changes; doc: Workspace }) => Promise<number | null>
   audit: (rows: AuditRow[]) => Promise<void>
   logRun: (row: { workspace_id: string; ok: boolean; ran: number; error: string | null }) => Promise<void>
+  /** the company before and after the night's run (webhooks: what the recurring entries and automations did) */
+  afterSave?: (workspace: string, before: Workspace, after: Workspace) => Promise<void>
 }
 
 export interface RunResult {
@@ -38,6 +40,7 @@ export async function runWorkspace(deps: SchedulerDeps, workspace: string): Prom
     const version = await deps.save(workspace, loaded.version, { setup: setupPart(out.ws), changes, doc: out.ws })
     if (version === null) continue
     await deps.audit([{ workspace_id: workspace, actor: null, actor_email: 'scheduler', command: 'automation.runScheduled', label: `Nightly automations (${ran})`, ok: true, error: null, record_ids: out.ids }])
+    if (deps.afterSave) await deps.afterSave(workspace, loaded.doc, out.ws).catch(() => undefined)
     return { workspace, ok: true, ran }
   }
   return { workspace, ok: false, ran: 0, error: 'The workspace was too busy; it will run again tomorrow' }

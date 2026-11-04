@@ -600,6 +600,36 @@ select pg_temp.allowed('the inventor erases a test company at once', $q$select p
 reset role;
 select pg_temp.check('it is gone, the others stay', not exists (select 1 from public.workspaces where id = 'ws_inv00000002') and (select count(*) = 6 from public.workspaces where id like 'ws_inv%'));
 
+-- API keys and webhooks: only admins manage them, the key's secret is never stored, and only the server can use them.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('an admin makes an API key (only its hash is sent)', $q$select public.api_key_create('ws_test123456', 'key_shop00001', 'Web shop', 'write', repeat('ab', 32), 'nq_live_Ab12')$q$);
+select pg_temp.check('the key list shows its name and start, never the hash', (select l -> 0 ->> 'name' = 'Web shop' and l -> 0 ->> 'prefix' = 'nq_live_Ab12' and not (l -> 0) ? 'hash' from (select public.api_keys_list('ws_test123456') l) x));
+select pg_temp.blocked('a key with a bad hash', $q$select public.api_key_create('ws_test123456', 'key_shop00002', 'Bad', 'read', 'not-a-hash', 'nq_live_Ab12')$q$);
+select pg_temp.blocked('reading the key table directly', $q$select hash from public.api_keys$q$);
+select pg_temp.blocked('using a key from the app (server only)', $q$select public.api_key_use(repeat('ab', 32))$q$);
+select pg_temp.blocked('a webhook to a plain http address', $q$select public.webhook_save('ws_test123456', 'wh_shop00001', 'http://example.com/hook', array['invoice.posted'], 'whsec_' || repeat('a', 32), true)$q$);
+select pg_temp.allowed('an admin adds an https webhook', $q$select public.webhook_save('ws_test123456', 'wh_shop00001', 'https://example.com/hook', array['invoice.posted'], 'whsec_' || repeat('a', 32), true)$q$);
+select pg_temp.check('the webhook list shows only the end of the secret', (select l -> 0 ->> 'secret_hint' = 'aaaa' and not (l -> 0) ? 'secret' from (select public.webhooks_list('ws_test123456') l) x));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a stranger lists the API keys', $q$select public.api_keys_list('ws_test123456')$q$);
+select pg_temp.blocked('a stranger makes an API key', $q$select public.api_key_create('ws_test123456', 'key_evil00001', 'Evil', 'write', repeat('cd', 32), 'nq_live_Ev12')$q$);
+select pg_temp.blocked('a stranger reads the webhooks', $q$select public.webhooks_list('ws_test123456')$q$);
+select pg_temp.blocked('a stranger revokes a key', $q$select public.api_key_revoke('ws_test123456', 'key_shop00001')$q$);
+reset role;
+set role service_role;
+select pg_temp.check('the server finds the key by its hash and counts the call', (select k ->> 'workspace' = 'ws_test123456' and k ->> 'email' = 'owner@test.dev' and (k ->> 'calls')::int = 1 from (select public.api_key_use(repeat('ab', 32)) k) x));
+select pg_temp.check('an unknown hash finds nothing', public.api_key_use(repeat('ef', 32)) is null);
+select pg_temp.check('deliveries are queued and marked', (select (public.webhook_enqueue('[{"webhook":"wh_shop00001","workspace":"ws_test123456","event":"invoice.posted","payload":{"id":"e1"}}]') -> 0 ->> 'webhook') = 'wh_shop00001'));
+reset role;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('the admin revokes the key', $q$select public.api_key_revoke('ws_test123456', 'key_shop00001')$q$);
+reset role;
+set role service_role;
+select pg_temp.check('a revoked key no longer works', public.api_key_use(repeat('ab', 32)) is null);
+reset role;
+
 -- The product is Nasq360: no message from the database says the old name.
 select pg_temp.check('no database message names the old product name', not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private') and p.prosrc like '%Bonyan%'));

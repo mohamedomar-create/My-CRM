@@ -93,6 +93,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
         ...(admin ? [page('team', '/app/team', N_('Team'), 'team')] : []),
         ...(admin ? [page('access', '/app/access', N_('Access rights'), 'access')] : []),
         ...(admin ? [page('builder', '/builder', N_('Customise system'), 'builder')] : []),
+        ...(admin ? [page('connections', '/app/connections', N_('Connections'), 'connections')] : []),
         ...(admin ? [page('billing', '/app/billing', N_('Billing'), 'billing')] : []),
         ...(admin ? [page('audit', '/app/audit', N_('Audit trail'), 'audit')] : []),
       ]
@@ -105,7 +106,7 @@ export const areasFor = (schema: AppSchema, user: User) => AREAS.filter((a) => a
 const PAGE_AREA: Record<string, AreaId> = {
   inventory: 'ops', accounting: 'ops', pos: 'ops',
   plan: 'plan', budgets: 'plan', sales: 'plan',
-  doctor: 'setup', migrate: 'setup', team: 'setup', access: 'setup', billing: 'setup', audit: 'setup',
+  doctor: 'setup', migrate: 'setup', team: 'setup', access: 'setup', billing: 'setup', audit: 'setup', connections: 'setup',
 }
 
 /**

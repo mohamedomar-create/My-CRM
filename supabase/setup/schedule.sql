@@ -19,3 +19,18 @@ select cron.schedule(
     )
   $job$
 );
+
+-- Every 5 minutes: webhook deliveries that failed are tried again (1 minute, 5, 30, 2 hours … up to a day).
+select cron.unschedule('nasq360-webhooks') where exists (select 1 from cron.job where jobname = 'nasq360-webhooks');
+select cron.schedule(
+  'nasq360-webhooks',
+  '*/5 * * * *',
+  $job$
+    select net.http_post(
+      url := 'https://npnhoywlxidojqoijqdu.supabase.co/functions/v1/scheduler',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'x-scheduler-key', (select key from private.scheduler_key)),
+      body := '{"only":"webhooks"}'::jsonb,
+      timeout_milliseconds := 60000
+    )
+  $job$
+);

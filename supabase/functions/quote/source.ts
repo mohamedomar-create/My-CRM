@@ -5,6 +5,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { HttpError } from '../../../src/lib/commandServer'
 import { handleQuote, type QuoteRequest } from '../../../src/lib/quoteServer'
 import type { Workspace } from '../../../src/lib/types'
+import { queueEvents } from '../../../src/lib/webhookServer'
+import { hookDeps } from '../command/hooks'
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Promise<Response>): void }
 
@@ -41,6 +43,9 @@ Deno.serve(async (req) => {
         audit: async (rows) => {
           const { error } = await db.from('audit_events').insert(rows)
           if (error) console.error('audit insert failed', error.message)
+        },
+        afterSave: async (workspace, before, after) => {
+          await queueEvents(hookDeps(db), workspace, before, after).catch((e) => console.error('webhooks failed', (e as Error).message))
         },
       },
       { ...body, ip },

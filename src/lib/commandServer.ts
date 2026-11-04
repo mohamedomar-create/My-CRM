@@ -58,6 +58,10 @@ export interface ServerDeps {
    * take() answers 0 when it is this request's turn, otherwise how many are ahead; end() gives the turn back.
    */
   turn?: { take: (workspace: string) => Promise<number>; end: (workspace: string) => Promise<void> }
+  /** after a save: the company before and after (webhooks are worked out from the difference); never fails the save */
+  afterSave?: (workspace: string, before: Workspace, after: Workspace) => Promise<void>
+  /** how the change arrived, when not from the app (shown in the audit trail, e.g. "API key Shopify") */
+  via?: string
 }
 
 /** The workspace from load_workspace_fast: its setup, with the rows (read apart, as text, for speed) put back in. */
@@ -199,14 +203,15 @@ async function attempts(
     }
     if (!results.some((r) => r.ok && !r.already)) {
       await release()
-      await deps.audit(audit)
+      await deps.audit(deps.via ? audit.map((a) => ({ ...a, label: `${deps.via}: ${a.label ?? a.command}` })) : audit)
       return { doc: await deps.view(req.workspace, email), version: loaded.version, results }
     }
     const { changes } = diff(loaded.doc, doc, loaded.maxOrd)
     const version = await deps.save(req.workspace, loaded.version, { setup: setupPart(doc), changes, doc }, deps.user.id)
     if (version === null) continue
     await release()
-    await deps.audit(audit)
+    await deps.audit(deps.via ? audit.map((a) => ({ ...a, label: `${deps.via}: ${a.label ?? a.command}` })) : audit)
+    if (deps.afterSave) await deps.afterSave(req.workspace, loaded.doc, doc).catch(() => undefined)
     return { doc: await deps.view(req.workspace, email), version, results }
   }
   throw new HttpError(409, 'The workspace is very busy right now. Try again in a moment.')

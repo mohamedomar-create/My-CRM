@@ -29,6 +29,7 @@ const PAGE_TEXT: Record<string, string> = {
   builder: N_('Lists, fields, pipelines, reports, automations and roles'),
   billing: N_('Your plan, seats and payments'),
   audit: N_('Who changed what, and when'),
+  connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
 }
 
 /** The big icon of an area, in its colour. */
