@@ -5066,4 +5066,10 @@ export const AR: Record<string, string> = {
   'WhatsApp refused it: {a}': 'رفضها واتساب: {a}',
   'WhatsApp messages come with the Pro plan (Billing page)': 'رسائل واتساب متاحة في الباقة الاحترافية (صفحة الفوترة)',
   'Your role can’t use the WhatsApp inbox': 'دورك لا يسمح باستخدام صندوق واتساب',
+  'Sales between the group’s companies ({a}) are taken out of revenue and of the costs where the buyer booked them: what is left is sold outside the group.': 'المبيعات بين شركات المجموعة ({a}) مستبعدة من الإيرادات ومن التكاليف التي سجلها المشتري: الباقي هو ما بيع خارج المجموعة.',
+  '{a} of profit on goods one company still holds from another is taken out of stock and profit, until they are sold outside the group.': '{a} من الربح على بضاعة لا تزال لدى شركة اشترتها من شركة أخرى في المجموعة مستبعدة من المخزون والربح حتى تُباع خارج المجموعة.',
+  'Sales between group companies': 'مبيعات بين شركات المجموعة',
+  'Bought from group companies': 'مشتريات من شركات المجموعة',
+  'Profit not yet earned by the group (in its stock)': 'ربح لم تحققه المجموعة بعد (في مخزونها)',
+  'Profit still in group stock': 'ربح لا يزال في مخزون المجموعة',
 }
