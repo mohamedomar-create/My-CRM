@@ -3947,4 +3947,7 @@ export const AR: Record<string, string> = {
   '{a} of this {b}': '{a} الخاصة بهذا {b}',
   '{a}: lines with this product': '{a}: البنود التي بها هذا المنتج',
   '1 chart': 'رسم واحد',
+  'Each chart here uses one list. For a report with columns from several lists (the customer’s name, the product sold, the date, the invoice number…), with totals and charts, use Excel sheets.': 'كل رسم هنا يستخدم قائمة واحدة. لتقرير بأعمدة من عدة قوائم (اسم العميل، المنتج المباع، التاريخ، رقم الفاتورة…) مع الإجماليات والرسوم، استخدم جداول إكسل.',
+  'Open Excel sheets': 'افتح جداول إكسل',
+  'Data from (one list)': 'البيانات من (قائمة واحدة)',
 }

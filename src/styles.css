@@ -1174,3 +1174,4 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 @media (max-width: 800px) { .sheet-sources { grid-template-columns: 1fr; } .sheet-source-tabs { flex-direction: row; flex-wrap: wrap; max-height: none; } }
 .sheet-card.on, .sheet-card.on:hover { background: var(--primary-50); color: var(--text); border-color: var(--primary-600); }
 .sheet-card.on .muted { color: var(--text-2); }
+.reports-hint { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; background: var(--success-bg); color: var(--success-text); border-bottom: 1px solid var(--success-border); }

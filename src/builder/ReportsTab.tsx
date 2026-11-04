@@ -75,6 +75,13 @@ export default function ReportsTab({ focus, setFocus }: { focus: Focus; setFocus
         </div>
         <span className="tiny muted">{kind === 'charts' ? tr('Charts and numbers for the dashboard, each from one list.') : tr('Tables with columns from several lists (customer, product, date, invoice number…), downloaded as Excel.')}</span>
       </div>
+      {kind === 'charts' && (
+        <div className="reports-hint">
+          <FileSpreadsheet size={16} aria-hidden />
+          <span className="grow small">{tr('Each chart here uses one list. For a report with columns from several lists (the customer’s name, the product sold, the date, the invoice number…), with totals and charts, use Excel sheets.')}</span>
+          <button className="primary small" onClick={() => setKind('sheets')}><FileSpreadsheet size={14} /> {tr('Open Excel sheets')}</button>
+        </div>
+      )}
       <div className="reports-body">{kind === 'charts' ? <ChartsTab focus={focus} setFocus={setFocus} /> : <SheetsTab sheetId={sheetId} setSheetId={setSheetId} />}</div>
     </div>
   )
@@ -152,7 +159,7 @@ function Designer({ report, preview, sample, onDeleted }: { report: ReportDef; p
     <DndContext sensors={sensors} onDragStart={(e) => setDrag(String(e.active.id))} onDragEnd={onDragEnd}>
       <div className="report-designer">
         <div className="card" style={{ padding: 12, alignSelf: 'start' }}>
-          <label className="field">Data from
+          <label className="field">{tr('Data from (one list)')}
             <select value={report.module} onChange={(e) => set({ module: e.target.value, groupBy: undefined, measure: { op: 'count' }, filters: [] })}>
               {schema.modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>

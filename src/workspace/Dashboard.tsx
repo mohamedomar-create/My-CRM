@@ -1,3 +1,4 @@
+import { visibleSheets } from '../lib/sheets'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
@@ -41,7 +42,10 @@ export default function Dashboard() {
           <h1>{tr(hour < 12 ? 'Good morning, {name}' : hour < 18 ? 'Good afternoon, {name}' : 'Good evening, {name}', { name: user.name.split(' ')[0] })} 👋</h1>
           <p className="muted" style={{ margin: 0 }}>{schema.company.name} · {role?.name} · {tr('system v{n}', { n: schema.version })}</p>
         </div>
-        {role?.admin && <Link to="/builder" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
+        <div className="row">
+          {(role?.admin || visibleSheets(schema, user).length > 0) && <Link to="/app/reports" className="btn secondary"><FileSpreadsheet size={16} /> {tr('Excel reports')}</Link>}
+          {role?.admin && <Link to="/builder" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
+        </div>
       </div>
 
       {role?.admin && !ws.books?.opening?.done && !(ws.data.imports ?? []).length && (
