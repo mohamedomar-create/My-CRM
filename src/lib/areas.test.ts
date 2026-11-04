@@ -25,7 +25,7 @@ describe('the four areas', () => {
     for (const k of ['leads', 'deals']) expect(ops, k).not.toContain(k)
     // quotations lead to invoices, so both areas have them
     expect(ops).toContain('quotes')
-    expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales'])
+    expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales', 'reports'])
     expect(keys(both, admin, 'setup')).toEqual(['migrate', 'team', 'access', 'builder', 'billing', 'audit'])
   })
 

@@ -26,6 +26,10 @@ export function mapSchemaNames(s: AppSchema, t: (en: string, path: string) => st
     for (const r of m.rules ?? []) r.message = t(r.message, `${p}.rule:${r.id}`)
   }
   for (const r of c.reports) r.name = t(r.name, `report:${r.id}`)
+  for (const r of c.sheets ?? []) {
+    r.name = t(r.name, `sheet:${r.id}`)
+    for (const col of r.columns) if (col.label) col.label = t(col.label, `sheet:${r.id}.c:${col.id}`)
+  }
   for (const w of c.workflows) {
     w.name = t(w.name, `wf:${w.id}.name`)
     w.actions.forEach((a, i) => {

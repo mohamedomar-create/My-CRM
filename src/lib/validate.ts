@@ -4,6 +4,7 @@ import type { AppSchema, FieldDef, ModuleDef } from './schema'
 import { hasErp } from './scope'
 import { GROUPABLE_TYPES, fieldByKey, isNumeric, moduleById } from './schema'
 import { ROLES } from './roles'
+import { brokenColumns, pathFields } from './sheets'
 import { formulaRefs } from './formula'
 
 export type Tab = 'modules' | 'pipelines' | 'reports' | 'automations' | 'rules' | 'roles' | 'settings'
@@ -63,6 +64,9 @@ export function fieldDependents(schema: AppSchema, mod: ModuleDef, key: string):
     if (r.module !== mod.id) continue
     if (r.groupBy === key || r.measure.field === key || r.filters.some((x) => x.field === key)) out.push(`report “${r.name}” uses it`)
   }
+  for (const sh of schema.sheets ?? []) {
+    if (sh.columns.some((c) => pathFields(schema, sh, c).some((p) => p.module === mod.id && p.field === key))) out.push(`sheet report “${sh.name}” uses it`)
+  }
   for (const w of schema.workflows) {
     if (w.module !== mod.id) continue
     const inActions = w.actions.some((a) => (a.type === 'set_field' && a.field === key) || ('title' in a && a.title.includes(`{${key}}`)) || ('message' in a && a.message.includes(`{${key}}`)))
@@ -79,6 +83,7 @@ export function moduleDependents(schema: AppSchema, mod: ModuleDef): string[] {
     if (ROLES[m.role].needs?.includes(mod.role) && schema.modules.filter((x) => x.role === mod.role).length === 1) out.push(`“${m.name}” needs a ${ROLES[mod.role].label} module`)
   }
   for (const r of schema.reports) if (r.module === mod.id) out.push(`report “${r.name}”`)
+  for (const sh of schema.sheets ?? []) if (sh.module === mod.id || sh.columns.some((c) => pathFields(schema, sh, c).some((p) => p.module === mod.id))) out.push(`sheet report “${sh.name}”`)
   for (const w of schema.workflows) if (w.module === mod.id) out.push(`automation “${w.name}”`)
   for (const a of schema.approvals ?? []) if (a.module === mod.id) out.push(`approval “${a.name}”`)
   for (const m of schema.modules) for (const f of m.fields) if (f.rollup?.module === mod.id && m.id !== mod.id) out.push(`rollup “${f.label}” in ${m.name}`)
@@ -237,6 +242,12 @@ export function validate(schema: AppSchema): Issue[] {
     }
   }
 
+  for (const sh of schema.sheets ?? []) {
+    const at = { tab: 'reports' as const, itemId: sh.id }
+    if (!sh.name.trim()) issues.push({ level: 'error', message: 'A sheet report has no name', ...at })
+    if (!sh.columns.length) issues.push({ level: 'warning', message: `Sheet report “${sh.name}” has no columns yet`, ...at })
+    for (const b of brokenColumns(schema, sh)) issues.push({ level: 'error', message: b.charAt(0).toUpperCase() + b.slice(1), ...at })
+  }
   for (const r of schema.reports) {
     const at = { tab: 'reports' as const, itemId: r.id }
     const m = moduleById(schema, r.module)

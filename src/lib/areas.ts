@@ -61,15 +61,21 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
   const modules = (a: 'ops' | 'crm') => inArea(a).map((m): AreaItem => ({ kind: 'module', key: m.id, to: `/app/m/${m.id}`, module: m }))
   const approvals = (schema.approvals?.length ?? 0) > 0 ? [page('approvals', '/app/approvals', N_('Approvals'), 'approvals')] : []
   const salesDocs = schema.modules.some((m) => (m.role === 'invoices' || m.role === 'purchases') && (finance || can(ctx, m.id, 'view')))
+  // Excel reports: with Planning for those who plan; for everyone else, inside the areas they work in (only once there
+  // is a report they can open). Admins always see the page, so they find where to design one.
+  const sheets = (schema.sheets ?? []).filter((sh) => sh.columns.length > 0 && can(ctx, sh.module, 'view'))
+  const planner = erp && (finance || admin || looker)
+  const reports = admin || sheets.length > 0 ? [page('reports', '/app/reports', N_('Excel reports'), 'reports')] : []
+  const workReports = planner ? [] : reports
   switch (area) {
     case 'crm':
-      return own('crm') ? [...modules('crm'), ...approvals] : []
+      return own('crm') ? [...modules('crm'), ...approvals, ...workReports] : []
     case 'ops': {
       const pages = [
         ...(erp && has('products') && (finance || own('ops')) ? [page('stock', '/app/inventory', N_('Stock'), 'stock')] : []),
         ...(erp && finance ? [page('accounting', '/app/accounting', N_('Accounting'), 'accounting')] : []),
       ]
-      return own('ops') || pages.length ? [...modules('ops'), ...pages, ...(erp ? approvals : [])] : []
+      return own('ops') || pages.length ? [...modules('ops'), ...pages, ...(erp ? approvals : []), ...workReports] : []
     }
     case 'plan':
       return [
@@ -77,6 +83,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
         ...(erp && finance ? [page('budgets', '/app/budgets', N_('Budgets'), 'budgets')] : []),
         // planning is for those who look across the company (finance, admins, management), not each salesperson
         ...(salesDocs && (finance || admin || looker) ? [page('sales', '/app/sales', N_('Sales analysis & targets'), 'sales')] : []),
+        ...(planner ? reports : []),
       ]
     case 'setup':
       return [
