@@ -6,6 +6,8 @@ import { ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, F
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
+import { DocFlow } from './DocFlow'
+import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
 } from '../lib/engine'
@@ -126,6 +128,9 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const standing = rec && mod.role === 'accounts' && seesStatement ? creditStanding(ws, schema, rec.id) : undefined
   // A posted document is shown as read-only paper (4.2b); drafts and quotations keep the form.
   const paper = Boolean(mod.lines && rec && mod.role !== 'quotes' && rec.status && rec.status !== 'draft')
+  const flow = mod.lines && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes')
+    ? docFlow({ role: mod.role, rec, canPost: canPost({ schema, user }), today: todayISO(), money: (n) => money(n, schema.company.currency) })
+    : null
   const reversePayment = (id: string) => {
     const p = ws.data.payments.find((x) => x.id === id)
     const why = prompt(tr('Why reverse this payment? (e.g. entered on the wrong invoice)'))
@@ -150,7 +155,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title={tr('Score from the scoring rules')}><Flame size={13} /> {score(ws, schema, rec)}</span>}
           {rec && rotting(schema, rec).rotting && <span className="pill red" title={tr('No progress for a while')}><Clock size={13} /> {tr('idle {n} days', { n: rotting(schema, rec).days })}</span>}
           {standing && <span className={`pill ${standing.left < 0 ? 'red' : standing.left < standing.limit * 0.1 ? 'amber' : 'green'}`} title={tr('Owed {owed}, cheques not yet cleared {cheques}, limit {limit}', { owed: money(standing.owed, schema.company.currency), cheques: money(standing.cheques, schema.company.currency), limit: money(standing.limit, schema.company.currency) })}>{standing.left < 0 ? tr('{amount} over the credit limit', { amount: money(-standing.left, schema.company.currency) }) : tr('{amount} of credit left', { amount: money(standing.left, schema.company.currency) })}</span>}
-          {rec?.status && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{statusLabel(rec.status)}</span>}
+          {rec?.status && !flow && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{statusLabel(rec.status)}</span>}
         </h1>
         <div className="row">
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
@@ -161,7 +166,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
-              {rec.status === 'draft' && <button className="secondary" disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
+              {rec.status === 'draft' && <button disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
               {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
               {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
               {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
@@ -187,10 +192,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && canPost({ schema, user }) && <button className="secondary" onClick={() => setAdvancing(true)}><Banknote size={15} /> {tr('Advance')}</button>}
           {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && seesStatement && <button className="secondary" onClick={() => setStatement(true)}><FileText size={15} /> {tr('Statement of account')}</button>}
           {mod.lines && rec && <button className="secondary" disabled={dirty || sync !== 'saved'} title={dirty ? tr('Save first') : sync !== 'saved' ? tr('Waiting for the save to be confirmed, so the printed number is final') : undefined} onClick={() => setPrinting(true)}><Printer size={15} /> {tr('Print')}</button>}
-          {editable && <button onClick={save} disabled={!dirty}><Save size={16} /> {isNew ? tr('Create') : tr('Save')}</button>}
+          {editable && <button className={dirty ? undefined : 'secondary'} onClick={save} disabled={!dirty}><Save size={16} /> {mod.lines && (isNew || rec?.status === 'draft') ? tr('Save draft') : isNew ? tr('Create') : tr('Save')}</button>}
         </div>
       </div>
 
+      {flow && <DocFlow flow={flow} />}
       {rec && <ApprovalBanner rec={rec} mod={mod} />}
       {rec && isCredit && (rec.values.credit_for === 'advance' || rec.values.credit_for === 'opening') && (
         <div className="info" style={{ marginBottom: 14 }}>

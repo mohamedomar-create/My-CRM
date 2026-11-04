@@ -73,8 +73,8 @@ export default function Migrate() {
 
   return (
     <div className="page stack">
-      <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h1 style={{ margin: 0 }}><FileSpreadsheet size={22} /> {tr('Bring your data in')}</h1>
+      <div className="page-head" style={{ marginBottom: 0 }}>
+        <h1><span className="badge" style={{ background: 'var(--ink)' }}><FileSpreadsheet size={20} /></span>{tr('Bring your data in')}</h1>
       </div>
 
       <div className="card stack">

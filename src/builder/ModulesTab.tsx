@@ -177,7 +177,7 @@ function FieldCard({ field, selected, title, onSelect }: { field: FieldDef; sele
       <div className="fake">
         {field.type === 'select' || field.type === 'multiselect' ? (
           <>{field.options?.slice(0, 3).map((o) => <span key={o.value} className="pill tiny" style={{ background: o.color + '22', color: o.color }}>{o.label}</span>)}<ChevronDown size={14} style={{ marginInlineStart: 'auto' }} /></>
-        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ` · ${tr('conditional')}` : ''}</span> : field.type === 'checkbox' ? `☐ ${tr('Yes / No')}` : field.type === 'formula' ? <span className="mono tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : msgText(info.hint)}
+        ) : field.type === 'lookup' || field.type === 'rollup' ? <span className="tiny">{field.type === 'lookup' ? tr('From the linked record') : tr('Calculated from linked records')}{field.showIf ? ` · ${tr('conditional')}` : ''}</span> : field.type === 'checkbox' ? `☐ ${tr('Yes / No')}` : field.type === 'formula' ? <span className="code tiny">= {field.formula || '…'}</span> : field.type === 'rating' ? '★★★★★' : field.type === 'longtext' ? tr('Notes…') : field.readOnly ? tr('Calculated by the system') : msgText(info.hint)}
       </div>
     </div>
   )
@@ -245,7 +245,7 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
       </div>
       {field.system && <div className="info"><Lock size={13} /> {field.readOnly ? tr('Calculated by the system. You can rename and move it.') : tr('Required by {what}. You can rename it, move it and change its help text.', { what: ROLES[mod.role].label })}</div>}
       <label className="field">{tr('Label')}<input value={field.label} onChange={(e) => set({ label: e.target.value })} /></label>
-      <div className="tiny muted">{tr('Internal key:')} <span className="mono">{field.key}</span>{!fresh && ' (locked — it is in use)'}</div>
+      <div className="tiny muted">{tr('Internal key:')} <span className="code">{field.key}</span>{!fresh && ' (locked — it is in use)'}</div>
       <label className="field">Type
         <select value={field.type} onChange={(e) => changeType(e.target.value as FieldType)} disabled={field.system}>
           {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{msgText(t.label)}</option>)}
@@ -399,11 +399,11 @@ function FieldProps({ mod, field, onClose }: { mod: ModuleDef; field: FieldDef; 
 
       {field.type === 'formula' && (
         <>
-          <label className="field">{tr('Formula')}<input className="mono" value={field.formula ?? ''} onChange={(e) => set({ formula: e.target.value })} placeholder={tr('quantity * price')} /></label>
+          <label className="field">{tr('Formula')}<input className="code" value={field.formula ?? ''} onChange={(e) => set({ formula: e.target.value })} placeholder={tr('quantity * price')} /></label>
           {formulaError ? <div className="error-box small">{formulaError}</div> : field.formula ? <div className="ok-box small">{tr('Formula is valid')}</div> : null}
           <div className="chips">
             {numericFields.map((f) => <button key={f.id} type="button" className="chip tiny" onClick={() => set({ formula: `${field.formula ?? ''}${field.formula ? ' ' : ''}${f.key}` })}>{f.label}</button>)}
-            {['+', '-', '*', '/', '(', ')'].map((op) => <button key={op} type="button" className="chip mono" onClick={() => set({ formula: `${field.formula ?? ''} ${op} ` })}>{op}</button>)}
+            {['+', '-', '*', '/', '(', ')'].map((op) => <button key={op} type="button" className="chip code" onClick={() => set({ formula: `${field.formula ?? ''} ${op} ` })}>{op}</button>)}
           </div>
         </>
       )}

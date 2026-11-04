@@ -73,7 +73,7 @@ export default function Billing() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1 className="row" style={{ margin: 0 }}><CreditCard size={22} aria-hidden /> {tr('Billing')}</h1></div>
+      <div className="page-head" style={{ marginBottom: 0 }}><h1><span className="badge" style={{ background: 'var(--ink)' }}><CreditCard size={20} aria-hidden /></span>{tr('Billing')}</h1></div>
       {wait && (
         <div className={`${wait === 'paid' ? 'ok-box' : wait === 'failed' ? 'error-box' : 'info'} row`} role="status" style={{ gap: 8 }}>
           <span className="grow">{wait === 'paid' ? tr('Payment received. Thank you!') : wait === 'failed' ? tr('The payment didn’t go through, so nothing was charged. Try again or use another card or wallet.') : wait === 'slow' ? tr('Paymob hasn’t confirmed the payment yet. If money was taken it will show here within a few minutes; nothing is charged twice.') : tr('Waiting for Paymob to confirm the payment…')}</span>

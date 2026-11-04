@@ -64,7 +64,7 @@ export default function SalesAnalysis() {
   if (!sides.length) return <div className="page"><p className="muted">{tr('Your role can’t view these documents')}</p></div>
   return (
     <div className="page stack">
-      <h1 style={{ margin: 0 }}><BarChart3 size={22} /> {tr('Sales analysis')}</h1>
+      <div className="page-head" style={{ marginBottom: 0 }}><h1><span className="badge" style={{ background: 'var(--ink)' }}><BarChart3 size={20} /></span>{tr('Sales analysis')}</h1></div>
       <div className="card row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
         {sides.length > 1 && (
           <label className="field small">{tr('Show')}
