@@ -295,6 +295,8 @@ export interface Workspace {
   targets?: SalesTarget[]
   /** business plans (P3) */
   plans?: import('./plan').BusinessPlan[]
+  /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
+  landed?: import('./landed').LandedCost[]
   /** company-wide security settings (admins only) */
   security?: { requireTwoFactor?: boolean }
   data: WorkspaceData

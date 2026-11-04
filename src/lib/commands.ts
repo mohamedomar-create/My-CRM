@@ -2,6 +2,7 @@
 // responds instantly, and sends it to the server, which runs the same code on the latest saved data and is the only
 // one allowed to save. So business rules (who may post, what is locked, how stock and the books move) are enforced
 // by the server, not by whichever browser happens to send the data.
+import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
 import type { AppSchema, Permission } from './schema'
@@ -80,6 +81,8 @@ export interface CommandArgs {
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
   'sheet.save': { sheet: SheetReportDef }
+  'landed.allocate': { from: string; to: string[]; method: LandedMethod; amount?: number; date?: string }
+  'landed.undo': { id: string }
   'sheet.remove': { id: string }
   'budget.create': { year: number; name?: string; from?: 'empty' | 'actuals'; growthIncome?: number; growthExpense?: number }
   'budget.setLines': { id: string; lines: BudgetLine[]; name?: string }
@@ -334,6 +337,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
+  'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: String(a.from ?? ''), to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
+  'landed.undo': { run: (ws, u, a) => void undoLanded(ctx(ws, u), String(a.id ?? '')) },
   'sheet.save': { admin: true, run: (ws, u, a) => saveSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, a.sheet) },
   'sheet.remove': { admin: true, run: (ws, u, a) => void removeSheet({ ws, schema: (ws.published ?? ws.draft)!, user: u }, String(a.id ?? '')) },
   'team.setCostCenter': { admin: true, run: (ws, u, a) => void setUserCostCenter(ctx(ws, u), String(a.userId ?? ''), a.code ? String(a.code) : undefined) },

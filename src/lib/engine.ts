@@ -30,7 +30,7 @@ export const todayISO = (at = new Date(), tz = BUSINESS_TZ) => {
   if (!f) DAY_FORMAT.set(tz, (f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })))
   return f.format(at)
 }
-const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000
+export const round4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000
 
 /** Arabic-Indic and Persian digits and the Arabic decimal/thousands separators, as plain ASCII. */
 export function asciiDigits(text: string) {
@@ -42,7 +42,7 @@ export function asciiDigits(text: string) {
 }
 
 /** Tags what sample data creates, and what follows from a sample document (its payments, its reversal). */
-function tag<T extends object>(ctx: Ctx, item: T, from?: { sample?: boolean }): T {
+export function tag<T extends object>(ctx: Ctx, item: T, from?: { sample?: boolean }): T {
   if (ctx.sample || from?.sample) (item as { sample?: boolean }).sample = true
   return item
 }
@@ -385,7 +385,7 @@ function cleanValues(ctx: Ctx, mod: ModuleDef, input: Record<string, unknown>, e
   return out
 }
 
-function log(ctx: Ctx, text: string, rec?: Rec) {
+export function log(ctx: Ctx, text: string, rec?: Rec) {
   ctx.ws.data.activity.unshift(tag(ctx, { id: uid('a'), at: nowISO(), user: ctx.user.name, text, record: rec?.id, module: rec?.module }, rec))
   if (ctx.ws.data.activity.length > 500) ctx.ws.data.activity.length = 500
 }
@@ -791,7 +791,7 @@ function checkLines(lines: Line[]) {
   }
 }
 
-function nextNumber(ctx: Ctx, prefix: string, date: string, sample = false) {
+export function nextNumber(ctx: Ctx, prefix: string, date: string, sample = false) {
   // Sample documents use their own series, so the first real invoice is always …-0001.
   const series = `${prefix}-${date.slice(0, 4)}`
   const key = sample ? `sample:${series}` : series
@@ -805,7 +805,7 @@ export function hasSampleData(ws: Workspace) {
   return ws.data.journal.some((j) => j.sample) || Object.values(ws.data.records).some((rs) => rs.some((r) => r.sample)) || ws.users.some((u) => u.demo)
 }
 
-function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: boolean }) {
+export function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: boolean }) {
   checkOpenPeriod(ctx, entry.date)
   if (entry.lines.some((l) => round2(l.debit) < 0 || round2(l.credit) < 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has a negative amount`)
   const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => {
@@ -821,7 +821,7 @@ function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { sample?: bo
 }
 
 /** One account's amount split by cost center: a line per cost center (debit when positive), untagged together. */
-function ccSides(account: AccountCode, parts: { cc?: string; amount: number }[]) {
+export function ccSides(account: AccountCode, parts: { cc?: string; amount: number }[]) {
   const by = new Map<string, number>()
   for (const p of parts) by.set(p.cc ?? '', (by.get(p.cc ?? '') ?? 0) + p.amount)
   return [...by].filter(([, v]) => round2(v) !== 0).map(([cc, v]) => ({ ...side(account, round2(v)), ...(cc ? { cc } : {}) }))
@@ -841,14 +841,14 @@ export function stockValue(ws: Workspace, p: Rec) {
 }
 
 /** Stores the new value and re-derives on-hand and average cost from it. */
-function setValuation(ws: Workspace, p: Rec, value: number) {
+export function setValuation(ws: Workspace, p: Rec, value: number) {
   const qty = onHand(ws, p.id)
   p.values.stock_value = round2(value)
   p.values.stock = qty
   if (qty > 0) p.values.cost = round4(value / qty)
 }
 
-function productRec(ctx: Ctx, id?: string) {
+export function productRec(ctx: Ctx, id?: string) {
   const products = moduleByRole(ctx.schema, 'products')
   return id && products ? list(ctx.ws, products.id).find((p) => p.id === id) : undefined
 }
@@ -1096,6 +1096,8 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (Number(rec.values.paid) > 0) throw new EngineError(rec.values.credit_for ? 'This credit note was refunded. Reverse the refund before voiding.' : 'This document has payments. Reverse them before voiding.')
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
   if (usesOf(rec).length) throw new EngineError('A credit was used on this document. Take it back first.')
+  const lc = (ctx.ws.landed ?? []).find((l) => !l.undone && (l.from === rec.id || l.to.includes(rec.id)))
+  if (lc) throw new EngineError(`This bill is part of landed cost ${lc.number}. Undo the landed cost first.`)
   const date = ctx.today ?? todayISO()
   const moves = ctx.ws.data.stock.filter((s) => s.doc === rec.id && !s.ref.startsWith('VOID'))
   // A bill can only be voided while its goods are still in stock; otherwise they were sold and a purchase return is needed.
@@ -4080,6 +4082,7 @@ export function removeSampleData(ctx: Ctx) {
   ws.data.journal = ws.data.journal.filter((j) => !j.sample)
   ws.data.stock = ws.data.stock.filter((m) => !m.sample)
   ws.data.payments = ws.data.payments.filter((p) => !p.sample)
+  if (ws.landed) ws.landed = ws.landed.filter((l) => !l.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))
   ws.data.activity = ws.data.activity.filter((a) => !a.sample && !gone.has(a.record ?? ''))
   if (ws.data.approvals) ws.data.approvals = ws.data.approvals.filter((a) => !gone.has(a.record) && !demo.has(a.requestedBy))

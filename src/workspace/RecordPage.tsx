@@ -7,6 +7,7 @@ import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
+import { LandedPanel } from './LandedPanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
@@ -221,6 +222,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         </div>
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
+      {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
