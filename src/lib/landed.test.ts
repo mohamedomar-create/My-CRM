@@ -140,4 +140,30 @@ describe('landed costs', () => {
     expect(out.result).toMatchObject({ number: 'LC-2026-0001' })
     expect(out.ws.landed?.[0].amount).toBe(200)
   })
+
+  it('customs and clearing paid straight from the bank go into the cost of the goods, the import VAT to input VAT', () => {
+    const { ws, schema, ctx, product, goods, sell, balance, inventoryMatches } = setup()
+    const w = product('Widget')
+    const bill = goods([[w, 10, 100]])
+    sell(w, 5)
+    const bank = balance('1110')
+    // 300 customs and clearing, plus 42 import VAT, paid from the bank; half the goods are still in stock
+    const lc = allocateLanded(ctx, { to: [bill.id], method: 'value', amount: 300, date: '2026-01-20', paid: { account: '1110', vat: 42, what: 'Customs and clearing' } })
+    const j = ws.data.journal.find((x) => x.ref === lc.number)!
+    const by = (a: string) => j.lines.filter((l) => l.account === a).reduce((s, l) => s + l.debit - l.credit, 0)
+    expect([by('1300'), by('5000'), by('1400'), by('1110')]).toEqual([150, 150, 42, -342])
+    expect(balance('1110')).toBe(bank - 342)
+    expect(w.values.cost).toBe(130)
+    expect(inventoryMatches()).toBe(true)
+    expect(landedOf(ws, bill.id)[0].paid).toEqual({ account: '1110', vat: 42, what: 'Customs and clearing' })
+    expect(() => allocateLanded(ctx, { to: [bill.id], method: 'value', amount: 10, paid: { account: '1200', what: 'Port fees' } })).toThrow(/cash box or bank/)
+    expect(() => allocateLanded(ctx, { to: [bill.id], method: 'value', amount: 10, paid: { account: '1110', what: '' } })).toThrow(/Say what was paid/)
+    // undone: the bank gets its money back in the books, the cost goes back down
+    undoLanded(ctx, lc.id)
+    expect(balance('1110')).toBe(bank)
+    expect(w.values.cost).toBe(100)
+    expect(inventoryMatches()).toBe(true)
+    void schema
+  })
 })
+

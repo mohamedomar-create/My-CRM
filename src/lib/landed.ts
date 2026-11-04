@@ -10,6 +10,7 @@ import {
   canPost, ccSides, EngineError, findRecord, journal, lineNet, log, nextNumber, nowISO, onHand, productRec, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
 } from './engine'
 import { uid } from './schema'
+import { moneyAccounts } from './accounts'
 
 export type LandedMethod = 'value' | 'qty'
 
@@ -32,8 +33,10 @@ export interface LandedCost {
   id: string
   number: string
   date: string
-  /** the bill of the costs (freight, customs …) */
+  /** the bill of the costs (freight, customs …); empty when the costs were paid directly (see `paid`) */
   from: string
+  /** costs paid straight from a cash box or bank account, with no supplier bill (customs, clearing, port fees) */
+  paid?: { account: string; vat: number; what: string }
   /** the bills of the goods */
   to: string[]
   method: LandedMethod
@@ -74,18 +77,25 @@ function bill(ws: Workspace, schema: AppSchema, id: string) {
 }
 
 /** How a landed cost would be spread, line by line, before anything is changed. */
-export function planLanded(ws: Workspace, schema: AppSchema, input: { from: string; to: string[]; method: LandedMethod; amount?: number }): LandedPlan {
-  const from = bill(ws, schema, input.from)
-  const costs = billCosts(ws, schema, from)
-  if (costs <= 0) throw new EngineError(`${from.number}: this bill has no costs to add (all its lines are stocked goods)`)
-  const available = round2(costs - allocated(ws, from.id))
-  if (available <= 0) throw new EngineError(`${from.number}: its costs were already added to goods`)
+export function planLanded(ws: Workspace, schema: AppSchema, input: { from?: string; to: string[]; method: LandedMethod; amount?: number }): LandedPlan {
+  // from a bill of costs, or (no bill) an amount paid directly
+  const from = input.from ? bill(ws, schema, input.from) : undefined
+  let costs: number
+  let available: number
+  if (from) {
+    costs = billCosts(ws, schema, from)
+    if (costs <= 0) throw new EngineError(`${from.number}: this bill has no costs to add (all its lines are stocked goods)`)
+    available = round2(costs - allocated(ws, from.id))
+    if (available <= 0) throw new EngineError(`${from.number}: its costs were already added to goods`)
+  } else {
+    costs = available = round2(Number(input.amount) || 0)
+  }
   const amount = input.amount === undefined || input.amount === null ? available : round2(Number(input.amount))
   if (!(amount > 0)) throw new EngineError('The amount to add must be more than zero')
   if (amount > available) throw new EngineError(`Only ${available} of this bill is left to add to goods`)
   const to = [...new Set(input.to)]
   if (!to.length) throw new EngineError('Choose the purchase bills of the goods')
-  if (to.includes(from.id)) throw new EngineError('A bill can’t take its own costs: choose the bills of the goods')
+  if (from && to.includes(from.id)) throw new EngineError('A bill can’t take its own costs: choose the bills of the goods')
   const goods: { b: Rec; i: number; l: Line; p: Rec }[] = []
   for (const id of to) {
     const b = bill(ws, schema, id)
@@ -118,13 +128,16 @@ export function planLanded(ws: Workspace, schema: AppSchema, input: { from: stri
 }
 
 /** Spreads a bill of costs over the goods of other bills and books it. */
-export function allocateLanded(ctx: Ctx, input: { from: string; to: string[]; method: LandedMethod; amount?: number; date?: string }): { id: string; number: string } {
+export function allocateLanded(ctx: Ctx, input: { from?: string; to: string[]; method: LandedMethod; amount?: number; date?: string; paid?: { account: string; vat?: number; what?: string } }): { id: string; number: string } {
   if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can add landed costs')
   if (input.method !== 'value' && input.method !== 'qty') throw new EngineError('Spread the costs by value or by quantity')
+  // Paid directly (customs, clearing, port fees): from a cash box or bank account, with the import VAT recoverable.
+  const paid = input.from ? undefined : directPayment(ctx, input)
   const plan = planLanded(ctx.ws, ctx.schema, input)
-  const from = bill(ctx.ws, ctx.schema, input.from)
+  const from = input.from ? bill(ctx.ws, ctx.schema, input.from) : undefined
   const date = input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : ctx.today ?? todayISO()
-  const sample = Boolean(from.sample)
+  if (paid && date > (ctx.today ?? todayISO())) throw new EngineError('A payment can’t be dated in the future')
+  const sample = Boolean(from?.sample)
   const id = uid('lc')
   const number = nextNumber(ctx, 'LC', date, sample)
   // the stock value of each product goes up by its part still on hand
@@ -137,7 +150,7 @@ export function allocateLanded(ctx: Ctx, input: { from: string; to: string[]; me
     setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) + add))
   }
   // 5100 gives back what the service lines charged, in the same cost centers
-  const service = (from.lines ?? []).filter((l) => !tracked(ctx.ws, ctx.schema, l))
+  const service = (from?.lines ?? []).filter((l) => !tracked(ctx.ws, ctx.schema, l))
   let rest = plan.amount
   const back = service.map((l, i) => {
     const part = i === service.length - 1 ? rest : round2((plan.amount * lineNet(l)) / plan.costs)
@@ -145,22 +158,38 @@ export function allocateLanded(ctx: Ctx, input: { from: string; to: string[]; me
     return { cc: l.cc, amount: -part }
   })
   const goodsLine = (l: LandedLine) => ctx.ws.data.records[moduleByRole(ctx.schema, 'purchases')!.id].find((b) => b.id === l.bill)?.lines?.[l.line]
+  const billsOf = [...new Set(plan.lines.map((l) => l.billNumber))].join(', ')
   journal(ctx, {
-    date, ref: number, memo: `Landed cost ${number}: ${from.number} added to ${[...new Set(plan.lines.map((l) => l.billNumber))].join(', ')}`, doc: from.id,
+    date, ref: number, memo: from ? `Landed cost ${number}: ${from.number} added to ${billsOf}` : `Landed cost ${number}: ${paid!.what} added to ${billsOf}`, ...(from ? { doc: from.id } : {}),
     lines: [
       { account: '1300', debit: round2(plan.lines.reduce((s, l) => s + l.inStock, 0)), credit: 0 },
       ...ccSides('5000', plan.lines.map((l) => ({ cc: goodsLine(l)?.cc, amount: l.sold }))),
-      ...ccSides('5100', back),
+      ...(from ? ccSides('5100', back) : [{ account: '1400', debit: paid!.vat, credit: 0 }, { account: paid!.account, debit: 0, credit: round2(plan.amount + paid!.vat) }]),
     ],
   }, from)
   const lc: LandedCost = {
-    id, number, date, from: from.id, to: [...new Set(input.to)], method: input.method, amount: plan.amount,
+    id, number, date, from: from?.id ?? '', ...(paid ? { paid } : {}), to: [...new Set(input.to)], method: input.method, amount: plan.amount,
     lines: plan.lines.map(({ bill: b, line, product, qty, value, share, inStock, sold }) => ({ bill: b, line, product, qty, value, share, inStock, sold })),
     at: nowISO(), by: ctx.user.name,
   }
   ctx.ws.landed = [tag(ctx, lc, from), ...(ctx.ws.landed ?? [])]
-  log(ctx, `added landed cost ${number} (${plan.amount}) from ${from.number} to the goods of ${[...new Set(plan.lines.map((l) => l.billNumber))].join(', ')}`, from)
+  const first = findRecord(ctx.ws, input.to[0])
+  if (from) log(ctx, `added landed cost ${number} (${plan.amount}) from ${from.number} to the goods of ${billsOf}`, from)
+  else log(ctx, `added landed cost ${number} (${plan.amount}): ${paid!.what}, paid from ${paid!.account}`, first)
   return { id, number }
+}
+
+function directPayment(ctx: Ctx, input: { amount?: number; paid?: { account: string; vat?: number; what?: string } }) {
+  const p = input.paid
+  if (!p) throw new EngineError('Choose the bill of the costs, or say how they were paid')
+  const account = moneyAccounts(ctx.ws).find((a) => a.code === String(p.account ?? ''))
+  if (!account) throw new EngineError('Choose the cash box or bank account it was paid from')
+  const vat = round2(Number(p.vat ?? 0) || 0)
+  if (vat < 0) throw new EngineError('The VAT can’t be negative')
+  const what = String(p.what ?? '').trim().slice(0, 120)
+  if (what.length < 3) throw new EngineError('Say what was paid (e.g. customs, clearing, port fees)')
+  if (!(Number(input.amount) > 0)) throw new EngineError('Enter the amount paid, before VAT')
+  return { account: account.code, vat, what }
 }
 
 /** Takes a landed cost back out, while the goods it went into haven't moved since. */
@@ -179,7 +208,7 @@ export function undoLanded(ctx: Ctx, id: string) {
       throw new EngineError(`Can’t undo ${lc.number}: ${p?.values.name ?? 'a product'} was bought or sold since. Record a correcting entry instead.`)
     }
   }
-  const from = findRecord(ctx.ws, lc.from)
+  const from = lc.from ? findRecord(ctx.ws, lc.from) : undefined
   const byProduct = new Map<string, number>()
   for (const l of lc.lines) byProduct.set(l.product, round2((byProduct.get(l.product) ?? 0) + l.inStock))
   for (const [pid, add] of byProduct) {
@@ -188,12 +217,12 @@ export function undoLanded(ctx: Ctx, id: string) {
     ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: 0, cost: 0, value: -add, doc: lc.id, ref: `UNDO ${lc.number}`, date }, lc))
     if (p) setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) - add))
   }
-  const entry = ctx.ws.data.journal.find((j) => j.ref === lc.number && j.doc === lc.from)
+  const entry = ctx.ws.data.journal.find((j) => j.ref === lc.number && (lc.from ? j.doc === lc.from : !j.doc))
   if (entry) {
-    journal(ctx, { date, ref: `UNDO ${lc.number}`, memo: `Undo landed cost ${lc.number}`, doc: lc.from, lines: entry.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, lc)
+    journal(ctx, { date, ref: `UNDO ${lc.number}`, memo: `Undo landed cost ${lc.number}`, ...(lc.from ? { doc: lc.from } : {}), lines: entry.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, lc)
   }
   lc.undone = { at: nowISO(), by: ctx.user.name, date }
-  log(ctx, `undid landed cost ${lc.number}`, from)
+  log(ctx, `undid landed cost ${lc.number}`, from ?? findRecord(ctx.ws, lc.to[0]))
 }
 
 /** The bills that can take a bill's costs: posted purchase bills with stocked goods, newest first. */

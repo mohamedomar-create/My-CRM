@@ -7,6 +7,8 @@ import { PackagePlus, Undo2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { billCosts, goodsBills, landedOf, planLanded, type LandedMethod } from '../lib/landed'
 import { canPost, findRecord, money, todayISO } from '../lib/engine'
+import { accountLabel, moneyAccounts } from '../lib/accounts'
+import { getLang } from '../lib/i18n'
 import type { Rec } from '../lib/types'
 import { useLang } from '../lib/i18n'
 
@@ -14,6 +16,12 @@ export function LandedPanel({ rec }: { rec: Rec }) {
   const { ws, schema, user, act } = useApp()
   const { tr } = useLang()
   const [open, setOpen] = useState(false)
+  // 'bill': this bill's freight or customs go to other bills' goods; 'direct': costs paid from cash or bank go to this bill's goods
+  const [mode, setMode] = useState<'bill' | 'direct'>('bill')
+  const banks = moneyAccounts(ws)
+  const [what, setWhat] = useState('')
+  const [vat, setVat] = useState('')
+  const [account, setAccount] = useState(banks.find((b) => b.code === '1110')?.code ?? banks[0]?.code ?? '')
   const [to, setTo] = useState<string[]>([])
   const [method, setMethod] = useState<LandedMethod>('value')
   const [amount, setAmount] = useState('')
@@ -25,19 +33,28 @@ export function LandedPanel({ rec }: { rec: Rec }) {
   const mine = landedOf(ws, rec.id)
   const given = mine.filter((l) => l.from === rec.id).reduce((s, l) => s + l.amount, 0)
   const left = Math.round((costs - given) * 100) / 100
-  const bills = useMemo(() => (open ? goodsBills(ws, schema, rec.id) : []), [open, ws, schema, rec.id])
+  const direct = mode === 'direct'
+  const hasGoods = posted && goodsBills(ws, schema).some((b) => b.id === rec.id)
+  const bills = useMemo(() => (open ? goodsBills(ws, schema, direct ? undefined : rec.id) : []), [open, ws, schema, rec.id, direct])
   const plan = useMemo(() => {
-    if (!open || !to.length) return null
-    try { return { ok: planLanded(ws, schema, { from: rec.id, to, method, amount: amount ? Number(amount) : undefined }) } } catch (e) { return { error: (e as Error).message } }
-  }, [open, to, method, amount, ws, schema, rec.id])
-  if (!posted || (!mine.length && !(costs > 0 && left > 0 && finance))) return null
+    if (!open || !to.length || (direct && !(Number(amount) > 0))) return null
+    try { return { ok: planLanded(ws, schema, { ...(direct ? {} : { from: rec.id }), to, method, amount: amount ? Number(amount) : undefined }) } } catch (e) { return { error: (e as Error).message } }
+  }, [open, to, method, amount, ws, schema, rec.id, direct])
+  if (!posted || (!mine.length && !(finance && ((costs > 0 && left > 0) || hasGoods)))) return null
+  const start = (m: 'bill' | 'direct') => { setMode(m); setOpen(true); if (m === 'direct') { setTo([rec.id]); setAmount(''); setWhat(tr('Customs and clearing')) } else { setTo([]); setAmount(String(left)) } }
+  const submit = () => act('landed.allocate', direct ? { to, method, amount: Number(amount), date, paid: { account, vat: Number(vat) || 0, what } } : { from: rec.id, to, method, amount: amount ? Number(amount) : undefined, date }, tr('Landed cost added to the goods'), direct ? `Landed cost: ${what}` : `Landed cost from ${rec.number}`)
   const name = (id: string) => findRecord(ws, id)
 
   return (
     <div className="card landed" style={{ marginBottom: 14 }}>
       <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0, fontSize: '1rem' }}><PackagePlus size={17} /> {tr('Landed costs')}</h2>
-        {costs > 0 && left > 0 && finance && !open && <button className="primary" onClick={() => { setOpen(true); setAmount(String(left)) }}><PackagePlus size={15} /> {tr('Add to the cost of goods')}</button>}
+        {finance && !open && (
+          <div className="row" style={{ gap: 8 }}>
+            {costs > 0 && left > 0 && <button className="primary" onClick={() => start('bill')}><PackagePlus size={15} /> {tr('Add to the cost of goods')}</button>}
+            {hasGoods && <button className="secondary" onClick={() => start('direct')}><PackagePlus size={15} /> {tr('Customs or clearing paid directly')}</button>}
+          </div>
+        )}
       </div>
       {costs > 0 && left > 0 && !open && <p className="small muted" style={{ margin: '6px 0 0' }}>{tr('This bill’s freight, customs or clearing ({a}) can be added to what the goods it brought in cost: their unit cost goes up, so margins are true.', { a: cur(left) })}</p>}
 
@@ -49,7 +66,7 @@ export function LandedPanel({ rec }: { rec: Rec }) {
               <tr key={l.id}>
                 <td className="mono">{l.number}</td>
                 <td>{l.date}</td>
-                <td><Link to={`/app/r/${l.from}`}>{name(l.from)?.number}</Link></td>
+                <td>{l.from ? <Link to={`/app/r/${l.from}`}>{name(l.from)?.number}</Link> : <span>{l.paid?.what} <span className="tiny muted">({l.paid?.account})</span></span>}</td>
                 <td>{l.to.map((b, i) => <span key={b}>{i > 0 && '، '}<Link to={`/app/r/${b}`}>{name(b)?.number}</Link></span>)}</td>
                 <td className="num">{cur(l.amount)}</td>
                 <td className="num">{cur(l.lines.reduce((s, x) => s + x.inStock, 0))}</td>
@@ -63,6 +80,14 @@ export function LandedPanel({ rec }: { rec: Rec }) {
 
       {open && (
         <div className="stack" style={{ marginTop: 10, gap: 10 }}>
+          {direct && (
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+              <label className="field grow">{tr('What was paid')}<input value={what} onChange={(e) => setWhat(e.target.value)} /></label>
+              <label className="field">{tr('Amount before VAT')}<input type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 140 }} /></label>
+              <label className="field">{tr('Import VAT')}<input type="number" min={0} step="0.01" value={vat} onChange={(e) => setVat(e.target.value)} style={{ width: 120 }} placeholder="0" /></label>
+              <label className="field">{tr('Paid from')}<select value={account} onChange={(e) => setAccount(e.target.value)}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {accountLabel(b, getLang())}</option>)}</select></label>
+            </div>
+          )}
           <div>
             <b className="small">{tr('1. The bills of the goods these costs belong to')}</b>
             {bills.length === 0 ? <p className="small muted">{tr('No posted purchase bills with stocked goods yet.')}</p> : (
@@ -84,9 +109,9 @@ export function LandedPanel({ rec }: { rec: Rec }) {
                 <button className={method === 'qty' ? 'on' : ''} onClick={() => setMethod('qty')}>{tr('By quantity')}</button>
               </div>
             </div>
-            <label className="field">{tr('Amount to add')} <span className="tiny muted">({tr('up to {a}', { a: cur(left) })})</span>
+            {!direct && <label className="field">{tr('Amount to add')} <span className="tiny muted">({tr('up to {a}', { a: cur(left) })})</span>
               <input type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 150 }} />
-            </label>
+            </label>}
             <label className="field">{tr('Date')}<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           </div>
           {plan?.error && <div className="error-box">{tr(plan.error)}</div>}
@@ -110,11 +135,11 @@ export function LandedPanel({ rec }: { rec: Rec }) {
                   ))}
                 </tbody>
               </table>
-              <p className="tiny muted" style={{ margin: 0 }}>{tr('The part for units still on hand goes into stock (their average cost rises); the part for units already sold goes to cost of sales. The amount comes out of purchased services and expenses (5100).')}</p>
+              <p className="tiny muted" style={{ margin: 0 }}>{direct ? tr('The part for units still on hand goes into stock (their average cost rises); the part for units already sold goes to cost of sales. The money leaves the account chosen; the import VAT is recoverable, like any input VAT.') : tr('The part for units still on hand goes into stock (their average cost rises); the part for units already sold goes to cost of sales. The amount comes out of purchased services and expenses (5100).')}</p>
             </>
           )}
           <div className="row">
-            <button className="primary" disabled={!plan?.ok} onClick={() => { if (act('landed.allocate', { from: rec.id, to, method, amount: amount ? Number(amount) : undefined, date }, tr('Landed cost added to the goods'), `Landed cost from ${rec.number}`) !== undefined) { setOpen(false); setTo([]) } }}><PackagePlus size={15} /> {tr('Add to the cost of goods')}</button>
+            <button className="primary" disabled={!plan?.ok || (direct && what.trim().length < 3)} onClick={() => { if (submit() !== undefined) { setOpen(false); setTo([]) } }}><PackagePlus size={15} /> {tr('Add to the cost of goods')}</button>
             <button className="secondary" onClick={() => { setOpen(false); setTo([]) }}>{tr('Cancel')}</button>
           </div>
         </div>

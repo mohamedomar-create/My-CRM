@@ -92,7 +92,7 @@ export interface CommandArgs {
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
   'sheet.save': { sheet: SheetReportDef }
-  'landed.allocate': { from: string; to: string[]; method: LandedMethod; amount?: number; date?: string }
+  'landed.allocate': { from?: string; to: string[]; method: LandedMethod; amount?: number; date?: string; paid?: { account: string; vat?: number; what?: string } }
   'landed.undo': { id: string }
   'sheet.remove': { id: string }
   'budget.create': { year: number; name?: string; from?: 'empty' | 'actuals'; growthIncome?: number; growthExpense?: number }
@@ -351,7 +351,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
-  'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: String(a.from ?? ''), to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
+  'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: a.from ? String(a.from) : undefined, paid: a.paid && typeof a.paid === 'object' ? { account: String(a.paid.account ?? ''), vat: Number(a.paid.vat ?? 0) || 0, what: String(a.paid.what ?? '') } : undefined, to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
   'landed.undo': { run: (ws, u, a) => void undoLanded(ctx(ws, u), String(a.id ?? '')) },
   'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0 }) },
   'asset.add': { run: (ws, u, a) => ({ id: addAsset(ctx(ws, u), { name: String(a.name ?? '').slice(0, 120), account: a.account === undefined ? undefined : String(a.account), date: String(a.date ?? ''), cost: Number(a.cost), salvage: Number(a.salvage ?? 0) || 0, life: Number(a.life), from: String(a.from ?? ''), cc: a.cc ? String(a.cc) : undefined, accumulated: Number(a.accumulated ?? 0) || 0 }).id }) },
