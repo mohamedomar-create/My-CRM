@@ -40,7 +40,7 @@ export default function Audit() {
       <div className="page-head">
         <h1><span className="badge" style={{ background: 'var(--ink)' }}><ShieldCheck size={20} /></span>{tr('Audit trail')}</h1>
         <div className="row">
-          <select value={who} onChange={(e) => setWho(e.target.value)} style={{ width: 'auto' }}>
+          <select value={who} onChange={(e) => setWho(e.target.value)} style={{ width: 'auto' }} aria-label={tr('Who')}>
             <option value="">{tr('Everyone')}</option>
             {people.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>

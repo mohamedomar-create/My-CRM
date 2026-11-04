@@ -137,7 +137,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
       <div className="row" style={{ marginBottom: 12 }}>
         <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} placeholder={tr('Search {what}…', { what: mod.name.toLowerCase() })} style={{ maxWidth: 320 }} />
         {(mod.stages || mod.lines) && (
-          <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }}>
+          <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }} aria-label={mod.stages ? tr('Stage') : tr('Status')}>
             <option value="">{mod.stages ? tr('All stages') : tr('All statuses')}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
@@ -151,7 +151,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
         )}
         <span className="grow" />
         {views.length > 0 && (
-          <select value="" onChange={(e) => { const v = views.find((x) => x.id === e.target.value); if (v) { setQ(v.q); setStage(v.stage); setSort(v.sort); setView(v.view === 'board' && !mod.stages ? 'table' : v.view) } }} style={{ width: 'auto' }}>
+          <select value="" aria-label={tr('Saved views…')} onChange={(e) => { const v = views.find((x) => x.id === e.target.value); if (v) { setQ(v.q); setStage(v.stage); setSort(v.sort); setView(v.view === 'board' && !mod.stages ? 'table' : v.view) } }} style={{ width: 'auto' }}>
             <option value="">{tr('Saved views…')}</option>
             {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
@@ -188,7 +188,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
               {rows.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') nav(`/app/r/${r.id}`) }} aria-label={recordTitle(ws, schema, r)}>
                   <td><b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b></td>
-                  {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : null })()}</td>}
+                  {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill tint" style={{ ['--c' as string]: s.color }}>{s.name}</span> : null })()}</td>}
                   {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{statusLabel(r.status)}</span></td>}
                   {scored && <td><ScorePill n={score(ws, schema, r)} /></td>}
                   {cols.filter((c) => c.key !== mod.titleField).map((c) => <td key={c.id} className={isNum(c) ? 'num' : ''}><Cell field={c} rec={r} ws={ws} schema={schema} /></td>)}
@@ -249,7 +249,7 @@ function Cell({ field, rec, ws, schema }: { field: FieldDef; rec: Rec; ws: Works
   const v = fieldValue(ws, schema, rec, field)
   if (field.type === 'select') {
     const o = field.options?.find((x) => x.value === v)
-    return o ? <span className="pill" style={{ background: o.color + '22', color: o.color }}>{o.label}</span> : null
+    return o ? <span className="pill tint" style={{ ['--c' as string]: o.color }}>{o.label}</span> : null
   }
   if (field.type === 'formula') return <>{v === undefined ? '' : Number(v).toLocaleString()}</>
   return <>{displayValue(ws, schema, field, v)}</>

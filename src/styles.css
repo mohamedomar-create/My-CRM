@@ -310,15 +310,15 @@ button.small, .btn.small { min-height: 30px; padding: 5px 11px; font-size: 0.86r
 .trust { margin-top: 28px; display: flex; gap: 22px; flex-wrap: wrap; color: #9fc0c8; font-size: 0.88rem; }
 .trust span { display: inline-flex; gap: 6px; align-items: center; }
 .mock { position: relative; border-radius: 20px; background: #ffffff10; border: 1px solid #ffffff22; padding: 14px; backdrop-filter: blur(12px); box-shadow: 0 40px 80px -20px #000a; animation: float 7s ease-in-out infinite; }
-.mock-inner { background: #fff; border-radius: 12px; color: var(--text); padding: 14px; display: grid; grid-template-columns: 120px 1fr; gap: 12px; min-height: 330px; }
+.mock-inner { background: var(--surface); border-radius: 12px; color: var(--text); padding: 14px; display: grid; grid-template-columns: 120px 1fr; gap: 12px; min-height: 330px; }
 .mock-side { display: flex; flex-direction: column; gap: 6px; }
-.mock-side span { height: 26px; border-radius: 7px; background: #f5f5f3; display: flex; align-items: center; gap: 6px; padding: 0 8px; font-size: 0.72rem; font-weight: 600; color: #44443f; }
+.mock-side span { height: 26px; border-radius: 7px; background: var(--surface-2); display: flex; align-items: center; gap: 6px; padding: 0 8px; font-size: 0.72rem; font-weight: 600; color: var(--text-2); }
 .mock-side span.on { background: var(--primary-50); color: var(--primary-600); }
 .mock-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.mock-col { background: #fafaf8; border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.mock-col b { font-size: 0.7rem; color: var(--muted); }
-.mock-card { background: #fff; border-radius: 8px; padding: 8px; font-size: 0.72rem; box-shadow: var(--shadow); border-inline-start: 3px solid var(--c, #0f8b8d); }
-.mock-float { position: absolute; background: #fff; color: var(--text); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow-lg); font-size: 0.8rem; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.mock-col { background: var(--surface-2); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.mock-col b { font-size: 0.7rem; color: var(--text-2); }
+.mock-card { background: var(--surface); color: var(--text); border-radius: 8px; padding: 8px; font-size: 0.72rem; box-shadow: var(--shadow); border-inline-start: 3px solid var(--c, #0f8b8d); }
+.mock-float { position: absolute; background: var(--surface); color: var(--text); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow-lg); font-size: 0.8rem; font-weight: 600; display: flex; gap: 8px; align-items: center; }
 .section { padding: 80px clamp(16px, 5vw, 64px); max-width: 1320px; margin: 0 auto; }
 .section h2.big { font-size: clamp(1.7rem, 3.4vw, 2.6rem); color: #fff; text-align: center; letter-spacing: -0.03em; }
 .section p.sub { text-align: center; color: #b3ccd2; max-width: 680px; margin: 0 auto 40px; }
@@ -754,7 +754,7 @@ kbd { font-family: inherit; font-size: var(--fs-xs); border: 1px solid var(--bor
 .companies { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .companies > li { padding: 12px 0; border-top: 1px solid var(--border); }
 .companies > li:first-child { border-top: 0; padding-top: 0; }
-.sidebar-small { font-size: 12px; opacity: .8; padding: 2px 12px 8px; }
+.sidebar-small { font-size: 12px; color: var(--ink-text); padding: 2px 12px 8px; }
 
 /* ---------------- Business plan (redesign) ---------------- */
 /* Chart series: a fixed order validated for colour-blind readers (light on white, dark on the dark surface). */
@@ -1218,3 +1218,19 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 .doctor-plan { margin-bottom: 14px; border: 1px solid var(--primary-100); background: var(--primary-50); }
 .doctor-plan h2 { display: flex; align-items: center; gap: 6px; font-size: 1rem; margin: 0 0 8px; }
 .doctor-plan-text { white-space: pre-wrap; line-height: 1.6; margin-bottom: 8px; }
+/* A pill in a company's own colour (an option, a stage): a light tint behind, and the colour mixed with the text colour
+   so it reads in both themes whatever colour was picked (WCAG AA). */
+.pill.tint { background: color-mix(in srgb, var(--c) 14%, var(--surface)); color: color-mix(in srgb, var(--c) 45%, var(--text)); }
+/* links inside sentences are underlined, so they don't rely on colour alone (WCAG 1.4.1) */
+p a:not(.btn), li a:not(.btn), .note a:not(.btn), .info a:not(.btn) { text-decoration: underline; text-underline-offset: 2px; }
+.table-wrap:focus-visible { outline: 2px solid var(--primary-600); outline-offset: 2px; }
+.line-batch { display: flex; gap: 4px; margin-top: 4px; }
+.line-batch input { padding: 4px 6px; font-size: 0.8rem; min-width: 0; }
+.line-batch input:first-child { flex: 1 1 90px; }
+.line-batch input[type="date"] { flex: 0 1 140px; }
+.recall { margin-top: 14px; padding: 12px; border: 1px solid var(--danger-border, var(--border)); border-radius: 12px; background: var(--surface-2); }
+.recall h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 0.95rem; text-transform: none; letter-spacing: 0; color: var(--text); }
+/* a quiet link on the dark landing header (both themes) */
+.btn.ghost { background: transparent; color: var(--text-2); border-color: transparent; box-shadow: none; }
+.btn.ghost.on-ink { color: var(--ink-text); }
+.btn.ghost.on-ink:hover { background: #ffffff14; color: #fff; }
