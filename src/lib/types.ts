@@ -353,6 +353,9 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** recipes (bills of materials) by product id, and production orders (see production.ts) */
+  recipes?: Record<string, import('./production').Recipe>
+  production?: import('./production').ProductionOrder[]
   /** earlier versions of revised quotations (see quoteOnline.ts) */
   quoteRevisions?: import('./quoteOnline').QuoteRevision[]
   /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */

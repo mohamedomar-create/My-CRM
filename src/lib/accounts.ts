@@ -60,6 +60,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('5100', 'Purchased services & expenses', 'مشتريات خدمات ومصروفات', 'expense'),
   own('5200', 'Rent', 'الإيجار', 'expense'),
   own('5300', 'Salaries & wages', 'الرواتب والأجور', 'expense'),
+  sys('5310', 'Production labour and overhead absorbed', 'تكاليف إنتاج محمّلة على المنتجات', 'expense', false, true),
   own('5400', 'Utilities', 'المرافق', 'expense'),
   own('5500', 'Bank charges', 'مصروفات بنكية', 'expense'),
   sys('5600', 'Depreciation', 'مصروف الإهلاك', 'expense'),

@@ -4627,6 +4627,7 @@ export function removeSampleData(ctx: Ctx) {
   if (ws.landed) ws.landed = ws.landed.filter((l) => !l.sample)
   if (ws.deliveries) ws.deliveries = ws.deliveries.filter((d) => !d.sample)
   if (ws.receipts) ws.receipts = ws.receipts.filter((r) => !r.sample)
+  if (ws.production) ws.production = ws.production.filter((m) => !m.sample)
   if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
   if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))

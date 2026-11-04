@@ -14,6 +14,7 @@ import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
 import { CurrencyBar } from './CurrencyBar'
 import { UnitsPanel } from './UnitsPanel'
+import { RecipePanel } from './RecipePanel'
 import { QuoteSharePanel } from './QuoteSharePanel'
 import { docFlow } from './docFlow'
 import {
@@ -241,6 +242,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
       {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
+      {rec && mod.role === 'products' && <RecipePanel rec={rec} />}
       {rec && mod.role === 'quotes' && <QuoteSharePanel rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
       {rec && mod.role === 'purchases' && rec.status === 'ordered' && <PurchaseOrderPanel rec={rec} />}
