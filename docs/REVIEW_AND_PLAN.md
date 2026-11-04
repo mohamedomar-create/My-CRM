@@ -530,7 +530,7 @@ A smaller team stretches the timeline roughly in proportion.
 - [x] A Sales role's download contains no costs, journals or modules it cannot view. *(3 Nov 2026: permissions.sql.)*
 - [x] 10 simulated users editing for 30 minutes lose zero changes. *(3 Nov 2026: multiuser.test.ts: ten people, 15 rounds, 150 new customers and their renames at the same moments, nothing lost and every browser ends with the server's data (saves told "busy" are sent again).)*
 - [x] A list of 20,000 records opens in under 1 second, and typing in search responds in under 100 ms. *(3 Nov 2026: measured in the production build with 20,000 customers and 20,000 invoices: lists open in 0.14–0.32 s and a keystroke in search takes 40–70 ms. On the way, a server check that turned the whole workspace into text once per new id was fixed (a first save that made 20,000 follow-ups took minutes); commands.test.ts guards it.)*
-- [ ] Any change can be traced to a real logged-in user with server time.
+- [x] Any change can be traced to a real logged-in user with server time. *(dbsim.test.ts on a real database: 30 and 20 people at once; every audit line names a real signed-in person whose e-mail matches, stamped by the database clock; every changed record's earlier version names who changed it. The trail can't be edited or deleted, even by the database owner (permissions.sql).)*
 - [x] Restoring yesterday's state works on a test copy. *(scripts/test-restore.sh: the nightly backup, encrypted and restored into an empty database; every table and row, and the company as loaded, identical.)*
 
 **Rough effort:** 3–4 months (XL).
@@ -566,7 +566,7 @@ A smaller team stretches the timeline roughly in proportion.
 - A green "Books health" card that can genuinely turn red, with plain explanations.
 
 **Acceptance checks**
-- [ ] An accountant signs off a test company through a full month: opening balances, sales, purchases, returns, WHT, VAT return, bank reconciliation, close.
+- [ ] An accountant signs off a test company through a full month: opening balances, sales, purchases, returns, WHT, VAT return, bank reconciliation, close. *(Ready for the accountant: docs/ACCOUNTANT_SIGNOFF.md, a script with the expected figure of every step; the same month is already checked automatically by accountingAudit.test.ts.)*
 - [x] Customer, supplier and stock totals equal the ledger after 10,000 random post/void/pay sequences. *(3 Nov 2026: fuzz.test.ts: 4 × 2,500 random bills, invoices, payments and reversals, voids, credit and debit notes, refunds and stock adjustments; the checks run after every 100.)*
 - [ ] ETA preprod accepts B2B invoices, credit notes and debit notes.
 - [x] Nothing can be posted into a locked period. *(3 Nov 2026: ledger.test.ts (every journal goes through the period check).)*
@@ -964,7 +964,7 @@ The main flows were clicked through and checked in the saved data: budget, busin
 - Migration wizard.
 
 **Acceptance checks**
-- [ ] A new company can sign up, pay, import from Excel, issue an ETA invoice and collect it online without contacting support.
+- [ ] A new company can sign up, pay, import from Excel, issue an ETA invoice and collect it online without contacting support. *(Proven up to the live accounts: journey.test.ts takes an empty company through setup, import from a sheet, a quotation turned into an invoice, its e-invoice number, the payment, the month closed and its VAT settled, all through the server's commands. Still to prove live: paying with Paymob (needs the Paymob keys) and sending the invoice to the Tax Authority (needs the ETA API).)*
 - [ ] Penetration-test findings rated high or above are fixed.
 - [ ] Legal review of PDPL obligations is complete.
 

@@ -96,6 +96,7 @@ function start(p: (typeof people)[number], index: number) {
 describe.skipIf(!URL)(`${PEOPLE} people working in one company at the same moment, on a real database`, () => {
   it(`${ROUNDS} rounds of sales, purchases, payments, stock and new customers: everything saved once, numbers without gaps, books right, nobody told to wait`, async () => {
     const startVersion = Number((await admin.query('select version from public.workspaces where id = $1', [WS])).rows[0].version)
+    const dbStart = (await admin.query('select now() as t')).rows[0].t as Date
     const threads = people.map(start)
     await Promise.all(threads.map((t) => t.ready))
     const all: RoundReport[] = []
@@ -159,6 +160,20 @@ describe.skipIf(!URL)(`${PEOPLE} people working in one company at the same momen
     const audit = await admin.query('select count(*) filter (where ok) as ok from public.audit_events where workspace_id = $1', [WS])
     expect(Number(audit.rows[0].ok)).toBe(Object.values(ok).reduce((s, n) => s + n, 0))
     expect(version).toBe(startVersion + sum('saves'))
+    // Every change traces to a real signed-in person, stamped with the server's clock (never the browser's):
+    // the audit trail, each record's earlier versions, and each saved version of the company.
+    const trace = (await admin.query(`select
+        (select count(*) from public.audit_events a left join auth.users u on u.id = a.actor
+          where a.workspace_id = $1 and (u.id is null or lower(u.email) <> lower(a.actor_email))) as audit_unknown,
+        (select count(*) from public.audit_events where workspace_id = $1 and (at < $2 or at > now())) as audit_off_clock,
+        (select count(*) from public.record_history h left join auth.users u on u.id = h.changed_by
+          where h.workspace_id = $1 and h.changed_at >= $2 and u.id is null) as history_unknown,
+        (select count(*) from public.record_history where workspace_id = $1 and changed_at >= $2) as history_rows,
+        (select count(*) from public.audit_events where workspace_id = $1) as audit_rows`, [WS, dbStart])).rows[0]
+    expect(Number(trace.audit_rows), 'the run left an audit trail').toBeGreaterThan(0)
+    expect(Number(trace.audit_unknown), 'every audit line names a real signed-in person').toBe(0)
+    expect(Number(trace.audit_off_clock), 'every audit line has the server’s time of the change').toBe(0)
+    expect(Number(trace.history_unknown), `every changed record names who changed it (${trace.history_rows} changes)`).toBe(0)
     // Everyone was served without being told the company is busy.
     expect(sum('busy'), 'nobody was told the workspace is busy').toBe(0)
     expect(waits[waits.length - 1], 'nobody waited more than 20 seconds').toBeLessThan(20000)
