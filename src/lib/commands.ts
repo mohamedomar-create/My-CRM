@@ -11,6 +11,7 @@ import { revalue, setDocCurrency } from './fx'
 import { reviseQuote, shareQuote } from './quoteOnline'
 import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
 import { reinstate, setAllowance, writeOff } from './badDebts'
+import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
 import type { AppSchema, Permission } from './schema'
@@ -109,6 +110,13 @@ export interface CommandArgs {
   'production.plan': { product: string; qty: number; date?: string; warehouse?: string; note?: string }
   'production.complete': { id: string; date?: string }
   'production.cancel': { id: string }
+  'recurring.save': { id?: string; memo: string; lines: VoucherLine[]; every: Every; start: string; until?: string; times?: number }
+  'recurring.approve': { id: string }
+  'recurring.stop': { id: string }
+  'recurring.resume': { id: string }
+  'recurring.postDue': Record<string, never>
+  'spread.create': { kind?: 'income' | 'expense'; doc?: string; memo?: string; amount: number; months: number; start?: string; holding?: string; account?: string; cc?: string }
+  'spread.stop': { id: string; releaseRest: boolean }
   'quote.share': { id: string; secret?: string }
   'quote.revise': { id: string }
   'journal.setApproval': { over: number | null }
@@ -275,7 +283,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   },
   'sample.remove': { admin: true, run: (ws, u) => removeSampleData(ctx(ws, u)) },
   // The nightly run: date-based automations, and on Sundays the budget notice for admins and finance.
-  'automation.runScheduled': { run: (ws, u) => { const c = ctx(ws, u); return runScheduled(c) + budgetDigest(c, c.today ?? todayISO()) } },
+  'automation.runScheduled': { run: (ws, u) => { const c = ctx(ws, u); return runScheduled(c) + budgetDigest(c, c.today ?? todayISO()) + postDue(c) } },
 
   'setup.setAnswers': {
     admin: true,
@@ -399,6 +407,13 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'production.plan': { run: (ws, u, a) => planProduction(ctx(ws, u), { product: String(a.product ?? ''), qty: Number(a.qty), date: a.date ? String(a.date) : undefined, warehouse: a.warehouse ? String(a.warehouse) : undefined, note: a.note ? String(a.note) : undefined }).number },
   'production.complete': { run: (ws, u, a) => void completeProduction(ctx(ws, u), String(a.id ?? ''), a.date ? String(a.date) : undefined) },
   'production.cancel': { run: (ws, u, a) => void cancelProduction(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.save': { run: (ws, u, a) => saveRecurring(ctx(ws, u), { id: a.id ? String(a.id) : undefined, memo: a.memo, lines: a.lines, every: a.every, start: a.start, until: a.until || undefined, times: a.times ? Number(a.times) : undefined }) },
+  'recurring.approve': { run: (ws, u, a) => approveRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.stop': { run: (ws, u, a) => void stopRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
+  'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'spread.stop': { run: (ws, u, a) => void stopSpread(ctx(ws, u), String(a.id ?? ''), Boolean(a.releaseRest)) },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },

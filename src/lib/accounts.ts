@@ -47,6 +47,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('2210', 'VAT due to the Tax Authority', 'ضريبة القيمة المضافة المستحقة لمصلحة الضرائب', 'liability'),
   own('2250', 'Accrued expenses', 'مصروفات مستحقة', 'liability'),
   own('2300', 'Loans', 'القروض', 'liability'),
+  sys('2350', 'Income received in advance', 'إيرادات مقبوضة مقدمًا', 'liability'),
   sys('2400', 'Withholding tax payable', 'ضرائب الخصم والإضافة المستحقة', 'liability'),
   own('3000', 'Owner’s capital', 'رأس المال', 'equity'),
   own('3100', 'Retained earnings', 'الأرباح المحتجزة', 'equity'),

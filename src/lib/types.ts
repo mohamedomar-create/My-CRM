@@ -336,6 +336,10 @@ export interface Workspace {
     pendingJournals?: PendingJournal[]
     /** month-end restatements of what is owed in foreign currency (see fx.ts) */
     revaluations?: import('./fx').Revaluation[]
+    /** journal vouchers that repeat on their own (see recurring.ts) */
+    recurring?: import('./recurring').RecurringJournal[]
+    /** amounts spread over months: income received in advance, expenses paid in advance */
+    deferrals?: import('./recurring').Deferral[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
     /** the balances brought in from the company's old system (Phase H2) */

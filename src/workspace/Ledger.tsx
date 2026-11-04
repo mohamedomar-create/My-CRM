@@ -2,7 +2,7 @@
 // counts. Every action is a server command; the engine checks the rules (balance, control accounts, permissions).
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Repeat, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
 import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, usesWarehouses, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { taxCode } from '../lib/tax'
@@ -13,6 +13,7 @@ import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
 import { MonthEndTodo } from './PeriodEnd'
+import { EVERY_LABEL, type Every } from '../lib/recurring'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
 
@@ -39,6 +40,8 @@ export function JournalVoucher() {
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()])
   // An accrual (an expense of this month billed next month) reverses itself on the day chosen, the 1st of next month by default.
   const [reverseOn, setReverseOn] = useState('')
+  // A voucher that repeats (rent, a loan instalment): posted now and then on its own every month, quarter or year.
+  const [repeat, setRepeat] = useState<{ every: Every; end: 'never' | 'times' | 'until'; times: string; until: string } | null>(null)
   const nextMonth = (() => { const [y, m] = date.split('-').map(Number); return y && m ? new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) : '' })()
   const dr = round2(rows.reduce((s, r) => s + num(r.debit), 0))
   const cr = round2(rows.reduce((s, r) => s + num(r.credit), 0))
@@ -51,6 +54,11 @@ export function JournalVoucher() {
     const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
     const over = ws.books?.jvApprovalOver
     const waits = over !== undefined && dr > over
+    if (repeat) {
+      const r = act<{ posted: number; waiting?: boolean }>('recurring.save', { memo, lines, every: repeat.every, start: date, ...(repeat.end === 'times' ? { times: Number(repeat.times) } : repeat.end === 'until' ? { until: repeat.until } : {}) }, waits ? tr('Sent for approval: another finance person approves it once') : tr('Set up: it posts itself {every}', { every: tr(EVERY_LABEL[repeat.every]) }), `Recurring entry: ${memo}`)
+      if (r !== undefined) { setMemo(''); setRows([emptyRow(), emptyRow()]); setRepeat(null) }
+      return
+    }
     const out = act<{ ref: string }>('journal.manual', { date, memo, lines, ...(reverseOn ? { reverseOn } : {}) }, waits ? tr('Sent for approval: another finance person posts it') : reverseOn ? tr('Adjusting entry posted, with its reversal on {date}', { date: reverseOn }) : tr('Journal voucher posted'), `Journal voucher: ${memo}`)
     if (out) {
       setMemo('')
@@ -68,7 +76,19 @@ export function JournalVoucher() {
       </div>
       {reverseOn
         ? <div className="row small" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><label className="row" style={{ gap: 6 }}>{tr('Reverse it automatically on')}<input type="date" value={reverseOn} min={date} onChange={(e) => setReverseOn(e.target.value)} style={{ width: 160 }} /></label><span className="tiny muted">{tr('For an expense of this month billed next month: when the bill comes, enter it as usual and it isn’t counted twice.')}</span><button type="button" className="ghost small" onClick={() => setReverseOn('')}>{tr('Don’t reverse')}</button></div>
-        : <div><button type="button" className="ghost small" onClick={() => setReverseOn(nextMonth)}><Undo2 size={13} /> {tr('Reverse it automatically next month')}</button></div>}
+        : repeat
+          ? (
+            <div className="row small" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Repeat size={13} />
+              <select aria-label={tr('How often')} value={repeat.every} onChange={(e) => setRepeat({ ...repeat, every: e.target.value as Every })} style={{ width: 150 }}>{(['month', 'quarter', 'year'] as Every[]).map((e) => <option key={e} value={e}>{tr(EVERY_LABEL[e])}</option>)}</select>
+              <select aria-label={tr('Until')} value={repeat.end} onChange={(e) => setRepeat({ ...repeat, end: e.target.value as 'never' | 'times' | 'until' })} style={{ width: 170 }}><option value="never">{tr('until I stop it')}</option><option value="times">{tr('a number of times')}</option><option value="until">{tr('until a date')}</option></select>
+              {repeat.end === 'times' && <input aria-label={tr('How many times')} inputMode="numeric" value={repeat.times} onChange={(e) => setRepeat({ ...repeat, times: e.target.value })} style={{ width: 70 }} />}
+              {repeat.end === 'until' && <input aria-label={tr('Last date')} type="date" min={date} value={repeat.until} onChange={(e) => setRepeat({ ...repeat, until: e.target.value })} style={{ width: 160 }} />}
+              <span className="tiny muted">{tr('The first one posts on the date above; the next ones post themselves.')}</span>
+              <button type="button" className="ghost small" onClick={() => setRepeat(null)}>{tr('Don’t repeat')}</button>
+            </div>
+          )
+          : <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}><button type="button" className="ghost small" onClick={() => setReverseOn(nextMonth)}><Undo2 size={13} /> {tr('Reverse it automatically next month')}</button><button type="button" className="ghost small" onClick={() => setRepeat({ every: 'month', end: 'never', times: '12', until: '' })}><Repeat size={13} /> {tr('Repeat it every month')}</button></div>}
       <div className="table-wrap">
         <table className="data">
           <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th>{withCc && <th>{tr('Cost center')}</th>}<th>{tr('Note')}</th><th /></tr></thead>
@@ -93,7 +113,7 @@ export function JournalVoucher() {
         return warn.length > 0 && <div className="note small">{warn.map((w) => <div key={w.account + (w.cc ?? '')}>{tr('Over budget: {account}{cc} would reach {after} this year, against {budget} budgeted so far.', { account: w.name, cc: w.cc ? ` (${w.cc})` : '', after: money(w.after, cur), budget: money(w.budget, cur) })}</div>)}</div>
       })()}
       {ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver && <p className="small" style={{ margin: 0 }}>{tr('Above {a}: another finance person approves it before it is posted.', { a: money(ws.books.jvApprovalOver, cur) })}</p>}
-      <button disabled={!dr || dr !== cr}>{ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver ? tr('Send for approval') : tr('Post journal voucher')}</button>
+      <button disabled={!dr || dr !== cr || (repeat?.end === 'times' && !(Number(repeat.times) >= 2)) || (repeat?.end === 'until' && !repeat.until)}>{ws.books?.jvApprovalOver !== undefined && dr > ws.books.jvApprovalOver ? tr('Send for approval') : repeat ? tr('Set up the recurring entry') : tr('Post journal voucher')}</button>
       <JvApprovalSetting />
     </form>
   )

@@ -11,15 +11,16 @@ import GoLive from './GoLive'
 import CostCenters from './CostCenters'
 import Budgets from './Budgets'
 import { incomeStatement } from '../lib/statements'
+import { RecurringBooks } from './Recurring'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, PendingJournals, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
 import { DoubtfulDebts, FixedAssets } from './PeriodEnd'
 
-type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets'
+type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets' | 'recurring'
 const GROUPS: { name: string; tabs: { id: Tab; label: string }[] }[] = [
   { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
   { name: N_('Day to day'), tabs: [{ id: 'payments', label: N_('Payments') }, { id: 'bank', label: N_('Bank & cash') }, { id: 'voucher', label: N_('New journal voucher') }, { id: 'tax', label: N_('VAT & withholding') }] },
-  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
+  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'recurring', label: N_('Recurring & spread') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
 ]
 
 export default function Accounting() {
@@ -141,6 +142,7 @@ export default function Accounting() {
       )}
       {tab === 'close' && <CloseBooks />}
       {tab === 'assets' && <FixedAssets />}
+      {tab === 'recurring' && <RecurringBooks />}
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}
       {tab === 'reports' && <Statements />}

@@ -10,6 +10,7 @@ import { accountLabel, chartOf, moneyAccounts, moneyKind } from '../lib/accounts
 import { assetsOf, bookValue, chargeUpTo, lastMonth, monthlyCharge, registerTotals } from '../lib/assets'
 import { allowance, DEFAULT_RATES, suggestedAllowance, type Rates } from '../lib/badDebts'
 import { lastRates, openForeign } from '../lib/fx'
+import { dueNow } from '../lib/recurring'
 import { monthEnd } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { getLang, N_, tr } from '../lib/i18n'
@@ -235,8 +236,10 @@ export function MonthEndTodo({ month }: { month: string }) {
   const dep = round2(assetsOf(ws).filter((a) => a.date <= end).reduce((s, a) => s + chargeUpTo(a, month).amount, 0))
   const need = suggestedAllowance(ws, schema, end).total
   const aside = round2(need - allowance(ws))
+  const due = dueNow(ws, end < todayISO() ? end : todayISO())
   const items = [
     dep > 0 && { key: 'dep', text: tr('Assets lose {amount} of value up to {month}', { amount: money(dep, cur), month }), button: tr('Post it'), run: () => act('asset.depreciate', { month }, tr('Depreciation posted'), `Depreciation up to ${month}`) },
+    due.count > 0 && { key: 'due', text: tr('{n} recurring entries or monthly shares are due', { n: due.count }), button: tr('Post them'), run: () => act('recurring.postDue', {}, tr('Posted what was due')) },
     aside > 0 && { key: 'late', text: tr('Customers are late: set aside {amount} in case some never pay', { amount: money(aside, cur) }), button: tr('Set it aside'), run: () => act('debt.allowance', { date: end, amount: need, note: 'Month-end' }, tr('Set aside'), 'Allowance for doubtful debts') },
   ].filter(Boolean) as { key: string; text: string; button: string; run: () => unknown }[]
   // amounts still owed in another currency: restated at the month's closing rates

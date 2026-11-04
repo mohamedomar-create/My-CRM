@@ -8,6 +8,7 @@ import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
+import { SpreadPanel } from './Recurring'
 import { OrderPanel } from './OrderPanel'
 import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
 import { WarehouseSelect } from './Warehouses'
@@ -240,6 +241,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && !isCredit && <SpreadPanel rec={rec} />}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
       {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
       {rec && mod.role === 'products' && <RecipePanel rec={rec} />}
