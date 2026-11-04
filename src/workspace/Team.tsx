@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRightLeft, Copy, Crown, Link2, ShieldCheck, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react'
+import { ArrowRightLeft, Copy, Crown, KeyRound, Link2, ShieldCheck, Trash2, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { useApp, showToast } from './useApp'
 import { inviteMember, listInvitations, refreshBilling, listMembers, removeMember, revokeInvitation, run, setMemberAdmin, transferOwnership, useStore, type Invitation, type Member } from '../lib/store'
 import { uid } from '../lib/schema'
@@ -126,7 +126,10 @@ export default function Team() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Users size={20} /></span>{tr('Team')}</h1></div>
+      <div className="page-head">
+        <h1><span className="badge" style={{ background: 'var(--ink)' }}><Users size={20} /></span>{tr('Team')}</h1>
+        <Link to="/app/access" className="btn secondary"><KeyRound size={16} /> {tr('Access rights')}</Link>
+      </div>
       <div className="record-grid">
         <div className="table-wrap">
           <table className="data">

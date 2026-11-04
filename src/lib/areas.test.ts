@@ -26,7 +26,7 @@ describe('the four areas', () => {
     // quotations lead to invoices, so both areas have them
     expect(ops).toContain('quotes')
     expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales'])
-    expect(keys(both, admin, 'setup')).toEqual(['migrate', 'team', 'builder', 'billing', 'audit'])
+    expect(keys(both, admin, 'setup')).toEqual(['migrate', 'team', 'access', 'builder', 'billing', 'audit'])
   })
 
   it('a salesperson works in Customer relations: being allowed to look at invoices does not open Operations', () => {
@@ -69,6 +69,7 @@ describe('the four areas', () => {
     expect(areaOfPath('/app/plan', both, data, 'ops')).toBe('plan')
     expect(areaOfPath('/app/budgets', both, data, null)).toBe('plan')
     expect(areaOfPath('/app/team', both, data, 'crm')).toBe('setup')
+    expect(areaOfPath('/app/access', both, data, 'ops')).toBe('setup')
     expect(areaOfPath('/app/approvals', both, data, 'ops')).toBe('ops')
     expect(areaOfPath('/app/a/plan', both, data, 'crm')).toBe('plan')
     const rec = { id: 'r_deal000001', module: deals, createdAt: '', updatedAt: '', createdBy: 'u', values: {} }
