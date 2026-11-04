@@ -485,6 +485,7 @@ export function deleteRecord(ctx: Ctx, rec: Rec) {
   need(ctx, rec.module, 'delete')
   const mod = moduleById(ctx.schema, rec.module)!
   if (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') throw new EngineError('Posted documents are kept for the audit trail. Void it instead.')
+  if (rec.status === 'ordered') throw new EngineError('This is a confirmed sales order: close it instead')
   if (mod.role === 'products' && ctx.ws.data.stock.some((s) => s.product === rec.id)) throw new EngineError('This product has stock movements. Rename it or mark it inactive instead.')
   const refs = referencesTo(ctx.ws, ctx.schema, rec)
   if (refs.length) throw new EngineError(`Can’t delete: used by ${refs.slice(0, 3).join(', ')}${refs.length > 3 ? ` and ${refs.length - 3} more` : ''}`)
@@ -889,9 +890,12 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   lineCostCenters(ctx, lines, true)
   applyTotals(rec)
 
-  // Quantities per tracked product
+  // Goods already delivered from a sales order: their quantity and cost come from the server's delivery notes.
+  if (mod.role === 'invoices') deliveredLines(ctx, rec, lines)
+  // Quantities per tracked product (goods already delivered left stock with their delivery note)
   const qtyBy = new Map<string, number>()
   for (const l of lines) {
+    if (l.dcost !== undefined) continue
     const p = productRec(ctx, l.product)
     if (p && p.values.track_stock) qtyBy.set(p.id, (qtyBy.get(p.id) ?? 0) + l.qty)
   }
@@ -912,6 +916,15 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     }
   }
 
+  // Stock held for confirmed sales orders isn't sold to someone else.
+  if (mod.role === 'invoices' && !sample) {
+    for (const [pid, q] of qtyBy) {
+      const held = heldForOrders(ctx.ws, ctx.schema, pid)
+      const free = round4(onHand(ctx.ws, pid) - held)
+      if (held > 0 && q > free) throw new EngineError(`Only ${Math.max(0, free)} of ${productRec(ctx, pid)?.values.name} are free: ${held} are held for confirmed orders. Deliver them from the order, or close the order.`)
+    }
+  }
+
   // The customer's credit limit (and every group's above it): only an admin can post over it.
   const overLimit = mod.role === 'invoices' && !sample && !rec.values.credit_for && !rec.values.opening ? creditProblems(ctx.ws, ctx.schema, String(party), totals(lines).total) : []
   if (overLimit.length && !isAdmin(ctx)) {
@@ -927,50 +940,22 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     let cogs = 0
     const cogsBy: { cc?: string; amount: number }[] = []
     for (const [pid, q] of qtyBy) {
-      const p = productRec(ctx, pid)!
-      const cost = Number(p.values.cost ?? 0)
-      const oldQty = onHand(ctx.ws, pid)
-      const oldValue = stockValue(ctx.ws, p)
-      // Selling the last units takes exactly what is left, so no rounding cents stay behind in inventory.
-      const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
+      const own = lines.filter((l) => l.product === pid && l.dcost === undefined)
+      const { issue, lots } = takeFromStock(ctx, pid, q, date, number, rec.id, rec)
       cogs += issue
       // The cost of the goods follows each line's cost center, by quantity (the last line takes the cents left).
-      const own = lines.filter((l) => l.product === pid)
       let left = issue
       own.forEach((l, i) => {
         const share = i === own.length - 1 ? round2(left) : round2((issue * l.qty) / q)
         left = round2(left - share)
         cogsBy.push({ cc: l.cc, amount: share })
       })
-      if (hasLots(ctx.ws, pid)) {
-        // first to expire first: one stock move per batch, the cost shared by quantity, the batches noted on the lines
-        const a = allocateFefo(ctx.ws, pid, q, date, oldQty)
-        const parts = a.short > 0 ? [...a.parts, { qty: a.short }] : a.parts
-        let rest = issue
-        parts.forEach((pt, i) => {
-          const v = i === parts.length - 1 ? round2(rest) : round2((issue * pt.qty) / q)
-          rest = round2(rest - v)
-          ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -pt.qty, cost, value: -v, doc: rec.id, ref: number, date, ...(pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}) }, rec))
-        })
-        const pool = parts.filter((pt) => pt.lot).map((pt) => ({ ...pt }))
-        for (const l of own) {
-          let need = l.qty
-          const got: NonNullable<Line['lots']> = []
-          while (need > 0 && pool.length) {
-            const take = round4(Math.min(need, pool[0].qty))
-            got.push({ lot: pool[0].lot!, ...(pool[0].expiry ? { expiry: pool[0].expiry } : {}), qty: take })
-            pool[0].qty = round4(pool[0].qty - take)
-            need = round4(need - take)
-            if (pool[0].qty <= 0) pool.shift()
-          }
-          if (got.length) l.lots = got
-        }
-      } else {
-        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc: rec.id, ref: number, date }, rec))
-      }
-      setValuation(ctx.ws, p, oldValue - issue)
-      reorderAlert(ctx, p)
+      noteLots(own, lots)
     }
+    // Goods already delivered (from a delivery note): their cost moves from "delivered, not yet invoiced" to cost of sales.
+    const delivered = lines.filter((l) => l.dcost !== undefined)
+    const deliveredCost = round2(delivered.reduce((s, l) => s + Number(l.dcost), 0))
+    for (const l of delivered) cogsBy.push({ cc: l.cc, amount: round2(Number(l.dcost)) })
     journal(ctx, {
       date, ref: number, memo: `Sales invoice ${number}`, doc: rec.id,
       lines: [
@@ -979,6 +964,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
         { account: '2200', debit: 0, credit: t.tax },
         ...ccSides('5000', cogsBy),
         { account: '1300', debit: 0, credit: round2(cogs) },
+        { account: '1310', debit: 0, credit: deliveredCost },
       ],
     }, rec)
   } else {
@@ -1022,6 +1008,99 @@ export function postDocument(ctx: Ctx, rec: Rec) {
   if (mod.role === 'invoices' && !rec.values.credit_for && !rec.values.opening) sellFromShelves(ctx, rec, String(party), lines)
   for (const o of overLimit) log(ctx, `posted ${number} over the credit limit of ${o.name} (${money(o.limit, ctx.schema.company.currency)})`, rec)
   runWorkflows(ctx, rec, 'updated')
+}
+
+/* ---------------- sales orders: stock held, and goods delivered before the invoice ---------------- */
+
+/** How many of each order line have gone out on delivery notes (not undone). */
+export function deliveredQty(ws: Workspace, orderId: string) {
+  const out = new Map<string, number>()
+  for (const d of ws.deliveries ?? []) {
+    if (d.order !== orderId || d.undone) continue
+    for (const l of d.lines) out.set(l.line, round4((out.get(l.line) ?? 0) + l.qty))
+  }
+  return out
+}
+
+/** The units of a product held for confirmed sales orders: ordered and not yet delivered (closed orders hold nothing). */
+export function heldForOrders(ws: Workspace, schema: AppSchema, pid: string, exceptOrder?: string) {
+  const quotes = moduleByRole(schema, 'quotes')
+  if (!quotes) return 0
+  let held = 0
+  for (const o of list(ws, quotes.id)) {
+    if (o.status !== 'ordered' || o.values.closed || o.id === exceptOrder || !(o.lines ?? []).some((l) => l.product === pid)) continue
+    const done = deliveredQty(ws, o.id)
+    for (const l of o.lines ?? []) if (l.product === pid) held += Math.max(0, l.qty - (done.get(l.id) ?? 0))
+  }
+  return round4(held)
+}
+
+/**
+ * An invoice made from delivery notes: each delivered order line must be on it with the quantity delivered, and the
+ * cost of those goods (from the delivery notes, never from the browser) is set on the line. Other lines are ordinary.
+ */
+function deliveredLines(ctx: Ctx, rec: Rec, lines: Line[]) {
+  for (const l of lines) delete l.dcost
+  const notes = (ctx.ws.deliveries ?? []).filter((d) => d.invoice === rec.id && !d.undone)
+  if (!notes.length) return
+  const by = new Map<string, { product: string; qty: number; cost: number }>()
+  for (const d of notes) for (const x of d.lines) {
+    const v = by.get(x.line) ?? { product: x.product, qty: 0, cost: 0 }
+    by.set(x.line, { product: x.product, qty: round4(v.qty + x.qty), cost: round2(v.cost + x.cost) })
+  }
+  for (const [lineId, v] of by) {
+    const l = lines.find((x) => x.dline === lineId)
+    if (!l || l.product !== v.product || round4(l.qty) !== v.qty) throw new EngineError(`The delivered goods must stay on the invoice as delivered (${productRec(ctx, v.product)?.values.name ?? 'a product'}: ${v.qty}). Change the price if needed, not the quantity.`)
+    l.dcost = v.cost
+  }
+}
+
+/**
+ * Takes `q` units of a product out of stock at its moving-average cost (first to expire first, for batches), with one
+ * stock move per batch. Returns what they cost and the batches taken. Used by invoices and delivery notes alike.
+ */
+export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, ref: string, doc: string, from?: { sample?: boolean }) {
+  const p = productRec(ctx, pid)!
+  const cost = Number(p.values.cost ?? 0)
+  const oldQty = onHand(ctx.ws, pid)
+  const oldValue = stockValue(ctx.ws, p)
+  // Taking the last units takes exactly what is left, so no rounding cents stay behind in inventory.
+  const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
+  const lots: { lot?: string; expiry?: string; qty: number }[] = []
+  if (hasLots(ctx.ws, pid)) {
+    // first to expire first: one stock move per batch, the cost shared by quantity
+    const a = allocateFefo(ctx.ws, pid, q, date, oldQty)
+    const parts = a.short > 0 ? [...a.parts, { qty: a.short }] : a.parts
+    let rest = issue
+    parts.forEach((pt, i) => {
+      const v = i === parts.length - 1 ? round2(rest) : round2((issue * pt.qty) / q)
+      rest = round2(rest - v)
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -pt.qty, cost, value: -v, doc, ref, date, ...(pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}) }, from))
+    })
+    lots.push(...parts.filter((pt) => pt.lot).map((pt) => ({ ...pt })))
+  } else {
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc, ref, date }, from))
+  }
+  setValuation(ctx.ws, p, oldValue - issue)
+  reorderAlert(ctx, p)
+  return { issue, lots }
+}
+
+/** Notes on each line the batches its units came from (in line order). */
+export function noteLots(own: Line[], taken: { lot?: string; expiry?: string; qty: number }[]) {
+  const pool = taken.map((pt) => ({ ...pt }))
+  for (const l of own) {
+    let need = l.qty
+    const got: NonNullable<Line['lots']> = []
+    while (need > 0 && pool.length) {
+      const take = round4(Math.min(need, pool[0].qty))
+      got.push({ lot: pool[0].lot!, ...(pool[0].expiry ? { expiry: pool[0].expiry } : {}), qty: take })
+      pool[0].qty = round4(pool[0].qty - take)
+      need = round4(need - take)
+      if (pool[0].qty <= 0) pool.shift()
+    }
+    if (got.length) l.lots = got
+  }
 }
 
 /* ---------------- consignment: pieces on stockists' shelves ---------------- */
@@ -1320,6 +1399,7 @@ export function setQuoteStatus(ctx: Ctx, quote: Rec, status: 'sent' | 'accepted'
   const mod = moduleById(ctx.schema, quote.module)!
   if (mod.role !== 'quotes') throw new EngineError('Only quotations have these steps')
   if (quote.status === 'invoiced') throw new EngineError('This quotation is already invoiced')
+  if (quote.status === 'ordered') throw new EngineError('This quotation is a confirmed order')
   if (status === 'sent') {
     if (!(quote.lines ?? []).length) throw new EngineError('Add at least one line before sending')
     if (!quote.number) quote.number = nextNumber(ctx, mod.numberPrefix || 'QT', String(quote.values.date ?? todayISO()), Boolean(ctx.sample || quote.sample), true)
@@ -1334,7 +1414,8 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
   const invoices = moduleByRole(ctx.schema, 'invoices')
   if (!invoices) throw new EngineError('Add an Invoices module first')
   if (quote.status === 'invoiced') throw new EngineError('This quotation is already invoiced')
-  if (quote.status !== 'sent' && quote.status !== 'accepted') throw new EngineError(quote.status === 'declined' ? 'This quotation was declined, so it can’t be invoiced' : 'Send the quotation to the customer first')
+  if (quote.status !== 'sent' && quote.status !== 'accepted' && quote.status !== 'ordered') throw new EngineError(quote.status === 'declined' ? 'This quotation was declined, so it can’t be invoiced' : 'Send the quotation to the customer first')
+  if (quote.status === 'ordered' && (ctx.ws.deliveries ?? []).some((d) => d.order === quote.id && !d.undone)) throw new EngineError('Goods of this order went out on delivery notes: use “Invoice what was delivered”')
   if (quote.values.valid_until && String(quote.values.valid_until) < (ctx.today ?? todayISO())) {
     throw new EngineError(`This quotation expired on ${quote.values.valid_until}. Extend “Valid until” or make a new quotation.`)
   }
@@ -1380,7 +1461,11 @@ function issueCost(ws: Workspace, rec: Rec, product: string) {
   const moves = ws.data.stock.filter((m) => m.doc === rec.id && m.product === product && m.qty < 0 && !m.ref.startsWith('VOID'))
   const qty = moves.reduce((s, m) => s + -m.qty, 0)
   const value = moves.reduce((s, m) => s + -(m.value ?? m.qty * m.cost), 0)
-  return qty ? value / qty : 0
+  if (qty) return value / qty
+  // goods that left on a delivery note: the cost the invoice moved to cost of sales
+  const delivered = (rec.lines ?? []).filter((l) => l.product === product && l.dcost !== undefined)
+  const dq = delivered.reduce((s, l) => s + l.qty, 0)
+  return dq ? delivered.reduce((s, l) => s + Number(l.dcost), 0) / dq : 0
 }
 
 export interface CreditLine {
@@ -1927,6 +2012,12 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   const held = (st: ChequeState) => round2(reg.filter((c) => c.state === st).reduce((s, c) => s + c.amount, 0))
   const chequesOk = held('in_hand') === accountBalance(ws, '1150') && held('deposited') === accountBalance(ws, '1160') && held('issued') === round2(-accountBalance(ws, '2150'))
   checks.push({ id: 'cheques', ok: chequesOk, blocking: true, title: 'Cheques match the register', detail: chequesOk ? `In hand ${money(held('in_hand'), cur)}, under collection ${money(held('deposited'), cur)}, issued ${money(held('issued'), cur)}` : 'The cheque accounts (1150, 1160, 2150) differ from the cheque register. Contact support before closing.' })
+  // Goods delivered and not yet billed by a posted invoice, against 1310 (fed only by delivery notes and their invoices).
+  if (ws.deliveries?.length) {
+    const pending = round2(ws.deliveries.filter((d) => !d.undone).filter((d) => { const inv = d.invoice ? findRecord(ws, d.invoice) : undefined; return !inv || inv.status === 'void' || inv.status === 'draft' }).reduce((s, d) => s + d.lines.reduce((t, l) => t + l.cost, 0), 0))
+    const book = accountBalance(ws, '1310')
+    checks.push({ id: 'deliveries', ok: pending === book, blocking: true, title: 'Delivered goods match their account', detail: pending === book ? `Delivered, not yet invoiced: ${money(book, cur)}` : `Delivery notes ${money(pending, cur)}, account 1310 ${money(book, cur)}. Contact support before closing.` })
+  }
   // The fixed-asset register against the books: its depreciation against 1590 (fed only by the register), its cost
   // against the fixed-asset accounts. A warning, since opening balances or journal vouchers may hold assets not listed.
   const assetsHeld = (ws.assets ?? []).filter((a) => !a.disposed && a.date <= end)
@@ -4192,6 +4283,7 @@ export function removeSampleData(ctx: Ctx) {
   ws.data.stock = ws.data.stock.filter((m) => !m.sample)
   ws.data.payments = ws.data.payments.filter((p) => !p.sample)
   if (ws.landed) ws.landed = ws.landed.filter((l) => !l.sample)
+  if (ws.deliveries) ws.deliveries = ws.deliveries.filter((d) => !d.sample)
   if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
   if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))

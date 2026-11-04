@@ -34,6 +34,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('1200', 'Accounts receivable', 'العملاء (ذمم مدينة)', 'asset', true),
   sys('1210', 'Allowance for doubtful debts', 'مخصص الديون المشكوك في تحصيلها', 'asset', true, true),
   sys('1300', 'Inventory', 'المخزون', 'asset', true),
+  sys('1310', 'Goods delivered, not yet invoiced', 'بضاعة مسلّمة لم تُفوتر بعد', 'asset', true),
   own('1350', 'Prepaid expenses', 'مصروفات مدفوعة مقدمًا', 'asset'),
   sys('1400', 'VAT input (recoverable)', 'ضريبة القيمة المضافة على المشتريات', 'asset'),
   sys('1450', 'Withholding tax deducted by customers', 'ضرائب خصم من المنبع لدى العملاء', 'asset'),

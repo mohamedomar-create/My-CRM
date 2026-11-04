@@ -16,7 +16,7 @@ import type { Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { dateLocale, N_, tr } from '../lib/i18n'
 
-const STATUS_PILL: Record<string, string> = { draft: 'gray', posted: '', partial: 'amber', paid: 'green', void: 'red', sent: '', accepted: 'green', declined: 'red', invoiced: 'green' }
+const STATUS_PILL: Record<string, string> = { draft: 'gray', posted: '', partial: 'amber', paid: 'green', void: 'red', sent: '', accepted: 'green', declined: 'red', invoiced: 'green', ordered: 'amber' }
 
 export default function ModuleView() {
   const { moduleId } = useParams()
@@ -140,7 +140,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
           <select value={stage} onChange={(e) => { setStage(e.target.value); setLimit(PAGE) }} style={{ width: 'auto' }} aria-label={mod.stages ? tr('Stage') : tr('Status')}>
             <option value="">{mod.stages ? tr('All stages') : tr('All statuses')}</option>
             {mod.stages?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+            {mod.lines && (mod.role === 'quotes' ? ['draft', 'sent', 'accepted', 'ordered', 'declined', 'invoiced'] : ['draft', 'posted', 'partial', 'paid', 'void']).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         )}
         {groups.length > 0 && (

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
+import { OrderPanel } from './OrderPanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
@@ -68,7 +69,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const isCredit = Boolean(rec?.values.credit_for)
   const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
-  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && rec.status === 'invoiced')
+  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && (rec.status === 'invoiced' || rec.status === 'ordered'))
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
   // On a new document the due date follows the date and the customer's or supplier's payment terms, until changed by hand.
   const partyKey = mod.role === 'purchases' ? 'supplier' : 'customer'
@@ -170,7 +171,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               {rec.status === 'draft' && <button disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
               {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
               {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
-              {rec.status !== 'declined' && rec.status !== 'draft' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="secondary" disabled={dirty} title={tr('For goods delivered before the invoice: they are held for this customer, then sent on delivery notes')} onClick={() => act('order.confirm', { id: rec.id }, tr('Confirmed as a sales order: the goods are held'))}><Truck size={15} /> {tr('Confirm as order')}</button>}
+              {rec.status !== 'declined' && rec.status !== 'draft' && rec.status !== 'ordered' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
@@ -223,6 +225,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
+      {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
       {rec && !isCredit && credits.length > 0 && (
         <div className="info" style={{ marginBottom: 14 }}>
           {mod.role === 'invoices' ? tr('Credit notes') : tr('Debit notes')}: {credits.map((c, i) => <span key={c.id}>{i > 0 && '، '}<Link to={`/app/r/${c.id}`}>{c.number}</Link> ({money(-Number(c.values.total), schema.company.currency)})</span>)}
@@ -312,7 +315,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
               </ul>
             </div>
           )}
-          {rec && can({ schema, user }, mod.id, 'delete') && !paper && (
+          {rec && can({ schema, user }, mod.id, 'delete') && !paper && rec.status !== 'ordered' && (
             <button className="danger" onClick={() => confirm(tr('Delete this {what}?', { what: mod.singular.toLowerCase() })) && act('record.delete', { id: rec.id }, tr('Deleted')) && nav(`/app/m/${mod.id}`)}><Trash2 size={15} /> {tr('Delete')}</button>
           )}
         </div>

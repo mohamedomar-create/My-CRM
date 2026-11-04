@@ -54,7 +54,7 @@ export function useApp() {
 }
 
 /** Document and approval statuses, shown in the chosen language. */
-const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
+const STATUS_WORDS = [N_('draft'), N_('sent'), N_('accepted'), N_('declined'), N_('invoiced'), N_('ordered'), N_('posted'), N_('partial'), N_('paid'), N_('void'), N_('pending'), N_('approved'), N_('rejected')]
 export const statusLabel = (s?: string) => {
   const t = s && (STATUS_WORDS as string[]).includes(s) ? tr(s) : s ?? ''
   // Statuses read as words, not codes: "Posted", not "posted".

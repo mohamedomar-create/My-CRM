@@ -430,7 +430,7 @@ interface SCtx {
 /** A place on the map for one row: a record, or one line of a document. */
 interface Node { rec: Rec; line?: Line }
 
-const STATUS: Record<string, string> = { draft: N_('Draft'), posted: N_('Posted'), partial: N_('Partly paid'), paid: N_('Paid in full'), void: N_('Voided'), sent: N_('Sent'), accepted: N_('Accepted'), declined: N_('Declined'), invoiced: N_('Invoice made') }
+const STATUS: Record<string, string> = { draft: N_('Draft'), posted: N_('Posted'), partial: N_('Partly paid'), paid: N_('Paid in full'), void: N_('Voided'), sent: N_('Sent'), accepted: N_('Accepted'), declined: N_('Declined'), invoiced: N_('Invoice made'), ordered: N_('Confirmed order') }
 
 /** The value of one field of one record, as a number when it is one, otherwise as the text the app shows. */
 function fieldCell(c: SCtx, rec: Rec, f: FieldDef): Cell {
