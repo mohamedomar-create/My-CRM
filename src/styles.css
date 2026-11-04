@@ -1071,3 +1071,11 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
   .pflow-arrow { transform: rotate(90deg); }
   [dir='rtl'] .pflow-arrow svg.flip { transform: none; }
 }
+
+/* The menu: the area (main category) carries the big coloured icon; everything inside it is a plain line icon and
+   small text, so the menu reads as one calm list. */
+.sidebar a.side-item { font-size: 0.84rem; font-weight: 500; padding: 7px 10px 7px 12px; gap: 10px; color: var(--ink-text); }
+.sidebar a.side-item svg { flex-shrink: 0; opacity: .85; }
+.sidebar a.side-item.active { font-weight: 600; }
+.sidebar a.side-item.active svg { opacity: 1; }
+.sidebar .side-area-link { font-size: 0.92rem; font-weight: 600; }

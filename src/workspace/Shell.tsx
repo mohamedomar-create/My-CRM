@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, Bell, CheckCircle2, Eye, FlaskConical, Home, 
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
-import { canApprove, hasSampleData, list } from '../lib/engine'
+import { canApprove, hasSampleData } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
 import { CommandPalette } from './CommandPalette'
@@ -120,19 +120,20 @@ export default function Shell() {
               <AreaBadge area={area} size={30} /> <span>{tr(AREA_INFO[area].name)}</span>
             </Link>
             {areaItems(schema, user, area).map((it) => (
-              <NavLink key={it.key} to={it.to}>
+              <NavLink key={it.key} to={it.to} className="side-item">
+                {/* the area has the big coloured icon; what is inside it is a plain line icon and small text */}
                 {it.kind === 'module'
-                  ? <><span className="badge" style={{ background: it.module.color }}><Icon name={it.module.icon} size={14} /></span>{it.module.name}<span className="cnt">{list(ws, it.module.id).length || ''}</span></>
-                  : <>{(() => { const I = PAGE_ICON[it.icon] ?? LayoutDashboard; return <I size={18} /> })()} {tr(it.label)}{it.key === 'approvals' && toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</>}
+                  ? <><Icon name={it.module.icon} size={16} />{it.module.name}</>
+                  : <>{(() => { const I = PAGE_ICON[it.icon] ?? LayoutDashboard; return <I size={16} /> })()} {tr(it.label)}{it.key === 'approvals' && toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</>}
               </NavLink>
             ))}
             <div className="sect">{schema.company.name}</div>
-            <NavLink to="/app/dashboard"><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
+            <NavLink to="/app/dashboard" className="side-item"><LayoutDashboard size={16} /> {tr('Dashboard')}</NavLink>
           </>
         ) : (
           <>
-            <NavLink to="/app" end><Home size={18} /> {tr('Home')}</NavLink>
-            <NavLink to="/app/dashboard"><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
+            <NavLink to="/app" end className="side-item"><Home size={16} /> {tr('Home')}</NavLink>
+            <NavLink to="/app/dashboard" className="side-item"><LayoutDashboard size={16} /> {tr('Dashboard')}</NavLink>
             <div className="sect">{schema.company.name}</div>
             {areasFor(schema, user).map((a) => (
               <Link key={a} to={`/app/a/${a}`} className="side-area-link" style={{ ['--a' as string]: AREA_INFO[a].color }}>
@@ -141,7 +142,7 @@ export default function Shell() {
             ))}
           </>
         )}
-        <NavLink to="/security"><ShieldCheck size={18} /> {tr('Security')}</NavLink>
+        <NavLink to="/security" className="side-item"><ShieldCheck size={16} /> {tr('Security')}</NavLink>
       </aside>
       <div className="main">
         <header className="topbar no-print">
