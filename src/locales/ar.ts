@@ -4629,4 +4629,5 @@ export const AR: Record<string, string> = {
   '{a} declined {b} online': 'رفض {a} {b} أونلاين',
   'This company can’t take answers online right now. Please contact them directly.': 'لا تستقبل هذه الشركة الردود أونلاين حاليًا. تواصل معها مباشرة.',
   'Something went wrong. Please try again.': 'حدث خطأ. حاول مرة أخرى.',
+  'That link secret is not valid': 'سر الرابط غير صالح',
 }
