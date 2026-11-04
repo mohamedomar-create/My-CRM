@@ -22,6 +22,7 @@ const PAGE_TEXT: Record<string, string> = {
   sales: N_('Sales by month, customer and product, and the targets'),
   migrate: N_('Customers, products, deals and opening balances from Excel'),
   team: N_('People, roles and invitations'),
+  access: N_('What each role can see and do'),
   builder: N_('Lists, fields, pipelines, reports, automations and roles'),
   billing: N_('Your plan, seats and payments'),
   audit: N_('Who changed what, and when'),
@@ -212,7 +213,7 @@ export function AreaHome() {
   }
   if (a === 'setup') {
     flows = [
-      { title: tr('Getting set up'), steps: pick('migrate', 'team', 'builder'), note: tr('Bring your data in first, then invite the team; change lists and fields at any time.') },
+      { title: tr('Getting set up'), steps: pick('migrate', 'team', 'access', 'builder'), note: tr('Bring your data in first, invite the team, then choose what each role can see and do; change lists and fields at any time.') },
       { title: tr('Running the account'), steps: pick('billing', 'audit'), arrows: false },
     ]
   }

@@ -34,6 +34,7 @@ export default function RolesTab() {
         <button onClick={() => edit((s) => s.roles.push({ id: uid('role'), name: tr('New role'), access: Object.fromEntries(s.modules.map((m) => [m.id, ['view'] as Permission[]])) }))}><Plus size={16} /> {tr('Add role')}</button>
       </div>
       <p className="muted">{tr('Admin can do everything. Only roles with')} <b>{tr('Post & collect')}</b> {tr('can post invoices and bills, void them, and register payments — a standard separation of duties.')}</p>
+      <p className="small info" style={{ marginBottom: 12 }}>{tr('Tip: the owner and admins can also arrange access in the app, at Setup → Access rights. Changes there apply at once, without publishing.')}</p>
       {errs.map((e, i) => <div key={i} className={e.level === 'error' ? 'error-box' : 'note'} style={{ marginBottom: 10 }}>{e.message}</div>)}
       <div className="stack">
         {schema.roles.map((role) => {

@@ -1079,3 +1079,29 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 .sidebar a.side-item.active { font-weight: 600; }
 .sidebar a.side-item.active svg { opacity: 1; }
 .sidebar .side-area-link { font-size: 0.92rem; font-weight: 600; }
+
+/* ---------------- Setup → Access rights ---------------- */
+.access-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.access-roles { position: sticky; top: 80px; display: flex; flex-direction: column; gap: 10px; }
+.access-roles h2 { margin: 0; font-size: 0.82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.access-roles ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.access-roles li button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; background: transparent; color: var(--text); border: 1px solid transparent; border-radius: var(--r-md); padding: 8px 10px; text-align: start; white-space: normal; min-height: 0; }
+.access-roles li button:hover { background: var(--surface-2); }
+.access-roles li button.on { background: var(--primary-50); border-color: var(--primary-100); }
+.access-role-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.access-role-meta { display: flex; align-items: center; justify-content: space-between; width: 100%; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.access-role-areas { display: inline-flex; gap: 3px; }
+.access-works { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.access-area { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; background: color-mix(in srgb, var(--a) 10%, var(--surface)); font-size: 0.84rem; font-weight: 600; }
+.access-switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.access-switch { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.access-switch input { margin-top: 3px; }
+.access-switch > span { display: flex; flex-direction: column; gap: 2px; }
+.access-table th.center, .access-table td.center { text-align: center; width: 92px; }
+.access-table tr:hover td { background: var(--surface-2) !important; }
+.access-tick { width: 24px; height: 24px; min-height: 0; padding: 0; border-radius: 6px; border: 1.5px solid var(--border-strong); background: var(--surface); color: var(--on-primary); display: inline-grid; place-items: center; }
+.access-tick:hover { border-color: var(--primary); background: var(--primary-50); }
+.access-tick.on { background: var(--primary); border-color: var(--primary); }
+.seg.small button { padding: 4px 10px; font-size: 0.8rem; min-height: 0; }
+.access-savebar { position: sticky; bottom: 12px; z-index: 15; display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 14px; border-radius: var(--r-lg); background: var(--ink); color: #fff; box-shadow: var(--shadow-lg); }
+@media (max-width: 900px) { .access-grid { grid-template-columns: minmax(0, 1fr); } .access-roles { position: static; } }
