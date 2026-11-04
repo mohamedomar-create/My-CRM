@@ -11,20 +11,20 @@ import { AREA_INFO, AREAS, areaItems, areasFor, type AreaId, type AreaItem } fro
 import { can, hasSampleData, list, money, todayISO } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { plans } from '../lib/plan'
-import { useLang } from '../lib/i18n'
+import { N_, useLang } from '../lib/i18n'
 
 const PAGE_TEXT: Record<string, string> = {
-  stock: 'On hand, reorder levels, adjustments and counts',
-  accounting: 'Statements, journal, payments, bank, VAT and closing the books',
-  approvals: 'What is waiting for a decision',
-  plan: 'A 3–5 year plan with statements, scenarios and a report for the bank',
-  budgets: 'The year’s budget against the actual figures',
-  sales: 'Sales by month, customer and product, and the targets',
-  migrate: 'Customers, products, deals and opening balances from Excel',
-  team: 'People, roles and invitations',
-  builder: 'Lists, fields, pipelines, reports, automations and roles',
-  billing: 'Your plan, seats and payments',
-  audit: 'Who changed what, and when',
+  stock: N_('On hand, reorder levels, adjustments and counts'),
+  accounting: N_('Statements, journal, payments, bank, VAT and closing the books'),
+  approvals: N_('What is waiting for a decision'),
+  plan: N_('A 3–5 year plan with statements, scenarios and a report for the bank'),
+  budgets: N_('The year’s budget against the actual figures'),
+  sales: N_('Sales by month, customer and product, and the targets'),
+  migrate: N_('Customers, products, deals and opening balances from Excel'),
+  team: N_('People, roles and invitations'),
+  builder: N_('Lists, fields, pipelines, reports, automations and roles'),
+  billing: N_('Your plan, seats and payments'),
+  audit: N_('Who changed what, and when'),
 }
 
 /** The big icon of an area, in its colour. */
