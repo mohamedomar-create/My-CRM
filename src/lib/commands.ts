@@ -12,6 +12,7 @@ import { reviseQuote, shareQuote } from './quoteOnline'
 import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
 import { reinstate, setAllowance, writeOff } from './badDebts'
 import { orderSuggested, setBarcodes } from './scan'
+import { accrueMissingBill, prepareClose } from './closePrep'
 import { closeCounter, counterReturn, openCounter, saveCounter, sell, type CounterPay, type SaleLine } from './pos'
 import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
@@ -24,7 +25,7 @@ import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
 import {
-  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
+  EngineError, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
@@ -121,6 +122,8 @@ export interface CommandArgs {
   'spread.stop': { id: string; releaseRest: boolean }
   'product.setBarcodes': { id: string; codes: { code: string; unit?: string }[] }
   'whatsapp.setShown': { phone: string | null }
+  'close.prepare': { month: string }
+  'close.accrue': { month: string; supplier: string }
   'po.fromSuggestions': { supplier: string; lines: { product: string; qty: number; price?: number }[] }
   'pos.saveCounter': { id?: string; name: string; cash?: string; bank?: string; warehouse?: string; maxDiscount?: number; active?: boolean }
   'pos.open': { counter: string; float: number }
@@ -423,6 +426,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
   'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
   'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'close.prepare': { run: (ws, u, a) => { const c = ctx(ws, u); needFinance(c, 'prepare the close'); return prepareClose(c, String(a.month ?? '')) } },
+  'close.accrue': { run: (ws, u, a) => accrueMissingBill(ctx(ws, u), String(a.month ?? ''), String(a.supplier ?? '')).ref },
   'whatsapp.setShown': {
     admin: true,
     run: (ws, _u, a) => {

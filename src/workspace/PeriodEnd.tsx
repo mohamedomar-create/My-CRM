@@ -3,13 +3,14 @@
 // command; the engine keeps the rules (accounts fed only by these tools, closed periods, numbering).
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, Calculator, CheckCircle2, Plus, Undo2 } from 'lucide-react'
-import { useApp } from './useApp'
+import { Ban, Calculator, CheckCircle2, Hand, Lightbulb, Plus, Sparkles, Undo2 } from 'lucide-react'
+import { showToast, useApp } from './useApp'
 import { list, money, recordTitle, round2, todayISO } from '../lib/engine'
 import { accountLabel, chartOf, moneyAccounts, moneyKind } from '../lib/accounts'
 import { assetsOf, bookValue, chargeUpTo, lastMonth, monthlyCharge, registerTotals } from '../lib/assets'
 import { allowance, DEFAULT_RATES, suggestedAllowance, type Rates } from '../lib/badDebts'
 import { lastRates, openForeign } from '../lib/fx'
+import { closePlan } from '../lib/closePrep'
 import { dueNow } from '../lib/recurring'
 import { monthEnd } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
@@ -266,6 +267,42 @@ function Revalue({ month, codes, count }: { month: string; codes: string[]; coun
         {codes.map((c) => <label key={c} className="row tiny" style={{ gap: 4 }}>1 {c} =<input aria-label={c} inputMode="decimal" value={rates[c] ?? ''} onChange={(e) => setRates({ ...rates, [c]: e.target.value })} style={{ width: 80 }} /></label>)}
         <button className="small" disabled={!ready} onClick={() => act('fx.revalue', { month, rates: Object.fromEntries(codes.map((c) => [c, Number(rates[c])])) }, tr('Revalued at the closing rates'), `Revaluation ${month}`)}><CheckCircle2 size={13} /> {tr('Restate')}</button>
       </span>
+    </div>
+  )
+}
+
+/**
+ * The month-end, prepared by the system: what it does itself (one click), what it suggests (an accrual for a supplier
+ * who bills every month), and what needs a person (rates to enter, a bank to reconcile).
+ */
+export function ClosePlan({ month }: { month: string }) {
+  const { ws, schema, act } = useApp()
+  const plan = closePlan(ws, schema, month, todayISO())
+  const steps = plan.steps.filter((s) => !s.id.startsWith('check-'))
+  const foreign = (ws.books?.revaluations ?? []).some((r) => r.month >= month) ? [] : openForeign(ws, schema, monthEnd(month))
+  const codes = [...new Set(foreign.map((r) => String(r.values.currency)))]
+  if (!steps.some((s) => s.kind !== 'done')) return null
+  const prepare = () => {
+    const out = act<{ done: string[]; failed: { step: string; error: string }[] }>('close.prepare', { month }, undefined, `Month-end ${month} prepared`)
+    if (!out) return
+    showToast(out.failed.length ? { kind: 'error', text: tr('{n} done; not done: {f}', { n: out.done.length, f: out.failed.map((f) => f.error).join(' · ') }) } : { kind: 'ok', text: tr('Prepared: {n} steps posted', { n: out.done.length }) })
+  }
+  const icon = (k: string) => (k === 'done' ? <CheckCircle2 size={15} color="var(--success)" /> : k === 'auto' ? <Sparkles size={15} color="var(--primary)" /> : k === 'suggest' ? <Lightbulb size={15} color="var(--warning)" /> : <Hand size={15} color="var(--warning)" />)
+  return (
+    <div className="note stack" style={{ gap: 8 }}>
+      <div className="row between" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <b>{tr('Before closing')}</b>
+        {plan.auto > 0 && <button className="small" onClick={prepare}><Sparkles size={13} /> {tr('Prepare everything ({n})', { n: plan.auto })}</button>}
+      </div>
+      {steps.map((s) => (
+        <div key={s.id} className="row between" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <span className="row small" style={{ gap: 6 }}>{icon(s.kind)}<span>{tr(s.title, s.values)}{s.amount !== undefined && s.kind === 'auto' && s.id === 'depreciation' ? ` (${money(s.amount, schema.company.currency)})` : ''}</span></span>
+          {s.kind === 'suggest' && s.accrual && <button className="ghost small" onClick={() => act('close.accrue', { month, supplier: s.accrual!.supplier }, tr('Accrued, reversing on the 1st of next month'), `Accrual ${month}`)}>{tr('Accrue it')}</button>}
+          {s.kind === 'you' && s.link && <Link className="small" to={s.link}>{tr('Open')}</Link>}
+        </div>
+      ))}
+      {steps.some((s) => s.id === 'fx' && s.kind === 'you') && codes.length > 0 && <Revalue month={month} codes={codes} count={foreign.length} />}
+      <span className="tiny muted">{tr('Each prepared entry can still be seen in the journal, and undone where the app allows it, until the month is closed.')}</span>
     </div>
   )
 }

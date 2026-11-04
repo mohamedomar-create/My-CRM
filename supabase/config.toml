@@ -28,3 +28,7 @@ verify_jwt = false
 [functions.whatsapp]
 # Meta calls it without a login (checked by the company's verify token and app-secret signature); sends check the login itself.
 verify_jwt = false
+
+[functions.ask]
+# The gateway checks the login token; the function then checks membership itself.
+verify_jwt = true

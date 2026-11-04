@@ -11,6 +11,7 @@ import { PRESETS, useOpenList, type usePeriod } from './usePeriod'
 import { monthLabel } from '../lib/reports'
 import { Delta, Sparkline } from '../components/Chart'
 import { tr } from '../lib/i18n'
+import { WatchOut } from './Forecast'
 
 export function PeriodBar({ p }: { p: ReturnType<typeof usePeriod> }) {
   return (
@@ -54,6 +55,7 @@ export function OwnerCockpit({ period, before }: { period: Period; before?: Peri
   const recv = k.receivables
   const toBooks = () => nav('/app/accounting')
   const maxFlow = Math.max(...k.cashFlow.flatMap((m) => [m.in, m.out]), 1)
+  const erpBooks = Boolean(invoices)
   return (
     <>
       <div className="cockpit">
@@ -106,6 +108,7 @@ export function OwnerCockpit({ period, before }: { period: Period; before?: Peri
           </table>
           <p className="tiny muted" style={{ margin: '6px 0 0' }}>{tr('Green: money in · red: money out · the net on the right. Transfers between cash and bank are left out.')}</p>
         </div>
+        {erpBooks && <WatchOut />}
         <div className="card">
           <h2 style={{ fontSize: '0.92rem' }}><AlertTriangle size={15} aria-hidden /> {tr('Furthest behind')}</h2>
           {k.topOverdue.length ? <ul className="mini-list">{k.topOverdue.map((x) => <li key={x.party}><a href={`/app/r/${x.party}`} onClick={(e) => { e.preventDefault(); nav(`/app/r/${x.party}`) }}>{x.name}</a><span className="num">{money(x.amount, cur)} <span className="tiny muted">{tr('{n} days', { n: x.days })}</span></span></li>)}</ul> : <p className="small muted" style={{ margin: 0 }}>{tr('Nobody is overdue.')}</p>}

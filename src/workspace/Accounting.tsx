@@ -7,6 +7,7 @@ import { account, accountName, normalSign } from '../lib/accounts'
 import { msg, N_, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
+import { CashForecast } from './Forecast'
 import GoLive from './GoLive'
 import CostCenters from './CostCenters'
 import Budgets from './Budgets'
@@ -16,16 +17,17 @@ import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, PendingJo
 import { typeLabel } from './labels'
 import { DoubtfulDebts, FixedAssets } from './PeriodEnd'
 
-type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets' | 'recurring'
+type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports' | 'assets' | 'recurring' | 'forecast'
 const GROUPS: { name: string; tabs: { id: Tab; label: string }[] }[] = [
-  { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
+  { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'forecast', label: N_('Cash forecast') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
   { name: N_('Day to day'), tabs: [{ id: 'payments', label: N_('Payments') }, { id: 'bank', label: N_('Bank & cash') }, { id: 'voucher', label: N_('New journal voucher') }, { id: 'tax', label: N_('VAT & withholding') }] },
   { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'assets', label: N_('Fixed assets') }, { id: 'recurring', label: N_('Recurring & spread') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
 ]
 
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<Tab>('reports')
+  // a link can open a tab (e.g. ?tab=forecast from the owner's card)
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('tab') as Tab | null) ?? 'reports')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">{tr('Only Admin and finance roles can see accounting.')}</div>
   const cur = schema.company.currency
@@ -146,6 +148,7 @@ export default function Accounting() {
       {tab === 'tax' && <TaxReturns />}
       {tab === 'bank' && <Treasury />}
       {tab === 'reports' && <Statements />}
+      {tab === 'forecast' && <CashForecast />}
       {tab === 'payments' && (
         <div className="table-wrap">
           <table className="data">

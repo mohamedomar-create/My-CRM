@@ -12,7 +12,7 @@ import { moduleByRole } from '../lib/schema'
 import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
-import { MonthEndTodo } from './PeriodEnd'
+import { ClosePlan } from './PeriodEnd'
 import { ScanButton } from './Scanner'
 import { findByCode } from '../lib/scan'
 import { EVERY_LABEL, type Every } from '../lib/recurring'
@@ -466,7 +466,7 @@ export function CloseBooks() {
         {months.length === 0 ? <p className="muted small">{tr('Every month that has ended is already closed.')}</p> : (
           <>
             <label className="field" style={{ width: 220 }}>{tr('Month')}<select value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((mo) => <option key={mo} value={mo}>{label(mo)}</option>)}</select></label>
-            <MonthEndTodo month={month} />
+            <ClosePlan month={month} />
             <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0, gap: 6 }}>
               {checks.filter((c) => !c.ok).map((c) => (
                 <li key={c.id} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
