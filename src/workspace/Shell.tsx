@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, CreditCard, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, Users, Wand2, X } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
@@ -14,6 +14,8 @@ import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
 import { hasErp } from '../lib/scope'
 
 const SHORTCUT = 'Ctrl K'
+
+const NUDGE_KEY = 'bonyan.twoFactorNudge'
 
 export default function Shell() {
   const { ws, user, schema, act } = useApp()
@@ -47,6 +49,23 @@ export default function Shell() {
   const readNotes = useStore((s) => s.prefs.readNotes)
   const companies = useStore((s) => s.companies)
   const twoFactor = useStore((s) => s.twoFactor)
+  // The two-factor reminder shows on the dashboard only, and "Not now" hides it for a week.
+  const home = useLocation().pathname === '/app'
+  const [nudgeHidden, setNudgeHidden] = useState(() => {
+    try {
+      return Date.now() - Number(localStorage.getItem(NUDGE_KEY) ?? 0) < 7 * 86_400_000
+    } catch {
+      return false
+    }
+  })
+  const hideNudge = () => {
+    try {
+      localStorage.setItem(NUDGE_KEY, String(Date.now()))
+    } catch {
+      /* private window: hidden until reload */
+    }
+    setNudgeHidden(true)
+  }
   const liveAt = useStore((s) => s.liveAt)
   useEffect(() => {
     if (liveAt) showToast({ kind: 'ok', text: tr('Updated with your colleagues’ latest changes') })
@@ -124,17 +143,18 @@ export default function Shell() {
           <button className="ghost small" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} title={lang === 'ar' ? 'English' : 'العربية'}>{lang === 'ar' ? 'EN' : 'ع'}</button>
           <button className="ghost" onClick={() => { void signOut().then(() => nav('/')) }} aria-label={tr('Sign out')}><LogOut size={18} /></button>
         </header>
+        {/* Notices sit in slim strips under the top bar, one line each, so they never push the page down far. */}
         {self && self.id !== user.id && (
-          <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
-            <Eye size={16} />
-            <span className="grow small"><b>{tr('Viewing as {name}', { name: user.name })}</b> ({role?.name}). {tr('This is read-only: you see what they see, but nothing is changed in their name.')}</span>
+          <div className="strip warn no-print">
+            <Eye size={15} aria-hidden />
+            <span className="grow"><b>{tr('Viewing as {name}', { name: user.name })}</b> ({role?.name}). {tr('This is read-only: you see what they see, but nothing is changed in their name.')}</span>
             <button className="secondary small" onClick={() => switchUser(self.id)}>{tr('Back to me')}</button>
           </div>
         )}
         {hasSampleData(ws) && (
-          <div className="note row" style={{ margin: '0 0 12px', alignItems: 'center' }}>
-            <FlaskConical size={16} />
-            <span className="grow small"><b>{tr('This workspace has sample data.')}</b> {tr('Sample documents use SAMPLE- numbers. Remove them before your first real invoice — real documents can’t be posted until you do.')}</span>
+          <div className="strip warn no-print">
+            <FlaskConical size={15} aria-hidden />
+            <span className="grow"><b>{tr('Sample data.')}</b> {tr('Documents numbered SAMPLE- are examples. Remove them before your first real invoice.')}</span>
             {self?.roleId === 'role_admin' && (
               <button className="secondary small" onClick={() => { if (confirm(tr('Remove all sample records, documents, payments and sample team members? Your own records stay.'))) act('sample.remove', {}, tr('Sample data removed. Your books start clean.'), 'Remove sample data') }}>
                 <Trash2 size={14} /> {tr('Remove sample data')}
@@ -142,10 +162,17 @@ export default function Shell() {
             )}
           </div>
         )}
-        <div className="no-print" style={{ padding: "0 24px" }}>
+        {(role?.admin || role?.finance) && !twoFactor && home && !nudgeHidden && (
+          <div className="strip info no-print">
+            <ShieldCheck size={15} aria-hidden />
+            <span className="grow">{tr('You can see the company’s books: protect your login with two-factor (a code from your phone).')}</span>
+            <Link className="btn small" to="/security">{tr('Set it up')}</Link>
+            <button className="ghost icon" onClick={hideNudge} aria-label={tr('Not now')} title={tr('Not now')}><X size={14} /></button>
+          </div>
+        )}
+        <div className="no-print" style={{ padding: '0 24px' }}>
           <BillingBanner admin={Boolean(role?.admin)} />
           <Invitations />
-          {(role?.admin || role?.finance) && !twoFactor && <div className="info row" style={{ gap: 8 }}><ShieldCheck size={15} /><span className="grow">{tr('You can see the company’s books: protect your login with two-factor (a code from your phone).')}</span><Link className="btn small" to="/security">{tr('Set it up')}</Link></div>}
         </div>
         <main id="main" tabIndex={-1} style={{ outline: 'none' }}>
           <Outlet />

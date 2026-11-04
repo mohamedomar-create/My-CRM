@@ -137,7 +137,7 @@ export default function Team() {
                 return (
                   <tr key={u.id} style={{ cursor: 'default' }}>
                     <td><b>{u.name}</b> {u.demo && <span className="pill gray tiny">{tr('sample')}</span>} {isOwner && <span className="pill amber tiny" title={tr('The owner can’t be removed and is always an admin')}><Crown size={12} /> {tr('Owner')}</span>}</td>
-                    <td>{u.email}</td>
+                    <td style={{ maxWidth: 220 }} title={u.email}>{u.email}</td>
                     <td>
                       <select value={u.roleId} disabled={isOwner || (roleIsAdmin(u.roleId) && admins === 1)} title={isOwner ? tr('The owner is always an admin') : undefined} onChange={(e) => void changeRole(u, e.target.value)}>
                         {schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -171,7 +171,7 @@ export default function Team() {
         )}
         <div className="card stack">
           <h2><ShieldCheck size={18} /> {tr('Security')}</h2>
-          <label className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+          <label className="row" style={{ gap: 8, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
             <input type="checkbox" style={{ width: 'auto', marginTop: 3 }} checked={Boolean(ws.security?.requireTwoFactor)} disabled={!myTwoFactor && !ws.security?.requireTwoFactor}
               onChange={(e) => act('security.setTwoFactor', { required: e.target.checked }, e.target.checked ? tr('Two-factor login is now required for admins and finance') : tr('Two-factor login is no longer required'), e.target.checked ? 'Required two-factor for admins and finance' : 'Stopped requiring two-factor')} />
             <span>{tr('Require two-factor login for admins and finance')}<br /><span className="tiny muted">{tr('They’ll be asked to set up an authenticator app before they can open the company.')}</span></span>

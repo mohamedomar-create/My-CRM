@@ -4,7 +4,7 @@ import { Calculator, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { methodLabel, useApp } from './useApp'
 import { accountBalance, ageing, canPost, money, round2, todayISO, trialBalance } from '../lib/engine'
 import { account, accountName, debitNormal } from '../lib/accounts'
-import { msg, tr, useLang } from '../lib/i18n'
+import { msg, N_, tr, useLang } from '../lib/i18n'
 import Treasury from './Treasury'
 import Statements from './Statements'
 import GoLive from './GoLive'
@@ -14,9 +14,16 @@ import { incomeStatement } from '../lib/statements'
 import { ChartOfAccounts, CloseBooks, JournalVoucher, OpeningBalances, ReverseButton, TaxReturns } from './Ledger'
 import { typeLabel } from './labels'
 
+type Tab = 'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'
+const GROUPS: { name: string; tabs: { id: Tab; label: string }[] }[] = [
+  { name: N_('Reports'), tabs: [{ id: 'reports', label: N_('Financial statements') }, { id: 'tb', label: N_('Trial balance') }, { id: 'ageing', label: N_('Ageing') }, { id: 'journal', label: N_('Journal') }] },
+  { name: N_('Day to day'), tabs: [{ id: 'payments', label: N_('Payments') }, { id: 'bank', label: N_('Bank & cash') }, { id: 'voucher', label: N_('New journal voucher') }, { id: 'tax', label: N_('VAT & withholding') }] },
+  { name: N_('Month end & setup'), tabs: [{ id: 'close', label: N_('Close the books') }, { id: 'budget', label: N_('Budgets') }, { id: 'opening', label: N_('Opening balances') }, { id: 'chart', label: N_('Chart of accounts') }, { id: 'cc', label: N_('Cost centers') }] },
+]
+
 export default function Accounting() {
   const { ws, schema, user } = useApp()
-  const [tab, setTab] = useState<'tb' | 'ageing' | 'journal' | 'voucher' | 'chart' | 'cc' | 'budget' | 'opening' | 'payments' | 'close' | 'tax' | 'bank' | 'reports'>('reports')
+  const [tab, setTab] = useState<Tab>('reports')
   const { lang } = useLang()
   if (!canPost({ schema, user })) return <div className="page">{tr('Only Admin and finance roles can see accounting.')}</div>
   const cur = schema.company.currency
@@ -50,21 +57,21 @@ export default function Accounting() {
         {dr === cr ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
         {dr === cr ? tr('Books balance: total debits = total credits = {amount} across {n} journal entries.', { amount: money(dr, cur), n: ws.data.journal.length }) : tr('Books do not balance ({dr} vs {cr}). Contact support.', { dr, cr })}
       </div>
-      <div className="tabs-inline no-print">
-        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>{tr('Financial statements')}</button>
-        <button className={tab === 'tb' ? 'on' : ''} onClick={() => setTab('tb')}>{tr('Trial balance')}</button>
-        <button className={tab === 'ageing' ? 'on' : ''} onClick={() => setTab('ageing')}>{tr('Ageing')}</button>
-        <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')}>{tr('Journal')}</button>
-        <button className={tab === 'voucher' ? 'on' : ''} onClick={() => setTab('voucher')}>{tr('New journal voucher')}</button>
-        <button className={tab === 'chart' ? 'on' : ''} onClick={() => setTab('chart')}>{tr('Chart of accounts')}</button>
-        <button className={tab === 'cc' ? 'on' : ''} onClick={() => setTab('cc')}>{tr('Cost centers')}</button>
-        <button className={tab === 'budget' ? 'on' : ''} onClick={() => setTab('budget')}>{tr('Budgets')}</button>
-        <button className={tab === 'opening' ? 'on' : ''} onClick={() => setTab('opening')}>{tr('Opening balances')}</button>
-        <button className={tab === 'payments' ? 'on' : ''} onClick={() => setTab('payments')}>{tr('Payments')}</button>
-        <button className={tab === 'bank' ? 'on' : ''} onClick={() => setTab('bank')}>{tr('Bank & cash')}</button>
-        <button className={tab === 'tax' ? 'on' : ''} onClick={() => setTab('tax')}>{tr('VAT & withholding')}</button>
-        <button className={tab === 'close' ? 'on' : ''} onClick={() => setTab('close')}>{tr('Close the books')}</button>
-      </div>
+      {/* Thirteen screens in three groups, so it is clear where each one is: first the group, then the screen. */}
+      <nav className="tab-groups no-print" aria-label={tr('Accounting')}>
+        <div className="seg" role="tablist">
+          {GROUPS.map((g) => (
+            <button key={g.name} role="tab" aria-selected={g.tabs.some((t) => t.id === tab)} className={g.tabs.some((t) => t.id === tab) ? 'on' : ''} onClick={() => setTab(g.tabs[0].id)}>
+              {tr(g.name)}
+            </button>
+          ))}
+        </div>
+        <div className="tabs-inline">
+          {GROUPS.find((g) => g.tabs.some((t) => t.id === tab))!.tabs.map((t) => (
+            <button key={t.id} className={tab === t.id ? 'on' : ''} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>{tr(t.label)}</button>
+          ))}
+        </div>
+      </nav>
       {tab === 'tb' && (
         <div className="table-wrap">
           <table className="data">
