@@ -36,8 +36,8 @@ export default function RecordPage() {
   const { ws, schema, user } = useApp()
   const rec = id ? findRecord(ws, id) : undefined
   const mod = moduleById(schema, rec?.module ?? moduleId ?? '')
-  if (!mod || (id && !rec)) return <div className="page">{tr('This record no longer exists.')} <Link to="/app">{tr('Back to dashboard')}</Link></div>
-  if (!can({ schema, user }, mod.id, rec ? 'view' : 'create')) return <div className="page">{tr('Your role doesn’t have access to {what}.', { what: mod.name.toLowerCase() })} <Link to="/app">{tr('Back to dashboard')}</Link></div>
+  if (!mod || (id && !rec)) return <div className="page">{tr('This record no longer exists.')} <Link to="/app/dashboard">{tr('Back to dashboard')}</Link></div>
+  if (!can({ schema, user }, mod.id, rec ? 'view' : 'create')) return <div className="page">{tr('Your role doesn’t have access to {what}.', { what: mod.name.toLowerCase() })} <Link to="/app/dashboard">{tr('Back to dashboard')}</Link></div>
   return <Editor key={rec?.id ?? `new-${mod.id}`} mod={mod} rec={rec} ws={ws} schema={schema} />
 }
 
