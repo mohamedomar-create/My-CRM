@@ -169,7 +169,8 @@ export function billReceived(ctx: Ctx, id: string): Rec {
     }),
     ...services.map((l) => ({ ...l, id: uid('l') })),
   ]
-  const bill = createRecord({ ...ctx, sample: ctx.sample || o.sample }, o.module, { supplier: o.values.supplier, date: ctx.today ?? todayISO(), from_po: o.id }, { lines, ownCc: true })
+  const bill = createRecord({ ...ctx, sample: ctx.sample || o.sample }, o.module, { supplier: o.values.supplier, date: ctx.today ?? todayISO() }, { lines, ownCc: true })
+  bill.values.from_po = o.id
   if (o.values.currency) { bill.values.currency = o.values.currency; bill.values.rate = o.values.rate }
   for (const r of toBill) r.bill = bill.id
   if (services.length) o.values.services_billed = bill.id

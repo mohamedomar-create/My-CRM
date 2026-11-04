@@ -33,6 +33,7 @@ import { currentUser, currentWorkspace, dismissNotice, IDLE_MINUTES, init, signO
 import { Invitations } from './components/Invitations'
 import { CodeStep } from './components/CodeStep'
 import Security from './pages/Security'
+import QuoteOnline from './pages/QuoteOnline'
 import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
 import { loadScreen } from './lib/update'
@@ -165,6 +166,7 @@ export default function App() {
       <Route path="/register" element={<Auth mode="register" />} />
       <Route path="/signin" element={<Auth mode="signin" />} />
       <Route path="/join" element={<Auth mode="join" />} />
+      <Route path="/q/:token" element={<QuoteOnline />} />
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/security" element={<Security />} />

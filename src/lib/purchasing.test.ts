@@ -51,6 +51,7 @@ describe('purchase orders, goods received, bills matched to them', () => {
     // the supplier bills the 60 and the delivery service; the price is 42, not 40: 2 × 60 = 120 more for the goods
     const bill = billReceived(ctx, o.id)
     expect(bill.lines!.map((l) => [l.description, l.qty, l.price])).toEqual([['Rice', 60, 40], ['Delivery to our store', 1, 100]])
+    expect(bill.values.from_po).toBe(o.id)
     bill.lines![0].price = 42
     // a buyer (not an admin) can't post a bill priced above its order
     expect(() => postDocument({ ...ctx, user: buyer }, bill)).toThrow(/above the purchase order’s/)

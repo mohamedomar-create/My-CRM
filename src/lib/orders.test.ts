@@ -59,6 +59,7 @@ describe('sales orders, delivery notes, invoicing what was delivered', () => {
     // invoice what was delivered: 40 at the order's price; posting moves 1,600 from 1310 to 5000
     const inv = invoiceDelivered(ctx, q.id)
     expect(inv.lines!.map((l) => [l.qty, l.price])).toEqual([[40, 60]])
+    expect(inv.values.from_order).toBe(q.id)
     expect(() => invoiceDelivered(ctx, q.id)).toThrow(/Nothing delivered is waiting/)
     // the delivered quantity can't be changed on the invoice
     inv.lines![0].qty = 41

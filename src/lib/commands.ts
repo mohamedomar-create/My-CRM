@@ -8,6 +8,7 @@ import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
 import { closeOrder, confirmOrder, deliver, invoiceDelivered, undoDelivery } from './orders'
 import { billReceived, closePurchaseOrder, orderPurchase, receiveGoods, undoReceipt } from './purchasing'
 import { revalue, setDocCurrency } from './fx'
+import { reviseQuote, shareQuote } from './quoteOnline'
 import { reinstate, setAllowance, writeOff } from './badDebts'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
@@ -103,6 +104,8 @@ export interface CommandArgs {
   'order.invoice': { id: string }
   'order.close': { id: string; reason: string }
   'po.send': { id: string }
+  'quote.share': { id: string; secret?: string }
+  'quote.revise': { id: string }
   'journal.setApproval': { over: number | null }
   'journal.approve': { id: string }
   'journal.reject': { id: string; reason: string }
@@ -385,6 +388,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'journal.setApproval': { admin: true, run: (ws, u, a) => setJvApproval(ctx(ws, u), a.over === null || a.over === undefined ? null : Number(a.over)) },
   'journal.approve': { run: (ws, u, a) => approveJournal(ctx(ws, u), String(a.id ?? '')) },
   'journal.reject': { run: (ws, u, a) => void rejectJournal(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'quote.share': { run: (ws, u, a) => shareQuote(ctx(ws, u), String(a.id ?? ''), a.secret === undefined ? undefined : String(a.secret)) },
+  'quote.revise': { run: (ws, u, a) => reviseQuote(ctx(ws, u), String(a.id ?? '')) },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },
