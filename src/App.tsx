@@ -11,6 +11,9 @@ import Suggest from './pages/Suggest'
 const Builder = lazy(loadScreen(() => import('./builder/Builder')))
 const Shell = lazy(loadScreen(() => import('./workspace/Shell')))
 const Dashboard = lazy(loadScreen(() => import('./workspace/Dashboard')))
+const Hub = lazy(loadScreen(() => import('./workspace/Hub').then((m) => ({ default: m.Hub }))))
+const AreaHome = lazy(loadScreen(() => import('./workspace/Hub').then((m) => ({ default: m.AreaHome }))))
+const BudgetsPage = lazy(loadScreen(() => import('./workspace/BudgetsPage')))
 const ModuleView = lazy(loadScreen(() => import('./workspace/ModuleView')))
 const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
@@ -170,7 +173,10 @@ export default function App() {
       <Route path="/suggest" element={<Guard need="admin"><Suggest /></Guard>} />
       <Route path="/builder" element={<Guard need="draft"><Builder /></Guard>} />
       <Route path="/app" element={<Guard need="published"><Shell /></Guard>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Hub />} />
+        <Route path="a/:area" element={<AreaHome />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="budgets" element={<NeedsErp><BudgetsPage /></NeedsErp>} />
         <Route path="m/:moduleId" element={<ModuleView />} />
         <Route path="r/:id" element={<RecordPage />} />
         <Route path="new/:moduleId" element={<RecordPage />} />

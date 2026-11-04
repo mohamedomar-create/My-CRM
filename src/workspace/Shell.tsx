@@ -1,21 +1,42 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { AlertTriangle, BarChart3, Bell, LineChart, Boxes, Calculator, CheckCircle2, ClipboardCheck, CreditCard, Eye, FileSpreadsheet, FlaskConical, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, Users, Wand2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bell, CheckCircle2, Eye, FlaskConical, Home, LayoutDashboard, Monitor, Moon, ShieldCheck, LogOut, Search, Sun, Trash2, X } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { Icon } from '../components/Icon'
 import { showToast, useApp, useToast } from './useApp'
-import { can, canApprove, canPost, hasSampleData, list } from '../lib/engine'
+import { canApprove, hasSampleData, list } from '../lib/engine'
 import { markNotesRead, selfUser, signOut, switchUser, switchWorkspace, useStore } from '../lib/store'
 import { Invitations } from '../components/Invitations'
 import { CommandPalette } from './CommandPalette'
 import { BillingBanner } from './BillingBanner'
+import { AREA_INFO, AREAS, areaItems, areaOfPath, areasFor, type AreaId } from '../lib/areas'
+import { AreaBadge } from './Hub'
+import { PAGE_ICON } from './areaIcons'
 import { dateLocale, useLang } from '../lib/i18n'
 import { getTheme, nextTheme, setTheme, type Theme } from '../lib/theme'
-import { hasErp } from '../lib/scope'
 
 const SHORTCUT = 'Ctrl K'
 
 const NUDGE_KEY = 'bonyan.twoFactorNudge'
+const AREA_KEY = 'bonyan.area'
+let area0: AreaId | null = null
+function lastArea(): AreaId | null {
+  if (area0) return area0
+  try {
+    const v = sessionStorage.getItem(AREA_KEY)
+    return v && (AREAS as string[]).includes(v) ? (v as AreaId) : null
+  } catch {
+    return null
+  }
+}
+function rememberArea(a: AreaId) {
+  area0 = a
+  try {
+    sessionStorage.setItem(AREA_KEY, a)
+  } catch {
+    /* private window: kept for this visit */
+  }
+}
 
 export default function Shell() {
   const { ws, user, schema, act } = useApp()
@@ -29,8 +50,6 @@ export default function Shell() {
   const [palette, setPalette] = useState(false)
   const ran = useRef(false)
   const role = schema.roles.find((r) => r.id === user.roleId)
-  // The ERP pages only when the company uses the ERP part (CRM, ERP or both).
-  const erp = hasErp(schema)
 
   const billing = useStore((s) => s.billing)
   useEffect(() => {
@@ -42,15 +61,18 @@ export default function Shell() {
     if (n) showToast({ kind: 'ok', text: n > 1 ? tr('{n} date-based automations ran (overdue items, reminders)', { n }) : tr('1 date-based automation ran (overdue items, reminders)') })
   }, [act, tr, billing])
 
-  const visible = schema.modules.filter((m) => can({ schema, user }, m.id, 'view'))
   // Notes addressed to a person go only to them; notes for a role go to that role (and Admin); the rest go to everyone.
   const notes = ws.data.notes.filter((n) => (n.user ? n.user === user.id : !n.role || role?.admin || n.role === user.roleId || (n.role === 'finance' && role?.finance)))
   const toApprove = (ws.data.approvals ?? []).filter((a) => a.status === 'pending' && (() => { const r = (schema.approvals ?? []).find((x) => x.id === a.rule); return r ? canApprove({ schema, user }, r) : false })()).length
   const readNotes = useStore((s) => s.prefs.readNotes)
   const companies = useStore((s) => s.companies)
   const twoFactor = useStore((s) => s.twoFactor)
+  // The area being worked in, from the address; shared pages (customers, approvals, the dashboard) keep the last one.
+  const path = useLocation().pathname
+  const area = areaOfPath(path, schema, ws, lastArea())
+  useEffect(() => { if (area) rememberArea(area) }, [area])
   // The two-factor reminder shows on the dashboard only, and "Not now" hides it for a week.
-  const home = useLocation().pathname === '/app'
+  const home = path === '/app'
   const [nudgeHidden, setNudgeHidden] = useState(() => {
     try {
       return Date.now() - Number(localStorage.getItem(NUDGE_KEY) ?? 0) < 7 * 86_400_000
@@ -90,26 +112,35 @@ export default function Shell() {
           </select>
         )}
         <Link to="/security#companies" className="sidebar-small">{tr('Your companies')}</Link>
-        <NavLink to="/app" end><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
-        <div className="sect">{schema.company.name}</div>
-        {visible.map((m) => (
-          <NavLink key={m.id} to={`/app/m/${m.id}`}>
-            <span className="badge" style={{ background: m.color }}><Icon name={m.icon} size={14} /></span>
-            {m.name}
-            <span className="cnt">{list(ws, m.id).length || ''}</span>
-          </NavLink>
-        ))}
-        <div className="sect">{tr('Operations')}</div>
-        {erp && schema.modules.some((m) => m.role === 'products') && <NavLink to="/app/inventory"><Boxes size={18} /> {tr('Stock')}</NavLink>}
-        {schema.modules.some((m) => (m.role === 'invoices' || m.role === 'purchases') && (canPost({ schema, user }) || can({ schema, user }, m.id, 'view'))) && <NavLink to="/app/sales"><BarChart3 size={18} /> {tr('Sales analysis')}</NavLink>}
-        {erp && canPost({ schema, user }) && <NavLink to="/app/plan"><LineChart size={18} /> {tr('Business plan')}</NavLink>}
-        {erp && canPost({ schema, user }) && <NavLink to="/app/accounting"><Calculator size={18} /> {tr('Accounting')}</NavLink>}
-        {(schema.approvals?.length ?? 0) > 0 && <NavLink to="/app/approvals"><ClipboardCheck size={18} /> {tr('Approvals')} {toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</NavLink>}
-        {role?.admin && <NavLink to="/app/team"><Users size={18} /> {tr('Team')}</NavLink>}
-        {role?.admin && <NavLink to="/app/billing"><CreditCard size={18} /> {tr('Billing')}</NavLink>}
-        {role?.admin && <NavLink to="/app/audit"><ShieldCheck size={18} /> {tr('Audit trail')}</NavLink>}
-        {(role?.admin || canPost({ schema, user })) && <NavLink to="/app/migrate"><FileSpreadsheet size={18} /> {tr('Bring your data in')}</NavLink>}
-        {role?.admin && <NavLink to="/builder"><Wand2 size={18} /> {tr('Customise system')}</NavLink>}
+        {/* One area at a time: its own lists and pages only; the home shows the areas themselves. */}
+        {area ? (
+          <>
+            <Link to="/app" className="side-back"><ArrowLeft size={15} className="flip" /> {tr('All areas')}</Link>
+            <Link to={`/app/a/${area}`} className="side-area" style={{ ['--a' as string]: AREA_INFO[area].color }}>
+              <AreaBadge area={area} size={30} /> <span>{tr(AREA_INFO[area].name)}</span>
+            </Link>
+            {areaItems(schema, user, area).map((it) => (
+              <NavLink key={it.key} to={it.to}>
+                {it.kind === 'module'
+                  ? <><span className="badge" style={{ background: it.module.color }}><Icon name={it.module.icon} size={14} /></span>{it.module.name}<span className="cnt">{list(ws, it.module.id).length || ''}</span></>
+                  : <>{(() => { const I = PAGE_ICON[it.icon] ?? LayoutDashboard; return <I size={18} /> })()} {tr(it.label)}{it.key === 'approvals' && toApprove > 0 && <span className="pill red tiny" style={{ marginInlineStart: 'auto' }}>{toApprove}</span>}</>}
+              </NavLink>
+            ))}
+            <div className="sect">{schema.company.name}</div>
+            <NavLink to="/app/dashboard"><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
+          </>
+        ) : (
+          <>
+            <NavLink to="/app" end><Home size={18} /> {tr('Home')}</NavLink>
+            <NavLink to="/app/dashboard"><LayoutDashboard size={18} /> {tr('Dashboard')}</NavLink>
+            <div className="sect">{schema.company.name}</div>
+            {areasFor(schema, user).map((a) => (
+              <Link key={a} to={`/app/a/${a}`} className="side-area-link" style={{ ['--a' as string]: AREA_INFO[a].color }}>
+                <AreaBadge area={a} size={26} /> {tr(AREA_INFO[a].name)}
+              </Link>
+            ))}
+          </>
+        )}
         <NavLink to="/security"><ShieldCheck size={18} /> {tr('Security')}</NavLink>
       </aside>
       <div className="main">
