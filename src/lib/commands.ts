@@ -2,6 +2,7 @@
 // responds instantly, and sends it to the server, which runs the same code on the latest saved data and is the only
 // one allowed to save. So business rules (who may post, what is locked, how stock and the books move) are enforced
 // by the server, not by whichever browser happens to send the data.
+import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
@@ -267,6 +268,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       // The server runs the health check itself, so a setup with errors can never go live.
       const errors = validate(ws.draft).filter((i) => i.level === 'error')
       if (errors.length) throw new EngineError(`Fix ${errors.length} problem${errors.length > 1 ? 's' : ''} before publishing: ${errors[0].message}`)
+      // …and against the records already there: nothing the data still uses can disappear
+      const orphans = publishBlockers(ws, ws.draft)
+      if (orphans.length) throw new EngineError(`This would leave records behind (${orphans.length}): ${orphans[0].message}`)
       const first = !ws.published
       const version = (ws.published?.version ?? 0) + 1
       const snapshot = structuredClone({ ...ws.draft, version })

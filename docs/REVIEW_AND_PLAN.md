@@ -531,7 +531,7 @@ A smaller team stretches the timeline roughly in proportion.
 - [x] 10 simulated users editing for 30 minutes lose zero changes. *(3 Nov 2026: multiuser.test.ts: ten people, 15 rounds, 150 new customers and their renames at the same moments, nothing lost and every browser ends with the server's data (saves told "busy" are sent again).)*
 - [x] A list of 20,000 records opens in under 1 second, and typing in search responds in under 100 ms. *(3 Nov 2026: measured in the production build with 20,000 customers and 20,000 invoices: lists open in 0.14–0.32 s and a keystroke in search takes 40–70 ms. On the way, a server check that turned the whole workspace into text once per new id was fixed (a first save that made 20,000 follow-ups took minutes); commands.test.ts guards it.)*
 - [ ] Any change can be traced to a real logged-in user with server time.
-- [ ] Restoring yesterday's state works on a test copy.
+- [x] Restoring yesterday's state works on a test copy. *(scripts/test-restore.sh: the nightly backup, encrypted and restored into an empty database; every table and row, and the company as loaded, identical.)*
 
 **Rough effort:** 3–4 months (XL).
 
@@ -604,7 +604,7 @@ A smaller team stretches the timeline roughly in proportion.
 
 **Acceptance checks**
 - [ ] An accountant migrates a test company and the ageing, cheques, stock and opening balance sheet match the old system, with 3900 at zero.
-- [ ] Three years of history import without slowing the app or changing any figure in the books.
+- [x] Three years of history import without slowing the app or changing any figure in the books. *(src/lib/historyScale.test.ts on a real database: 14,400 documents in under a second; the company opens as fast and loads byte-for-byte the same.)*
 
 ---
 
@@ -705,9 +705,9 @@ A smaller team stretches the timeline roughly in proportion.
 - Suggested purchase orders.
 
 **Acceptance checks**
-- [ ] A pharma distributor scenario (receive lots, sell first-expiry, recall a lot, expiry write-down) runs end to end.
-- [ ] An importer's landed costs reach unit cost.
-- [ ] Inventory account equals stock value throughout.
+- [x] A pharma distributor scenario (receive lots, sell first-expiry, recall a lot, expiry write-down) runs end to end. *(src/lib/batches.test.ts)*
+- [x] An importer's landed costs reach unit cost. *(src/lib/landed.test.ts)*
+- [x] Inventory account equals stock value throughout. *(checked after every step in landed.test.ts and batches.test.ts)*
 
 **Rough effort:** 4–5 months.
 
@@ -743,8 +743,8 @@ A smaller team stretches the timeline roughly in proportion.
 **Acceptance checks**
 - [x] The lead → deal → quote → invoice → payment chain is traceable both ways. *(3 Nov 2026: trail.test.ts; the Trail card on each record.)*
 - [x] No duplicate customer is created when converting a known phone number. *(3 Nov 2026: trail.test.ts.)*
-- [ ] Publishing a setup that would orphan records is blocked until migrated.
-- [ ] A sandbox test of an automation leaves live data untouched.
+- [x] Publishing a setup that would orphan records is blocked until migrated. *(src/lib/publishCheck.ts, run by the server on every publish; publishCheck.test.ts)*
+- [x] A sandbox test of an automation leaves live data untouched. *(src/lib/sandbox.test.ts)*
 
 **Rough effort:** about 3 months.
 
@@ -782,7 +782,7 @@ A smaller team stretches the timeline roughly in proportion.
 
 **Acceptance checks**
 - [x] 100% of the user interface is translated (automatic check). *(3 Nov 2026: ar.test.ts: every wrapped text has Arabic, and no screen has English left unwrapped (all screens listed).)*
-- [ ] The accessibility scanner (axe) reports 0 serious issues; full keyboard journeys work.
+- [x] The accessibility scanner (axe) reports 0 serious issues; full keyboard journeys work. *(axe: 0 WCAG 2.1 AA violations on every screen, EN/AR, light/dark; the browser test keeps checking the public pages.)*
 - [x] No horizontal scrolling at 390px width on any route. (3 Nov 2026: checked on all 22 signed-in routes and the public pages, in English and Arabic; the public pages are checked on every change by the browser test.)
 - [x] Dashboard net sales equal the revenue account for the same period. *(3 Nov 2026: cockpit.test.ts.)*
 - [ ] 5 Egyptian SME owners complete "how did we do this month vs last?" in under 30 seconds in usability tests.
@@ -814,9 +814,9 @@ A smaller team stretches the timeline roughly in proportion.
 - A 13-week cash forecast with warnings.
 
 **Acceptance checks**
-- [ ] Overdue-invoice reminders fire over a weekend when nobody logs in.
+- [x] Overdue-invoice reminders fire over a weekend when nobody logs in. *(schedulerServer.test.ts: Friday, Saturday and Sunday nights; the live job runs nightly at 03:17 Cairo.)*
 - [ ] Every AI-proposed change passes the health check before it can be applied, and is logged.
-- [ ] The doctor finds each problem planted in a test company (failing automation, orphan tasks, books mismatch, duplicate customers).
+- [x] The doctor finds each problem planted in a test company (failing automation, orphan tasks, books mismatch, duplicate customers). *(src/lib/doctor.test.ts)*
 
 **Rough effort:** 3–4 months.
 

@@ -4156,4 +4156,12 @@ export const AR: Record<string, string> = {
   '{a} batches expire within 60 days': '{a} تشغيلات تنتهي خلال 60 يومًا',
   '{a} days left': 'متبقٍ {a} يومًا',
   '{a} expired batches still in stock': '{a} تشغيلات منتهية ما زالت في المخزون',
+  'The field “{a}” of “{b}” holds values in {c} records, so its key can’t change': 'الحقل «{a}» في «{b}» به قيم في {c} سجلًا، لذلك لا يمكن تغيير مفتاحه',
+  'The field “{a}” of “{b}” holds values in {c} records: clear them (or keep the field hidden) before removing it': 'الحقل «{a}» في «{b}» به قيم في {c} سجلًا: امسحها (أو أبقِ الحقل مخفيًا) قبل حذفه',
+  'The list “{a}” still has {b} records: delete or import them elsewhere before removing the list': 'القائمة «{a}» ما زال بها {b} سجلًا: احذفها أو انقلها قبل حذف القائمة',
+  'This would leave records behind ({a}): {b}': 'هذا سيترك سجلات بلا مكان ({a}): {b}',
+  '{a} records of “{b}” are in the stage “{c}”: move them to another stage before removing it': '{a} سجلات في «{b}» موجودة في المرحلة «{c}»: انقلها إلى مرحلة أخرى قبل حذفها',
+  '“{a}” of “{b}” links {c} records to another list, so it can’t point to a different list': '«{a}» في «{b}» يربط {c} سجلًا بقائمة أخرى، لذلك لا يمكن ربطه بقائمة مختلفة',
+  '{a} records of “{b}” use a choice of “{c}” that the new setup removes: change them first': '{a} سجلات في «{b}» تستخدم اختيارًا من «{c}» يحذفه الإعداد الجديد: غيّرها أولًا',
+  '{a} records of “{b}” have values in “{c}” that don’t fit a {d} field: change them first, or keep the field as it was': '{a} سجلات في «{b}» بها قيم في «{c}» لا تناسب حقلًا من نوع {d}: غيّرها أولًا، أو أبقِ الحقل كما كان',
 }
