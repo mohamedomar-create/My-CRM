@@ -207,6 +207,8 @@ export interface AppSchema {
   company: CompanyProfile
   modules: ModuleDef[]
   reports: ReportDef[]
+  /** Excel sheet reports: columns from several lists (see sheets.ts) */
+  sheets?: import('./sheets').SheetReportDef[]
   workflows: WorkflowDef[]
   roles: RoleDef[]
   approvals?: ApprovalRule[]

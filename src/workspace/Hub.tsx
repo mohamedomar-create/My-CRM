@@ -20,6 +20,7 @@ const PAGE_TEXT: Record<string, string> = {
   plan: N_('A 3–5 year plan with statements, scenarios and a report for the bank'),
   budgets: N_('The year’s budget against the actual figures'),
   sales: N_('Sales by month, customer and product, and the targets'),
+  reports: N_('Tables from several lists, downloaded as Excel'),
   migrate: N_('Customers, products, deals and opening balances from Excel'),
   team: N_('People, roles and invitations'),
   access: N_('What each role can see and do'),
@@ -209,7 +210,7 @@ export function AreaHome() {
     ]
   }
   if (a === 'plan') {
-    flows = [{ title: tr('From the long view to this month'), steps: pick('plan', 'budgets', 'sales'), note: tr('The business plan sets the direction for 3–5 years, the budget turns it into this year’s figures, and the sales analysis tracks the year against its targets.') }]
+    flows = [{ title: tr('From the long view to this month'), steps: pick('plan', 'budgets', 'sales', 'reports'), note: tr('The business plan sets the direction for 3–5 years, the budget turns it into this year’s figures, and the sales analysis tracks the year against its targets.') }]
   }
   if (a === 'setup') {
     flows = [

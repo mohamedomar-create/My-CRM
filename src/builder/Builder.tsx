@@ -34,7 +34,7 @@ export default function Builder() {
   const nav = useNavigate()
   const { ws, schema, issues } = useDraft()
   const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>(params.get('tab') === 'company' ? 'settings' : 'modules')
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'company' ? 'settings' : params.get('tab') === 'sheets' ? 'reports' : 'modules')
   const [focus, setFocus] = useState<Focus>({ moduleId: schema.modules[0]?.id })
   const [health, setHealth] = useState(false)
   const [published, setPublished] = useState('')

@@ -69,7 +69,11 @@ export default function Shell() {
   const twoFactor = useStore((s) => s.twoFactor)
   // The area being worked in, from the address; shared pages (customers, approvals, the dashboard) keep the last one.
   const path = useLocation().pathname
-  const area = areaOfPath(path, schema, ws, lastArea())
+  // A page found in some of the person's areas (Excel reports, approvals) opens in one that lists it.
+  const fromPath = areaOfPath(path, schema, ws, lastArea())
+  const holds = (a: AreaId) => areaItems(schema, user, a).some((i) => i.to === path)
+  const mine = areasFor(schema, user)
+  const area = fromPath && (holds(fromPath) || !mine.some(holds)) ? fromPath : mine.find(holds) ?? fromPath
   useEffect(() => { if (area) rememberArea(area) }, [area])
   // The two-factor reminder shows on the dashboard only, and "Not now" hides it for a week.
   const home = path === '/app'

@@ -4,7 +4,8 @@
 
 export interface SheetSpec {
   name: string
-  rows: string[][]
+  /** text, or numbers (stored as numbers, so Excel can add them up) */
+  rows: (string | number)[][]
   /** column widths in characters */
   widths?: number[]
   /** the first row is a header: bold and frozen */
@@ -110,7 +111,7 @@ export function sheetName(name: string, taken: Set<string>) {
 function sheetXml(s: SheetSpec) {
   const width = Math.max(1, ...s.rows.map((r) => r.length))
   const cols = Array.from({ length: width }, (_, i) => `<col min="${i + 1}" max="${i + 1}" width="${s.widths?.[i] ?? 18}" customWidth="1"/>`).join('')
-  const rows = s.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => (v === '' ? '' : `<c r="${colName(ci)}${ri + 1}" t="inlineStr"${s.header && ri === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(v)}</t></is></c>`)).join('')}</row>`).join('')
+  const rows = s.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => (v === '' ? '' : typeof v === 'number' ? (Number.isFinite(v) ? `<c r="${colName(ci)}${ri + 1}"><v>${v}</v></c>` : '') : `<c r="${colName(ci)}${ri + 1}" t="inlineStr"${s.header && ri === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${esc(v)}</t></is></c>`)).join('')}</row>`).join('')
   const pane = s.header ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' : ''
   const lists = s.lists?.length
     ? `<dataValidations count="${s.lists.length}">${s.lists.map((l) => `<dataValidation type="list" allowBlank="1" showErrorMessage="0" sqref="${colName(l.col)}2:${colName(l.col)}5000"><formula1>${esc(l.source)}</formula1></dataValidation>`).join('')}</dataValidations>`

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { BarChart3, ChevronDown, ChevronUp, Gauge, LineChart, ListFilter, PieChart, Plus, Table2, Trash2, X } from 'lucide-react'
+import { BarChart3, ChevronDown, ChevronUp, FileSpreadsheet, Gauge, LineChart, ListFilter, PieChart, Plus, Table2, Trash2, X } from 'lucide-react'
 import type { Focus } from './Builder'
 import { useDraft } from './useDraft'
+import SheetsTab from './SheetsTab'
 import { Chart } from '../components/Chart'
 import { Icon } from '../components/Icon'
 import type { Aggregate, AppSchema, ChartType, FilterOp, ModuleDef, ReportDef } from '../lib/schema'
@@ -51,7 +53,34 @@ export function fieldOptions(mod: ModuleDef) {
   return [...pseudo, ...mod.fields.map((f) => ({ key: f.key, label: f.label, icon: typeInfo(f.type).icon, numeric: isNumeric(f) }))]
 }
 
+/** The Reports tab: the dashboard's charts and numbers, or the Excel sheets built from several lists. */
 export default function ReportsTab({ focus, setFocus }: { focus: Focus; setFocus: (f: Focus) => void }) {
+  const [params] = useSearchParams()
+  const { schema } = useDraft()
+  const [kind, setKind] = useState<'charts' | 'sheets'>(params.get('tab') === 'sheets' ? 'sheets' : 'charts')
+  const [sheetId, setSheetId] = useState<string | undefined>(params.get('sheet') ?? undefined)
+  // A health-check issue on a sheet opens that sheet.
+  const [seen, setSeen] = useState(focus.itemId)
+  if (focus.itemId !== seen) {
+    setSeen(focus.itemId)
+    if (schema.sheets?.some((s) => s.id === focus.itemId)) { setKind('sheets'); setSheetId(focus.itemId) }
+    else if (schema.reports.some((r) => r.id === focus.itemId)) setKind('charts')
+  }
+  return (
+    <div className="reports-tab">
+      <div className="reports-kind">
+        <div className="seg" role="tablist">
+          <button role="tab" aria-selected={kind === 'charts'} className={kind === 'charts' ? 'on' : ''} onClick={() => setKind('charts')}><BarChart3 size={15} /> {tr('Charts & numbers')} <span className="count-soft">{schema.reports.length}</span></button>
+          <button role="tab" aria-selected={kind === 'sheets'} className={kind === 'sheets' ? 'on' : ''} onClick={() => setKind('sheets')}><FileSpreadsheet size={15} /> {tr('Excel sheets')} <span className="count-soft">{schema.sheets?.length ?? 0}</span></button>
+        </div>
+        <span className="tiny muted">{kind === 'charts' ? tr('Charts and numbers for the dashboard, each from one list.') : tr('Tables with columns from several lists (customer, product, date, invoice number…), downloaded as Excel.')}</span>
+      </div>
+      <div className="reports-body">{kind === 'charts' ? <ChartsTab focus={focus} setFocus={setFocus} /> : <SheetsTab sheetId={sheetId} setSheetId={setSheetId} />}</div>
+    </div>
+  )
+}
+
+function ChartsTab({ focus, setFocus }: { focus: Focus; setFocus: (f: Focus) => void }) {
   const { ws, schema, edit, issues } = useDraft()
   const report = schema.reports.find((r) => r.id === focus.itemId) ?? schema.reports[0]
   const { preview, sample } = usePreviewWorkspace(ws, schema)
