@@ -1181,3 +1181,12 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 .landed h2 { display: flex; align-items: center; gap: 6px; }
 .landed-bills { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 12px; max-height: 220px; overflow-y: auto; margin-top: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; }
 .landed-bill { gap: 8px; }
+.auto-test h3 { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; color: var(--text); font-size: 0.95rem; }
+.auto-test-row { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.auto-effect { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; }
+.auto-effect.task svg { color: var(--success); }
+.auto-effect.field svg { color: var(--warning); }
+.auto-effect.note svg { color: var(--primary-600); }
+.auto-effect.skipped { color: var(--muted); }
+.auto-effect.error { color: var(--danger); }
+.auto-skips { margin: 6px 0 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; }

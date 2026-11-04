@@ -2461,7 +2461,8 @@ function runWorkflows(ctx: Ctx, rec: Rec, event: 'created' | 'updated' | 'stage_
   }
 }
 
-function execute(ctx: Ctx, w: WorkflowDef, rec: Rec) {
+/** Runs one automation's actions on one record (also used by the sandbox, on a copy of the data). */
+export function execute(ctx: Ctx, w: WorkflowDef, rec: Rec) {
   const mod = moduleById(ctx.schema, rec.module)!
   const tasks = moduleByRole(ctx.schema, 'tasks')
   for (const a of w.actions) {
