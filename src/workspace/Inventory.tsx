@@ -3,6 +3,7 @@ import { AlertTriangle, Boxes } from 'lucide-react'
 import { useApp } from './useApp'
 import { can, canPost, canSeeCosts, list, money, onHand, round2, stockValue } from '../lib/engine'
 import { StockTools } from './Ledger'
+import { BuyNext } from './BuyNext'
 import { BatchesPanel } from './Batches'
 import { WarehousesPanel } from './Warehouses'
 import { moduleByRole } from '../lib/schema'
@@ -32,6 +33,7 @@ export default function Inventory() {
       <WarehousesPanel />
       <BatchesPanel />
       {canPost({ schema, user }) && <StockTools />}
+      <BuyNext />
       <div className="table-wrap" style={{ marginBottom: 18 }}>
         <table className="data">
           <thead><tr><th>{tr('Item')}</th><th>{tr('SKU')}</th><th className="num">{tr('On hand')}</th><th className="num">{tr('Reorder at')}</th>{costs && <th className="num">{tr('Avg cost')}</th>}<th className="num">{tr('Price')}</th>{costs && <th className="num">{tr('Margin')}</th>}{costs && <th className="num">{tr('Value')}</th>}</tr></thead>

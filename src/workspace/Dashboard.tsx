@@ -9,6 +9,7 @@ import { can, canPost, canSeeCosts, costKeys, list, matches, money, salesHistory
 import { activeBudget, budgetVsActual, offBudget } from '../lib/budget'
 import { TargetsCard } from './Targets'
 import { OwnerCockpit, PeriodBar } from './Cockpit'
+import { AskBox } from './Ask'
 import { MyPipeline, ReorderList, SetupChecklist, TodayStrip } from './Home'
 import { homeKind, mineFilter } from '../lib/today'
 import { useOpenList, usePeriod } from './usePeriod'
@@ -55,6 +56,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {finance && erp && <AskBox />}
       <TodayStrip />
       {kind === 'owner' && <SetupChecklist />}
       <div className="row between" style={{ alignItems: 'flex-start' }}>

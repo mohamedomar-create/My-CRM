@@ -37,7 +37,7 @@ jobs:
             # "join" (people not signed in yet), "scheduler" (the nightly job) and "billing" (Paymob's notices) check their
             # callers themselves; the rest need a login.
             flags=""
-            if [ "$name" = join ] || [ "$name" = scheduler ] || [ "$name" = billing ] || [ "$name" = quote ]; then flags="--no-verify-jwt"; fi
+            if [ "$name" = join ] || [ "$name" = scheduler ] || [ "$name" = billing ] || [ "$name" = quote ] || [ "$name" = api ] || [ "$name" = whatsapp ]; then flags="--no-verify-jwt"; fi
             # --yes: newer versions of the tool ask for confirmation, which a run here can't give (it then deploys nothing).
             supabase functions deploy "$name" --project-ref "$PROJECT_REF" --use-api --yes $flags
           done

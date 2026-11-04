@@ -8,12 +8,16 @@ import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
 import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
+import { SpreadPanel } from './Recurring'
+import { ScanButton } from './Scanner'
+import { WhatsAppPanel } from './WhatsAppPanel'
+import { findByCode } from '../lib/scan'
 import { OrderPanel } from './OrderPanel'
 import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
 import { CurrencyBar } from './CurrencyBar'
-import { UnitsPanel } from './UnitsPanel'
+import { BarcodesPanel, UnitsPanel } from './UnitsPanel'
 import { RecipePanel } from './RecipePanel'
 import { QuoteSharePanel } from './QuoteSharePanel'
 import { docFlow } from './docFlow'
@@ -240,8 +244,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases') && !isCredit && <SpreadPanel rec={rec} />}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
       {rec && mod.role === 'products' && <UnitsPanel rec={rec} />}
+      {rec && mod.role === 'products' && <BarcodesPanel rec={rec} />}
+      {rec && ws.whatsapp && ['accounts', 'contacts', 'leads', 'quotes', 'invoices'].includes(String(mod.role)) && !isCredit && <WhatsAppPanel rec={rec} />}
       {rec && mod.role === 'products' && <RecipePanel rec={rec} />}
       {rec && mod.role === 'quotes' && <QuoteSharePanel rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
@@ -453,9 +460,21 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
     const vat = Number(p.values.vat_rate ?? schema.company.vatRate)
     upd(i, { product: p.id, description: String(p.values.name), price, vat, taxCode: codeForRate(vat) })
   }
+  // a scanned code adds its product (a carton's barcode adds a carton), or one more of it when it's already there
+  const scanned = (code: string) => {
+    const hit = findByCode(ws, schema, code)
+    if (!hit) return showToast({ kind: 'error', text: tr('No product has the code {c}', { c: code }) })
+    const p = hit.product
+    const u = hit.unit
+    const at = lines.findIndex((l) => l.product === p.id && (l.unit ?? '') === (u?.name ?? ''))
+    if (at >= 0) return upd(at, { qty: lines[at].qty + 1 })
+    const each = mod.role === 'purchases' ? Number(p.values.cost || p.values.price || 0) : Number(p.values.price ?? 0)
+    const vat = Number(p.values.vat_rate ?? schema.company.vatRate)
+    onChange([...lines, { id: uid('l'), product: p.id, description: String(p.values.name), qty: 1, price: round2(each * (u?.factor ?? 1)), discount: 0, vat, taxCode: codeForRate(vat), ...(u ? { unit: u.name, factor: u.factor } : {}), ...((lines.at(-1)?.cc ?? myCc) ? { cc: lines.at(-1)?.cc ?? myCc } : {}) }])
+  }
   return (
     <div className="card">
-      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate), ...((lines.at(-1)?.cc ?? myCc) ? { cc: lines.at(-1)?.cc ?? myCc } : {}) }])}><Plus size={15} /> {tr('Add line')}</button>}</div>
+      <div className="row between"><h2 style={{ margin: 0 }}>{tr('Lines')}</h2>{!disabled && <span className="row" style={{ gap: 6 }}>{products && <ScanButton continuous onCode={scanned} />}<button className="secondary" onClick={() => onChange([...lines, { id: uid('l'), description: '', qty: 1, price: 0, discount: 0, vat: schema.company.vatRate, taxCode: codeForRate(schema.company.vatRate), ...((lines.at(-1)?.cc ?? myCc) ? { cc: lines.at(-1)?.cc ?? myCc } : {}) }])}><Plus size={15} /> {tr('Add line')}</button></span>}</div>
       {mod.role === 'purchases' && !disabled && <BudgetWarnings lines={lines} date={date} />}
       {withCc && !disabled && lines.length > 0 && (
         <label className="row small" style={{ gap: 6, margin: '8px 0' }}>{tr('Cost center for every line')}

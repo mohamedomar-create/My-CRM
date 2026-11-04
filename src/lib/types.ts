@@ -325,6 +325,8 @@ export interface Workspace {
   history: { version: number; at: string; note: string; schema: AppSchema }[]
   seedOnPublish?: boolean
   /** closing the books: nothing can be posted on or before lockDate; the years closed to retained earnings */
+  /** the shop counters and their sessions (see pos.ts) */
+  pos?: { counters: import('./pos').Counter[]; sessions: import('./pos').PosSession[] }
   books?: {
     lockDate?: string
     closedYears?: { year: number; at: string; by: string; entry: string }[]
@@ -336,6 +338,10 @@ export interface Workspace {
     pendingJournals?: PendingJournal[]
     /** month-end restatements of what is owed in foreign currency (see fx.ts) */
     revaluations?: import('./fx').Revaluation[]
+    /** journal vouchers that repeat on their own (see recurring.ts) */
+    recurring?: import('./recurring').RecurringJournal[]
+    /** amounts spread over months: income received in advance, expenses paid in advance */
+    deferrals?: import('./recurring').Deferral[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
     /** the balances brought in from the company's old system (Phase H2) */
@@ -360,6 +366,10 @@ export interface Workspace {
   quoteRevisions?: import('./quoteOnline').QuoteRevision[]
   /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
   units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
+  /** WhatsApp is connected (its display number; the token stays on the server): the inbox shows in the menu */
+  whatsapp?: { phone: string }
+  /** barcodes → the product (and unit) they stand for (see scan.ts) */
+  barcodes?: Record<string, { product: string; unit?: string }>
   /** the last exchange rate used for each foreign currency (each document still states its own) */
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */

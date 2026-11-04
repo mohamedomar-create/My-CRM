@@ -1427,6 +1427,8 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   if (creditNotesOf(ctx.ws, rec).length) throw new EngineError('This document has credit notes. Void them first.')
   if (usesOf(rec).length) throw new EngineError('A credit was used on this document. Take it back first.')
   if (Number(rec.values.written_off ?? 0)) throw new EngineError('This invoice was written off as a bad debt. Reinstate it first.')
+  const spread = (ctx.ws.books?.deferrals ?? []).find((d) => d.doc === rec.id && d.status === 'active')
+  if (spread) throw new EngineError(`${rec.number} is being spread over months. Stop the spread first (Accounting → Spread over months).`)
   if (rec.status === 'ordered') throw new EngineError('This is a purchase order: close it instead')
   const lc = (ctx.ws.landed ?? []).find((l) => !l.undone && (l.from === rec.id || l.to.includes(rec.id)))
   if (lc) throw new EngineError(`This bill is part of landed cost ${lc.number}. Undo the landed cost first.`)
@@ -1714,6 +1716,8 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   if (orig.values.credit_for) throw new EngineError('A credit note can’t be credited again')
   if (orig.status === 'draft' || orig.status === 'void') throw new EngineError('Only a posted document can be credited')
   if (Number(orig.values.written_off ?? 0)) throw new EngineError('This invoice was written off as a bad debt. Reinstate it before crediting it.')
+  const spread = (ctx.ws.books?.deferrals ?? []).find((d) => d.doc === orig.id && d.status === 'active')
+  if (spread) throw new EngineError(`${orig.number} is being spread over months. Stop the spread first (Accounting → Spread over months).`)
   noRealPostingOverSamples(ctx)
   const sales = mod.role === 'invoices'
   const date = String(n.date ?? '')
@@ -1826,7 +1830,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
 }
 
 /** Pays back a credit: money to the customer for a credit note, or from the supplier for a debit note. */
-export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method']) {
+export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method'], account?: string) {
   needFinance(ctx, 'register refunds')
   const rec = findRecord(ctx.ws, id)
   const mod = rec ? moduleById(ctx.schema, rec.module) : undefined
@@ -1841,7 +1845,7 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   noFutureDate(ctx, date, 'refund')
   if (method === 'cheque') throw new EngineError('Refund by cash or bank transfer')
   const sales = mod.role === 'invoices'
-  const cash = moneyAccountFor(ctx, method, !sales)
+  const cash = moneyAccountFor(ctx, method, !sales, account)
   const ref = `REF-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
   ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref, account: cash }, rec))
   journal(ctx, {
@@ -2620,7 +2624,7 @@ export interface VoucherLine {
 
 /** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
 /** Everything a journal voucher must satisfy, checked when it is entered and again when it is approved. */
-function checkVoucher(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }) {
+export function checkVoucher(ctx: Ctx, v: { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }) {
   const date = String(v.date ?? '')
   const memo = String(v.memo ?? '').trim()
   if (!ISO_DATE.test(date)) throw new EngineError('Choose the date of the entry')
@@ -4630,6 +4634,9 @@ export function removeSampleData(ctx: Ctx) {
   if (ws.production) ws.production = ws.production.filter((m) => !m.sample)
   if (ws.assets) ws.assets = ws.assets.filter((a) => !a.sample)
   if (ws.depreciation) ws.depreciation = ws.depreciation.filter((r) => !r.sample)
+  if (ws.pos) ws.pos = { ...ws.pos, sessions: ws.pos.sessions.filter((x) => !x.sample) }
+  if (ws.books?.recurring) ws.books.recurring = ws.books.recurring.filter((r) => !r.sample)
+  if (ws.books?.deferrals) ws.books.deferrals = ws.books.deferrals.filter((d) => !d.sample)
   ws.data.notes = ws.data.notes.filter((n) => !n.sample && !gone.has(n.record ?? ''))
   ws.data.activity = ws.data.activity.filter((a) => !a.sample && !gone.has(a.record ?? ''))
   if (ws.data.approvals) ws.data.approvals = ws.data.approvals.filter((a) => !gone.has(a.record) && !demo.has(a.requestedBy))

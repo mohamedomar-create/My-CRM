@@ -4,6 +4,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { runAll } from '../../../src/lib/schedulerServer'
 import type { Workspace } from '../../../src/lib/types'
+import { queueEvents, retryDue, type Delivery } from '../../../src/lib/webhookServer'
+import { hookDeps } from '../command/hooks'
 
 declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Promise<Response>): void }
 
@@ -17,6 +19,12 @@ Deno.serve(async (req) => {
   const { data: ok } = await db.rpc('scheduler_key_ok', { p_key: req.headers.get('x-scheduler-key') ?? '' })
   if (ok !== true) return reply(401, { error: 'Not allowed' })
   try {
+    // Every few minutes (a second database job): only the webhook deliveries that failed and are due again.
+    const what = (await req.json().catch(() => ({}))) as { only?: string }
+    const hooks = hookDeps(db)
+    const { data: due } = await db.rpc('webhook_due', { p_limit: 200 })
+    const retried = await retryDue(hooks, (due ?? []) as Delivery[])
+    if (what.only === 'webhooks') return reply(200, { webhooks: retried })
     // Companies whose owner asked to delete them 30 days ago are erased first (their automations don't run).
     const { data: erased, error: purgeError } = await db.rpc('purge_deleted_companies')
     if (purgeError) console.error('erasing deleted companies failed', purgeError.message)
@@ -50,8 +58,9 @@ Deno.serve(async (req) => {
         const { error } = await db.from('automation_runs').insert(row)
         if (error) console.error('run log insert failed', error.message)
       },
+      afterSave: async (workspace, before, after) => { await queueEvents(hooks, workspace, before, after).catch(() => 0) },
     })
-    return reply(200, { erased: erased ?? 0, workspaces: results.length, ran: results.reduce((s, r) => s + r.ran, 0), failed: results.filter((r) => !r.ok).length })
+    return reply(200, { webhooks: retried, erased: erased ?? 0, workspaces: results.length, ran: results.reduce((s, r) => s + r.ran, 0), failed: results.filter((r) => !r.ok).length })
   } catch (e) {
     console.error(e)
     return reply(500, { error: 'The scheduled run failed' })

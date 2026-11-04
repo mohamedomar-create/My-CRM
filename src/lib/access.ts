@@ -37,7 +37,7 @@ function apply(ws: Workspace, id: string, fn: (r: RoleDef, s: AppSchema) => void
 }
 
 /** Saves a role's name, its rights in every list, and its finance and costs rights. The Admin role can't be limited. */
-export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?: unknown; finance?: unknown; costs?: unknown }) {
+export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?: unknown; finance?: unknown; costs?: unknown; pos?: unknown }) {
   const schema = live(ctx.ws)
   const role = schema.roles.find((r) => r.id === input.id)
   if (!role) throw new EngineError('That role no longer exists')
@@ -46,10 +46,12 @@ export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?:
   const given = (input.access ?? {}) as Record<string, unknown>
   const finance = input.finance === undefined ? Boolean(role.finance) : input.finance === true
   const costs = input.costs === undefined ? Boolean(role.costs) : input.costs === true
+  const pos = input.pos === undefined ? Boolean(role.pos) : input.pos === true
   apply(ctx.ws, role.id, (r, s) => {
     r.name = name
     r.finance = finance || undefined
     r.costs = costs || undefined
+    r.pos = pos || undefined
     // Only lists that exist in that setup; a list left out keeps what it had.
     for (const m of s.modules) if (m.id in given) r.access[m.id] = cleanPerms(given[m.id])
   })

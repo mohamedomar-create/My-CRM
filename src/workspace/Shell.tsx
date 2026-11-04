@@ -73,8 +73,8 @@ export default function Shell() {
   const path = useLocation().pathname
   // A page found in some of the person's areas (Excel reports, approvals) opens in one that lists it.
   const fromPath = areaOfPath(path, schema, ws, lastArea())
-  const holds = (a: AreaId) => areaItems(schema, user, a).some((i) => i.to === path)
-  const mine = areasFor(schema, user)
+  const holds = (a: AreaId) => areaItems(schema, user, a, ws).some((i) => i.to === path)
+  const mine = areasFor(schema, user, ws)
   const area = fromPath && (holds(fromPath) || !mine.some(holds)) ? fromPath : mine.find(holds) ?? fromPath
   useEffect(() => { if (area) rememberArea(area) }, [area])
   // The two-factor reminder shows on the dashboard only, and "Not now" hides it for a week.
@@ -127,7 +127,7 @@ export default function Shell() {
             <Link to={`/app/a/${area}`} className="side-area" style={{ ['--a' as string]: AREA_INFO[area].color }}>
               <AreaBadge area={area} size={30} /> <span>{tr(AREA_INFO[area].name)}</span>
             </Link>
-            {areaItems(schema, user, area).map((it) => (
+            {areaItems(schema, user, area, ws).map((it) => (
               <NavLink key={it.key} to={it.to} className="side-item">
                 {/* the area has the big coloured icon; what is inside it is a plain line icon and small text */}
                 {it.kind === 'module'
@@ -143,7 +143,7 @@ export default function Shell() {
             <NavLink to="/app" end className="side-item"><Home size={16} /> {tr('Home')}</NavLink>
             <NavLink to="/app/dashboard" className="side-item"><LayoutDashboard size={16} /> {tr('Dashboard')}</NavLink>
             <div className="sect">{schema.company.name}</div>
-            {areasFor(schema, user).map((a) => (
+            {areasFor(schema, user, ws).map((a) => (
               <Link key={a} to={`/app/a/${a}`} className="side-area-link" style={{ ['--a' as string]: AREA_INFO[a].color }}>
                 <AreaBadge area={a} size={26} /> {tr(AREA_INFO[a].name)}
               </Link>

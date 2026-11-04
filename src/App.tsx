@@ -21,6 +21,9 @@ const ModuleView = lazy(loadScreen(() => import('./workspace/ModuleView')))
 const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
 const Accounting = lazy(loadScreen(() => import('./workspace/Accounting')))
+const Pos = lazy(loadScreen(() => import('./workspace/Pos')))
+const Connections = lazy(loadScreen(() => import('./workspace/Connections')))
+const Inbox = lazy(loadScreen(() => import('./workspace/Inbox')))
 const Team = lazy(loadScreen(() => import('./workspace/Team')))
 const Approvals = lazy(loadScreen(() => import('./workspace/Approvals')))
 const Migrate = lazy(loadScreen(() => import('./workspace/Migrate')))
@@ -188,6 +191,9 @@ export default function App() {
         <Route path="new/:moduleId" element={<RecordPage />} />
         <Route path="inventory" element={<NeedsErp><Inventory /></NeedsErp>} />
         <Route path="accounting" element={<NeedsErp><Accounting /></NeedsErp>} />
+        <Route path="pos" element={<NeedsErp><Pos /></NeedsErp>} />
+        <Route path="connections" element={<Connections />} />
+        <Route path="inbox" element={<Inbox />} />
         <Route path="group" element={<NeedsErp><Group /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />

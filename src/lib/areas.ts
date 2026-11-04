@@ -42,7 +42,7 @@ export type AreaItem =
   | { kind: 'page'; key: string; to: string; label: string; icon: string }
 
 /** What one area holds for this person: the lists they may open, then the pages, in working order. */
-export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem[] {
+export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick<Workspace, 'whatsapp'>): AreaItem[] {
   const ctx = { schema, user }
   const role = schema.roles.find((r) => r.id === user.roleId)
   const admin = Boolean(role?.admin)
@@ -67,15 +67,20 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
   const planner = erp && (finance || admin || looker)
   const reports = admin || sheets.length > 0 ? [page('reports', '/app/reports', N_('Excel reports'), 'reports')] : []
   const workReports = planner ? [] : reports
+  // the WhatsApp inbox, once connected, for those who see customers, contacts or leads (with sales; in Operations for a company without the CRM)
+  const sees = (r: ModuleRole) => schema.modules.some((m) => m.role === r && can(ctx, m.id, 'view'))
+  const inbox = ws?.whatsapp && (admin || sees('accounts') || sees('contacts') || sees('leads')) ? [page('inbox', '/app/inbox', N_('WhatsApp inbox'), 'inbox')] : []
+  const crmScope = schemaScope(schema) !== 'erp'
   switch (area) {
     case 'crm':
-      return own('crm') ? [...modules('crm'), ...approvals, ...workReports] : []
+      return own('crm') ? [...modules('crm'), ...(crmScope ? inbox : []), ...approvals, ...workReports] : []
     case 'ops': {
       const pages = [
+        ...(erp && has('products') && has('invoices') && (finance || Boolean(role?.pos)) ? [page('pos', '/app/pos', N_('Point of sale'), 'pos')] : []),
         ...(erp && has('products') && (finance || own('ops')) ? [page('stock', '/app/inventory', N_('Stock'), 'stock')] : []),
         ...(erp && finance ? [page('accounting', '/app/accounting', N_('Accounting'), 'accounting')] : []),
       ]
-      return own('ops') || pages.length ? [...modules('ops'), ...pages, ...(erp ? approvals : []), ...workReports] : []
+      return own('ops') || pages.length ? [...modules('ops'), ...(crmScope ? [] : inbox), ...pages, ...(erp ? approvals : []), ...workReports] : []
     }
     case 'plan':
       return [
@@ -92,6 +97,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
         ...(admin ? [page('team', '/app/team', N_('Team'), 'team')] : []),
         ...(admin ? [page('access', '/app/access', N_('Access rights'), 'access')] : []),
         ...(admin ? [page('builder', '/builder', N_('Customise system'), 'builder')] : []),
+        ...(admin ? [page('connections', '/app/connections', N_('Connections'), 'connections')] : []),
         ...(admin ? [page('billing', '/app/billing', N_('Billing'), 'billing')] : []),
         ...(admin ? [page('audit', '/app/audit', N_('Audit trail'), 'audit')] : []),
       ]
@@ -99,12 +105,12 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId): AreaItem
 }
 
 /** The areas this person can work in (an area with nothing they may open is left out). */
-export const areasFor = (schema: AppSchema, user: User) => AREAS.filter((a) => areaItems(schema, user, a).length > 0)
+export const areasFor = (schema: AppSchema, user: User, ws?: Pick<Workspace, 'whatsapp'>) => AREAS.filter((a) => areaItems(schema, user, a, ws).length > 0)
 
 const PAGE_AREA: Record<string, AreaId> = {
-  inventory: 'ops', accounting: 'ops',
+  inventory: 'ops', accounting: 'ops', pos: 'ops', inbox: 'crm',
   plan: 'plan', budgets: 'plan', sales: 'plan',
-  doctor: 'setup', migrate: 'setup', team: 'setup', access: 'setup', billing: 'setup', audit: 'setup',
+  doctor: 'setup', migrate: 'setup', team: 'setup', access: 'setup', billing: 'setup', audit: 'setup', connections: 'setup',
 }
 
 /**

@@ -11,6 +11,8 @@ export interface QuoteDeps {
   load: (workspace: string) => Promise<{ doc: Workspace; version: number; maxOrd: number } | null>
   save: (workspace: string, base: number, write: { setup: ReturnType<typeof setupPart>; changes: Changes; doc: Workspace }) => Promise<number | null>
   audit: (rows: AuditRow[]) => Promise<void>
+  /** the company before and after the answer (for webhooks: quote.accepted / quote.declined) */
+  afterSave?: (workspace: string, before: Workspace, after: Workspace) => Promise<void>
 }
 
 export interface QuoteRequest { token: string; action?: 'view' | 'accept' | 'decline'; name?: string; signature?: string; reason?: string; ip?: string }
@@ -41,6 +43,7 @@ export async function handleQuote(deps: QuoteDeps, req: QuoteRequest): Promise<{
     const version = await deps.save(workspace, loaded.version, { setup: setupPart(doc), changes, doc })
     if (version === null) continue
     await deps.audit([{ workspace_id: workspace, actor: null, actor_email: `customer: ${String(req.name ?? '').slice(0, 60)}`, command: `quote.${req.action}`, label: rec.number ?? null, ok: true, error: null, record_ids: [rec.id] }])
+    if (deps.afterSave) await deps.afterSave(workspace, loaded.doc, doc).catch(() => undefined)
     return { quote: publicQuote(doc, schema, rec) }
   }
   throw new HttpError(503, 'Busy: try again in a moment')

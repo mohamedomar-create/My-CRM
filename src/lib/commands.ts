@@ -11,6 +11,10 @@ import { revalue, setDocCurrency } from './fx'
 import { reviseQuote, shareQuote } from './quoteOnline'
 import { cancelProduction, completeProduction, planProduction, setRecipe } from './production'
 import { reinstate, setAllowance, writeOff } from './badDebts'
+import { orderSuggested, setBarcodes } from './scan'
+import { accrueMissingBill, prepareClose } from './closePrep'
+import { closeCounter, counterReturn, openCounter, saveCounter, sell, type CounterPay, type SaleLine } from './pos'
+import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
 import type { AppSchema, Permission } from './schema'
@@ -21,7 +25,7 @@ import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
 import {
-  EngineError, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
+  EngineError, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
@@ -93,7 +97,7 @@ export interface CommandArgs {
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
-  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean }
+  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean; pos?: boolean }
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
   'sheet.save': { sheet: SheetReportDef }
@@ -109,6 +113,23 @@ export interface CommandArgs {
   'production.plan': { product: string; qty: number; date?: string; warehouse?: string; note?: string }
   'production.complete': { id: string; date?: string }
   'production.cancel': { id: string }
+  'recurring.save': { id?: string; memo: string; lines: VoucherLine[]; every: Every; start: string; until?: string; times?: number }
+  'recurring.approve': { id: string }
+  'recurring.stop': { id: string }
+  'recurring.resume': { id: string }
+  'recurring.postDue': Record<string, never>
+  'spread.create': { kind?: 'income' | 'expense'; doc?: string; memo?: string; amount: number; months: number; start?: string; holding?: string; account?: string; cc?: string }
+  'spread.stop': { id: string; releaseRest: boolean }
+  'product.setBarcodes': { id: string; codes: { code: string; unit?: string }[] }
+  'whatsapp.setShown': { phone: string | null }
+  'close.prepare': { month: string }
+  'close.accrue': { month: string; supplier: string }
+  'po.fromSuggestions': { supplier: string; lines: { product: string; qty: number; price?: number }[] }
+  'pos.saveCounter': { id?: string; name: string; cash?: string; bank?: string; warehouse?: string; maxDiscount?: number; active?: boolean }
+  'pos.open': { counter: string; float: number }
+  'pos.sell': { session: string; receipt: string; customer?: string; lines: SaleLine[]; payments: { method: CounterPay; amount: number }[] }
+  'pos.return': { session: string; invoice: string; lines: { line: string; qty: number }[]; method?: CounterPay; ref?: string }
+  'pos.close': { session: string; counted: number }
   'quote.share': { id: string; secret?: string }
   'quote.revise': { id: string }
   'journal.setApproval': { over: number | null }
@@ -275,7 +296,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   },
   'sample.remove': { admin: true, run: (ws, u) => removeSampleData(ctx(ws, u)) },
   // The nightly run: date-based automations, and on Sundays the budget notice for admins and finance.
-  'automation.runScheduled': { run: (ws, u) => { const c = ctx(ws, u); return runScheduled(c) + budgetDigest(c, c.today ?? todayISO()) } },
+  'automation.runScheduled': { run: (ws, u) => { const c = ctx(ws, u); return runScheduled(c) + budgetDigest(c, c.today ?? todayISO()) + postDue(c) } },
 
   'setup.setAnswers': {
     admin: true,
@@ -377,7 +398,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'plan.create': { run: (ws, u, a) => createPlan(ctx(ws, u), { name: a.name === undefined ? undefined : String(a.name), startYear: Number(a.startYear), years: a.years === undefined ? undefined : Number(a.years), fromBooks: a.fromBooks !== false, labels: planLabels(a.labels) }) },
   'plan.save': { run: (ws, u, a) => void savePlan(ctx(ws, u), String(a.id ?? ''), a.plan) },
   'plan.delete': { run: (ws, u, a) => void deletePlan(ctx(ws, u), String(a.id ?? '')) },
-  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs }) },
+  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs, pos: a.pos }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
   'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: a.from ? String(a.from) : undefined, paid: a.paid && typeof a.paid === 'object' ? { account: String(a.paid.account ?? ''), vat: Number(a.paid.vat ?? 0) || 0, what: String(a.paid.what ?? '') } : undefined, to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
@@ -399,6 +420,30 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'production.plan': { run: (ws, u, a) => planProduction(ctx(ws, u), { product: String(a.product ?? ''), qty: Number(a.qty), date: a.date ? String(a.date) : undefined, warehouse: a.warehouse ? String(a.warehouse) : undefined, note: a.note ? String(a.note) : undefined }).number },
   'production.complete': { run: (ws, u, a) => void completeProduction(ctx(ws, u), String(a.id ?? ''), a.date ? String(a.date) : undefined) },
   'production.cancel': { run: (ws, u, a) => void cancelProduction(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.save': { run: (ws, u, a) => saveRecurring(ctx(ws, u), { id: a.id ? String(a.id) : undefined, memo: a.memo, lines: a.lines, every: a.every, start: a.start, until: a.until || undefined, times: a.times ? Number(a.times) : undefined }) },
+  'recurring.approve': { run: (ws, u, a) => approveRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.stop': { run: (ws, u, a) => void stopRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
+  'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
+  'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'close.prepare': { run: (ws, u, a) => { const c = ctx(ws, u); needFinance(c, 'prepare the close'); return prepareClose(c, String(a.month ?? '')) } },
+  'close.accrue': { run: (ws, u, a) => accrueMissingBill(ctx(ws, u), String(a.month ?? ''), String(a.supplier ?? '')).ref },
+  'whatsapp.setShown': {
+    admin: true,
+    run: (ws, _u, a) => {
+      const phone = a.phone ? String(a.phone).trim().slice(0, 30) : ''
+      if (phone) ws.whatsapp = { phone }
+      else delete ws.whatsapp
+    },
+  },
+  'product.setBarcodes': { run: (ws, u, a) => void setBarcodes(ctx(ws, u), String(a.id ?? ''), a.codes) },
+  'po.fromSuggestions': { run: (ws, u, a) => orderSuggested(ctx(ws, u), { supplier: String(a.supplier ?? ''), lines: a.lines }) },
+  'pos.saveCounter': { admin: true, run: (ws, u, a) => saveCounter(ctx(ws, u), { id: a.id ? String(a.id) : undefined, name: a.name, cash: a.cash, bank: a.bank, warehouse: a.warehouse || undefined, maxDiscount: a.maxDiscount, active: a.active }) },
+  'pos.open': { run: (ws, u, a) => openCounter(ctx(ws, u), { counter: String(a.counter ?? ''), float: Number(a.float) }) },
+  'pos.sell': { run: (ws, u, a) => sell(ctx(ws, u), { session: String(a.session ?? ''), receipt: String(a.receipt ?? ''), customer: a.customer ? String(a.customer) : undefined, lines: a.lines, payments: a.payments }) },
+  'pos.return': { run: (ws, u, a) => counterReturn(ctx(ws, u), { session: String(a.session ?? ''), invoice: String(a.invoice ?? ''), lines: a.lines, method: a.method, ref: a.ref ? String(a.ref) : undefined }) },
+  'pos.close': { run: (ws, u, a) => closeCounter(ctx(ws, u), { session: String(a.session ?? ''), counted: Number(a.counted) }) },
+  'spread.stop': { run: (ws, u, a) => void stopSpread(ctx(ws, u), String(a.id ?? ''), Boolean(a.releaseRest)) },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },

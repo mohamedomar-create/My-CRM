@@ -7,7 +7,7 @@ import { useStore, readCompany } from '../lib/store'
 import { money, todayISO } from '../lib/engine'
 import { combined, companyFigures, type GroupCompany } from '../lib/group'
 import type { Workspace } from '../lib/types'
-import { tr } from '../lib/i18n'
+import { getLang, tr } from '../lib/i18n'
 
 export default function Group() {
   const { ws } = useApp()
@@ -25,7 +25,9 @@ export default function Group() {
   }, [companies, ws.id])
   const group: GroupCompany[] = useMemo(() => companies.filter((c) => docs[c.id]?.published).map((c) => ({ id: c.id, name: c.name || tr('Unnamed company'), ws: docs[c.id] })), [companies, docs])
   if (companies.length < 2) return <div className="page"><h1>{tr('Your group')}</h1><p className="muted">{tr('Add another company (Security → Your companies) to see them side by side.')}</p></div>
-  const g = group.length ? combined(group, from, to) : null
+  const g = group.length ? combined(group, from, to, getLang()) : null
+  // the group's own lines (eliminations) are named in English in the engine: shown in the chosen language
+  const label = (r: { code: string; name: string }) => (r.code.startsWith('~') ? tr(r.name) : r.name)
   const cur = g?.currency ?? 'EGP'
   const name = (id: string) => group.find((c) => c.id === id)?.name ?? id
   return (
@@ -48,20 +50,21 @@ export default function Group() {
           <div className="card">
             <h2>{tr('Combined income statement')}</h2>
             <table className="data"><tbody>
-              {[...g.income.revenue, ...g.income.cost.map((r) => ({ ...r, amount: -r.amount }))].map((r) => <tr key={r.code}><td>{r.name}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
+              {[...g.income.revenue, ...g.income.cost.map((r) => ({ ...r, amount: -r.amount }))].map((r, i) => <tr key={`${r.code}${i}`}><td>{label(r)}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
               <tr><td><b>{tr('Gross profit')}</b></td><td className="num"><b>{money(g.income.gross, cur)}</b></td></tr>
-              {g.income.overheads.map((r) => <tr key={r.code}><td>{r.name}</td><td className="num">{money(-r.amount, cur)}</td></tr>)}
+              {g.income.overheads.map((r) => <tr key={r.code}><td>{label(r)}</td><td className="num">{money(-r.amount, cur)}</td></tr>)}
               {g.income.other.map((r) => <tr key={r.code}><td>{r.name}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
               <tr><td><b>{tr('Net profit')}</b></td><td className="num"><b style={{ color: g.income.net < 0 ? 'var(--danger)' : 'var(--success)' }}>{money(g.income.net, cur)}</b></td></tr>
             </tbody></table>
-            {g.income.intercompanySales > 0 && <p className="tiny muted">{tr('Of the revenue, {a} are sales between the group’s companies: sales to customers outside the group are {b}. The profit on goods one company still holds from another isn’t taken out yet.', { a: money(g.income.intercompanySales, cur), b: money(g.income.revenue.reduce((t, r) => t + r.amount, 0) - g.income.intercompanySales, cur) })}</p>}
+            {g.income.intercompanySales !== 0 && <p className="tiny muted">{tr('Sales between the group’s companies ({a}) are taken out of revenue and of the costs where the buyer booked them: what is left is sold outside the group.', { a: money(g.income.intercompanySales, cur) })}</p>}
+            {g.eliminated.unrealized > 0 && <p className="tiny muted">{tr('{a} of profit on goods one company still holds from another is taken out of stock and profit, until they are sold outside the group.', { a: money(g.eliminated.unrealized, cur) })}</p>}
           </div>
           <div className="card">
             <h2>{tr('Combined balance sheet on {d}', { d: to })}</h2>
             <table className="data"><tbody>
               {g.balance.assets.map((r) => <tr key={r.code}><td>{r.name}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
               <tr><td><b>{tr('Total assets')}</b></td><td className="num"><b>{money(g.balance.totalAssets, cur)}</b></td></tr>
-              {[...g.balance.liabilities, ...g.balance.equity].map((r) => <tr key={r.code}><td>{r.name}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
+              {[...g.balance.liabilities, ...g.balance.equity].map((r) => <tr key={r.code}><td>{label(r)}</td><td className="num">{money(r.amount, cur)}</td></tr>)}
               <tr><td><b>{tr('Liabilities and equity')}</b></td><td className="num"><b>{money(g.balance.totalLiabilitiesAndEquity, cur)}</b></td></tr>
             </tbody></table>
             {(g.eliminated.receivables > 0 || g.eliminated.payables > 0) && <p className="tiny muted">{tr('Taken out: {a} the companies owe each other.', { a: money(g.eliminated.receivables, cur) })}{g.eliminated.difference ? ` ${tr('The two sides differ by {a}: one company hasn’t booked it yet.', { a: money(g.eliminated.difference, cur) })}` : ''}</p>}

@@ -89,6 +89,34 @@ let pending: Change[] = []
 let inFlight = 0
 let saving: Promise<void> = Promise.resolve()
 
+/*
+ * Counter sales are kept on the device until the server has them: a sale made with no connection, or just before the
+ * tab closed, is sent when the app is next open and online. (The server records a sale sent twice only once.)
+ */
+const COUNTER_QUEUE = (id: string) => `nasq360.counter.${id}`
+const isCounter = (name: string) => name.startsWith('pos.') && name !== 'pos.saveCounter'
+function keepCounterQueue() {
+  const id = state.session?.workspaceId
+  if (!id || typeof localStorage === 'undefined') return
+  try {
+    const q = pending.filter((c) => isCounter(c.cmd.name))
+    if (q.length) localStorage.setItem(COUNTER_QUEUE(id), JSON.stringify(q))
+    else localStorage.removeItem(COUNTER_QUEUE(id))
+  } catch {
+    /* storage full or blocked: the sale is still sent while the app stays open */
+  }
+}
+function savedCounterQueue(id: string): Change[] {
+  try {
+    const q = JSON.parse(localStorage.getItem(COUNTER_QUEUE(id)) ?? '[]') as Change[]
+    return Array.isArray(q) ? q.filter((c) => c && c.cmd && isCounter(String(c.cmd.name))) : []
+  } catch {
+    return []
+  }
+}
+/** Counter sales still waiting on this device (shown at the counter). */
+export const counterQueueSize = () => pending.filter((c) => isCounter(c.cmd.name)).length
+
 /** Publish fresh references for the state, the current workspace and its data, so every selector re-renders. */
 function publish(fn: (s: State) => void) {
   fn(state)
@@ -176,6 +204,7 @@ async function sendOnce() {
     if (status === 400 || status === 413) {
       // The server will never accept this batch as it is: say so and go back to what is saved.
       const dropped = pending.splice(0, batch.length).map((c) => c.label)
+      keepCounterQueue()
       await reload(ws.id)
       publish((s) => { s.sync = 'reloaded'; s.notice = { title: 'Your change was not saved', text: 'The server refused it. The workspace now shows the last saved version.', items: dropped } })
       return
@@ -186,6 +215,7 @@ async function sendOnce() {
   }
   if (!data) throw new Error('No reply from the server')
   pending.splice(0, batch.length)
+  keepCounterQueue()
   const refused = batch.flatMap((c, i) => (data.results[i]?.ok ? [] : [`${c.label}: ${data.results[i]?.error ?? 'refused'}`]))
   // The server's copy is the truth (it includes colleagues' changes); anything still queued is re-applied on top of it.
   adopt(ws.id, data.doc, data.version, refused)
@@ -219,6 +249,7 @@ function adopt(id: string, doc: Workspace, version: number, refused: string[] = 
     }
   })
   pending = kept
+  keepCounterQueue()
 }
 
 export function dismissNotice() {
@@ -263,7 +294,8 @@ export function run<N extends CommandName>(name: N, args: CommandArgs[N], label 
   const ws = currentWorkspace()
   if (!ws) throw new Error('No workspace')
   assertSelf()
-  if (state.offline) throw new Error('You are offline: this is the copy kept on this device. Changes can be made when you are back online.')
+  // Offline, only the counter keeps working: its sales wait on this device and are sent when the connection is back.
+  if (state.offline && !isCounter(name)) throw new Error('You are offline: this is the copy kept on this device. Changes can be made when you are back online.')
   // Read-only after the trial or when unpaid, and no books on the Free plan: said now, not after the server refuses.
   const unpaid = billingProblem(state.billing, ws, name, args)
   if (unpaid) throw new Error(unpaid)
@@ -281,6 +313,7 @@ export function run<N extends CommandName>(name: N, args: CommandArgs[N], label 
   } else {
     pending.push({ label, cmd, ids: out.ids })
   }
+  if (isCounter(name)) keepCounterQueue()
   save()
   return out.result
 }
@@ -456,6 +489,13 @@ function open(ws: Workspace, user: User) {
   void refreshBilling(ws.id)
   listen(ws.id)
   void keepOfflineCopy(user.email, ws, state.companies).catch(() => undefined)
+  // counter sales made on this device and not yet on the server: re-applied on top of it and sent
+  const waiting = savedCounterQueue(ws.id)
+  if (waiting.length) {
+    pending = waiting
+    adopt(ws.id, ws, versions.get(ws.id) ?? 0)
+    save(0)
+  }
 }
 
 /* ---------------- subscription ---------------- */
@@ -681,6 +721,17 @@ export async function init() {
           s.offline = { savedAt: copy.savedAt }
           s.loadError = null
         })
+        // counter sales still waiting: shown on the copy, and all kept (the server decides when it is reached)
+        const waiting = savedCounterQueue(copy.ws.id)
+        if (waiting.length) {
+          pending = waiting
+          let shown = copy.ws
+          for (const c of waiting) {
+            try { shown = applyCommand(shown, actorFor(state, shown), c.cmd, c.ids).ws } catch { /* refused by the server later, with its reason */ }
+          }
+          publish((s) => { s.workspaces[copy.ws.id] = shown })
+          save(0)
+        }
         // back online: open the company afresh
         window.addEventListener('online', () => { void init() }, { once: true })
       } else {
