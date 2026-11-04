@@ -1190,3 +1190,31 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 .auto-effect.skipped { color: var(--muted); }
 .auto-effect.error { color: var(--danger); }
 .auto-skips { margin: 6px 0 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; }
+/* the company check-up */
+.doctor-top { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); margin-bottom: 16px; }
+.doctor-score { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.doctor-score svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+.doctor-score circle { fill: none; stroke-width: 12; }
+.doctor-score .track { stroke: var(--surface-3); }
+.doctor-score.good .value { stroke: var(--success); }
+.doctor-score.fair .value { stroke: var(--warning); }
+.doctor-score.poor .value { stroke: var(--danger); }
+.doctor-score .value { stroke-linecap: round; }
+.doctor-score > div { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.doctor-score b { font-size: 2rem; line-height: 1; }
+.doctor-score span { font-size: 0.8rem; color: var(--muted); }
+.doctor-pill { display: inline-flex; align-items: center; gap: 5px; }
+.doctor-pill.urgent, .doctor-h.urgent { color: var(--danger); }
+.doctor-pill.important, .doctor-h.important { color: var(--warning); }
+.doctor-pill.tip, .doctor-h.tip { color: var(--primary-600); }
+.doctor-h { display: flex; align-items: center; gap: 6px; font-size: 1rem; margin: 18px 0 8px; }
+.doctor-item { margin-bottom: 8px; border-inline-start: 4px solid var(--border); }
+.doctor-item.urgent { border-inline-start-color: var(--danger); }
+.doctor-item.important { border-inline-start-color: var(--warning); }
+.doctor-item.tip { border-inline-start-color: var(--primary-600); }
+.doctor-amount { font-weight: 600; color: var(--text-2); }
+.doctor-records { margin: 10px 0 0; padding-inline-start: 18px; columns: 2 260px; font-size: 0.86rem; }
+.doctor-records li { margin-bottom: 3px; break-inside: avoid; }
+.doctor-plan { margin-bottom: 14px; border: 1px solid var(--primary-100); background: var(--primary-50); }
+.doctor-plan h2 { display: flex; align-items: center; gap: 6px; font-size: 1rem; margin: 0 0 8px; }
+.doctor-plan-text { white-space: pre-wrap; line-height: 1.6; margin-bottom: 8px; }

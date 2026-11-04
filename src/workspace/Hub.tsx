@@ -21,6 +21,7 @@ const PAGE_TEXT: Record<string, string> = {
   budgets: N_('The year’s budget against the actual figures'),
   sales: N_('Sales by month, customer and product, and the targets'),
   reports: N_('Tables from several lists, downloaded as Excel'),
+  doctor: N_('What is wrong in the data, books and setup, and how to fix it'),
   migrate: N_('Customers, products, deals and opening balances from Excel'),
   team: N_('People, roles and invitations'),
   access: N_('What each role can see and do'),

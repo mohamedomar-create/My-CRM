@@ -538,6 +538,14 @@ export async function chooseFreePlan(id: string) {
   publish((s) => { s.billing = data as BillingStatus })
 }
 
+/** Asks the doctor function for a short action plan from a check-up's findings (no names or contact details are sent). */
+export async function askDoctor(body: import('./doctorServer').DoctorRequest): Promise<string> {
+  const { data, error } = await supabase.functions.invoke<{ plan: string }>('doctor', { body })
+  if (error) throw new Error(friendly(await serverMessage(error)))
+  if (!data?.plan) throw new Error('The AI gave no answer. Try again in a moment.')
+  return data.plan
+}
+
 /** Opens Paymob's checkout for a plan, period and number of people; the amount is worked out on the server. */
 export async function startCheckout(workspaceId: string, plan: string, cycle: 'month' | 'year', seats: number): Promise<string> {
   const { data, error } = await supabase.functions.invoke<{ url: string; payment: string }>('billing', { body: { action: 'checkout', workspace: workspaceId, plan, cycle, seats } })

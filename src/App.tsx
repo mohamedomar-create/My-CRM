@@ -16,6 +16,7 @@ const AreaHome = lazy(loadScreen(() => import('./workspace/Hub').then((m) => ({ 
 const BudgetsPage = lazy(loadScreen(() => import('./workspace/BudgetsPage')))
 const Access = lazy(loadScreen(() => import('./workspace/Access')))
 const SheetReports = lazy(loadScreen(() => import('./workspace/SheetReports')))
+const Doctor = lazy(loadScreen(() => import('./workspace/Doctor')))
 const ModuleView = lazy(loadScreen(() => import('./workspace/ModuleView')))
 const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
@@ -187,6 +188,7 @@ export default function App() {
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />
         <Route path="reports" element={<SheetReports />} />
+        <Route path="doctor" element={<Doctor />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="audit" element={<Audit />} />
         <Route path="migrate" element={<Migrate />} />
