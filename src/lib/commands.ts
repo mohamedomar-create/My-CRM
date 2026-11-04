@@ -7,6 +7,7 @@ import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
 import { closeOrder, confirmOrder, deliver, invoiceDelivered, undoDelivery } from './orders'
 import { billReceived, closePurchaseOrder, orderPurchase, receiveGoods, undoReceipt } from './purchasing'
+import { revalue, setDocCurrency } from './fx'
 import { reinstate, setAllowance, writeOff } from './badDebts'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
@@ -49,7 +50,7 @@ export interface CommandArgs {
   'deal.toQuote': { id: string }
   'doc.post': { id: string; warehouse?: string }
   'doc.void': { id: string }
-  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number }
   'payment.voucher': { party: string; date: string; method: Method; account?: string; wht?: number; cheque?: { no: string; bank?: string; due: string }; allocations: { doc: string; amount: number }[] }
   'cheque.deposit': { id: string; account: string; date: string }
   'cheque.clear': { id: string; date: string; account?: string }
@@ -102,6 +103,8 @@ export interface CommandArgs {
   'order.invoice': { id: string }
   'order.close': { id: string; reason: string }
   'po.send': { id: string }
+  'fx.setCurrency': { id: string; currency: string; rate?: number }
+  'fx.revalue': { month: string; rates: Record<string, number> }
   'po.receive': { id: string; date: string; lines: { line: string; qty: number; lot?: string; expiry?: string }[]; supplierRef?: string; warehouse?: string }
   'po.undoReceipt': { id: string }
   'po.bill': { id: string }
@@ -221,7 +224,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'deal.toQuote': { run: (ws, u, a) => ({ id: dealToQuote(ctx(ws, u), rec(ws, a.id)).id }) },
   'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id), { warehouse: a.warehouse ? String(a.warehouse) : undefined }) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
-  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque }) },
+  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque, rate: a.rate === undefined ? undefined : Number(a.rate) }) },
   'payment.voucher': { run: (ws, u, a) => moneyVoucher(ctx(ws, u), a) },
   'cheque.deposit': { run: (ws, u, a) => depositCheque(ctx(ws, u), String(a.id), String(a.account), String(a.date)) },
   'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
@@ -372,6 +375,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'order.undoDelivery': { run: (ws, u, a) => void undoDelivery(ctx(ws, u), String(a.id ?? '')) },
   'order.invoice': { run: (ws, u, a) => ({ id: invoiceDelivered(ctx(ws, u), String(a.id ?? '')).id }) },
   'order.close': { run: (ws, u, a) => void closeOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
+  'fx.setCurrency': { run: (ws, u, a) => setDocCurrency(ctx(ws, u), String(a.id ?? ''), String(a.currency ?? ''), a.rate === undefined ? undefined : Number(a.rate)) },
+  'fx.revalue': { run: (ws, u, a) => revalue(ctx(ws, u), String(a.month ?? ''), a.rates && typeof a.rates === 'object' ? Object.fromEntries(Object.entries(a.rates).slice(0, 20).map(([k, v]) => [String(k).slice(0, 3), Number(v)])) : {}).ref },
   'po.send': { run: (ws, u, a) => orderPurchase(ctx(ws, u), String(a.id ?? '')) },
   'po.receive': { run: (ws, u, a) => receiveGoods(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ line: String(l?.line ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined, expiry: l?.expiry ? String(l.expiry) : undefined })) : [], supplierRef: a.supplierRef === undefined ? undefined : String(a.supplierRef), warehouse: a.warehouse ? String(a.warehouse) : undefined }).number },
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },

@@ -157,6 +157,8 @@ export interface Payment {
   cheque?: { id: string; no: string; bank?: string; due: string }
   /** the receipt or payment voucher (RV-/PV-…) when one payment covered several documents */
   voucher?: string
+  /** a document in another currency: the payment's rate, and what it took off the books' carrying amount */
+  fx?: { rate: number; relief: number }
 }
 
 export interface Note {
@@ -306,6 +308,8 @@ export interface Workspace {
     closedYears?: { year: number; at: string; by: string; entry: string }[]
     /** monthly VAT returns settled: output and input moved to 2210 by the entry */
     vatReturns?: { month: string; output: number; input: number; due: number; at: string; by: string; entry: string }[]
+    /** month-end restatements of what is owed in foreign currency (see fx.ts) */
+    revaluations?: import('./fx').Revaluation[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
     /** the balances brought in from the company's old system (Phase H2) */
@@ -323,6 +327,8 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** the last exchange rate used for each foreign currency (each document still states its own) */
+  fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */
   warehouses?: Warehouse[]
   /** goods received notes: goods received against purchase orders (see purchasing.ts) */

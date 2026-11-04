@@ -84,7 +84,7 @@ The accounting rules run behind the scenes; people work in plain words.
 
 | Area | Status |
 |---|---|
-| Multi-currency (foreign-currency invoices, exchange differences, revaluation, IAS 21) | **Not yet.** Single currency per company |
+| Multi-currency (foreign-currency invoices, exchange differences, revaluation, IAS 21) | **Done (Nov 2026):** quotations, orders, invoices and bills in USD/EUR/…; booked in EGP at the document's rate (VAT line by line); realized differences on payment and unrealized month-end revaluation to 4960 (`fx.test.ts`). Still to do: foreign-currency bank accounts, cheques and multi-document vouchers in foreign currency |
 | Maker–checker on journal vouchers (a second person approves a JV) | **Not yet.** Mitigated: finance-only, immutable, reversal only, full trail |
 | Recurring journal vouchers; deferred-revenue schedules | Not yet (prepayments and accruals are done by hand) |
 | Depreciation methods other than straight line; revaluation (IAS 16); partial disposal | Not yet |

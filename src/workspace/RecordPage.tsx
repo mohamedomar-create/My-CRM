@@ -12,6 +12,7 @@ import { OrderPanel } from './OrderPanel'
 import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
+import { CurrencyBar } from './CurrencyBar'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
@@ -236,6 +237,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       )}
       {rec && (mod.role === 'invoices' || mod.role === 'purchases') && <CreditsPanel rec={rec} />}
       {rec && mod.role === 'purchases' && !isCredit && <LandedPanel rec={rec} />}
+      {rec && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes') && !rec.values.credit_for && (rec.status === 'draft' || (mod.role === 'quotes' && rec.status === 'sent') || Boolean(rec.values.currency)) && <CurrencyBar rec={rec} />}
       {rec && mod.role === 'quotes' && rec.status === 'ordered' && <OrderPanel rec={rec} />}
       {rec && mod.role === 'purchases' && rec.status === 'ordered' && <PurchaseOrderPanel rec={rec} />}
       {rec && mod.role === 'purchases' && Boolean(rec.values.from_po) && <BillMatch rec={rec} />}
@@ -276,7 +278,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
             </div>
           </div>}
           {mod.role === 'invoices' && (isNew || rec?.status === 'draft') && !isCredit && <CreditWarning customer={String(values.customer ?? '')} lines={lines} />}
-          {mod.lines && !paper && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} />}
+          {mod.lines && !paper && rec?.values.credit_for !== 'advance' && <LinesEditor mod={mod} date={String(values.date ?? "")} lines={lines} onChange={setLinesState} disabled={!editable || (mod.role === 'quotes' && rec?.status !== 'draft' && rec?.status !== 'sent' && !isNew)} ws={ws} schema={schema} currency={String(rec?.values.currency ?? '') || undefined} />}
           {payments.length > 0 && !paper && (
             <div className="card">
               <h2>{tr('Payments')}</h2>
@@ -335,7 +337,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
       </div>
       {paying && rec && (isCredit
         ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, tr('Refund registered'))) setPaying(false) }} />
-        : <PaymentModal rec={rec} currency={schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
+        : <PaymentModal rec={rec} currency={String(rec.values.currency ?? '') || schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
       {advancing && rec && <AdvanceModal party={rec} onClose={() => setAdvancing(false)} />}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
     </div>
@@ -428,7 +430,7 @@ function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }:
   }
 }
 
-function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string }) {
+function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currency }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string; currency?: string }) {
   const { user } = useApp()
   // Cost centers (P1): each line's income or cost goes to one; a new line starts with the person's own.
   const withCc = costCenters(ws).some((c) => c.active) || lines.some((l) => l.cc)
@@ -436,7 +438,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date }: { mod
   const products = moduleByRole(schema, 'products')
   const items = products ? list(ws, products.id) : []
   const t = totals(lines)
-  const cur = schema.company.currency
+  const cur = currency || schema.company.currency
   const upd = (i: number, patch: Partial<Line>) => onChange(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
   const pick = (i: number, pid: string) => {
     const p = items.find((x) => x.id === pid)
@@ -547,7 +549,7 @@ function BudgetWarnings({ lines, date }: { lines: Line[]; date?: string }) {
   )
 }
 
-type PayExtra = { wht: number; account?: string; cheque?: { no: string; bank?: string; due: string } }
+type PayExtra = { wht: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number }
 
 function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; currency: string; refund?: boolean; onClose: () => void; onPay: (amount: number, date: string, method: 'cash' | 'bank' | 'cheque' | 'instapay' | 'card', extra: PayExtra) => void }) {
   const { ws } = useApp()
@@ -569,7 +571,10 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
   const [chequeNo, setChequeNo] = useState('')
   const [chequeBank, setChequeBank] = useState('')
   const [chequeDue, setChequeDue] = useState(todayISO())
-  const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }) })
+  // a document in another currency: the rate on the day of payment (its own rate to start with)
+  const foreign = Boolean(rec.values.currency)
+  const [rate, setRate] = useState(String(rec.values.carry_rate ?? rec.values.rate ?? ''))
+  const extra = (): PayExtra => ({ wht: refund ? 0 : wht, ...(method === 'cheque' ? { cheque: { no: chequeNo, bank: chequeBank, due: chequeDue } } : { account: chosen }), ...(foreign && Number(rate) > 0 ? { rate: Number(rate) } : {}) })
   return (
     <>
       <Modal onClose={onClose}>
@@ -578,7 +583,8 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
           <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
           <label className="field">{tr('Amount')}<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
           <label className="field">{tr('Date')}<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <div className="seg">{(refund ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
+          {foreign && !refund && <label className="field">{tr('Exchange rate today: 1 {a} =', { a: String(rec.values.currency) })}<input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><span className="tiny muted">{tr('{a} in {b}; a difference to the invoice’s rate is an exchange gain or loss', { a: money(round2(amount * (Number(rate) || 0)), ws.published?.company.currency ?? 'EGP'), b: ws.published?.company.currency ?? 'EGP' })}</span></label>}
+          <div className="seg">{(refund || foreign ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
           {method === 'cheque' ? (
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <label className="field" style={{ width: 130 }}>{tr('Cheque no.')}<input required value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
@@ -612,7 +618,7 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
 /** Credit note (sales) or debit note (purchases): which lines and how many come back, at what price, and why. */
 function CreditNoteModal({ rec, mod, onClose, onDone }: { rec: Rec; mod: ModuleDef; onClose: () => void; onDone: (id: string) => void }) {
   const { ws, schema, act } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const sales = mod.role === 'invoices'
   const done = (lineId: string) => creditNotesOf(ws, rec).reduce((s, c) => s + (c.lines ?? []).filter((l) => l.from === lineId).reduce((t, l) => t + l.qty, 0), 0)
   const [rows, setRows] = useState<Record<string, { qty: string; price: string }>>({})
@@ -666,7 +672,7 @@ function PrintView({ rec, mod, ws, schema, onClose }: { rec: Rec; mod: ModuleDef
   const partyId = String(rec.values.customer ?? rec.values.supplier ?? '')
   const party = findRecord(ws, partyId)
   const t = totals(rec.lines ?? [])
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const [both, setBoth] = usePrintBoth()
   const B = (en: string, vars?: Record<string, string | number>) => <Bi en={en} vars={vars} both={both} />
   const draft = rec.status === 'draft' && mod.role !== 'quotes'

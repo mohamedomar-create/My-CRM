@@ -30,7 +30,7 @@ const TONE = { blue: ['var(--primary-50)', 'var(--primary-600)'], amber: ['var(-
 /** The document's read-only view. */
 export function PaperView({ rec, mod, onReverse }: { rec: Rec; mod: ModuleDef; onReverse?: (paymentId: string) => void }) {
   const { ws, schema } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const sales = mod.role === 'invoices'
   const partyId = String(rec.values[sales ? 'customer' : 'supplier'] ?? '')
   const party = findRecord(ws, partyId)
@@ -96,7 +96,7 @@ interface Event { date: string; at: number; icon: ReactNode; text: ReactNode; am
 /** Everything that happened to the document, oldest first. */
 function Timeline({ rec, mod, onReverse }: { rec: Rec; mod: ModuleDef; onReverse?: (paymentId: string) => void }) {
   const { ws, schema, user } = useApp()
-  const cur = schema.company.currency
+  const cur = String(rec.values.currency ?? '') || schema.company.currency
   const finance = canPost({ schema, user })
   const sales = mod.role === 'invoices'
   const events: Event[] = []

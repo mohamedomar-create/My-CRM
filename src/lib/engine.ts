@@ -754,6 +754,31 @@ export function totals(lines: Line[]) {
   return { subtotal, tax, total: round2(subtotal + tax) }
 }
 
+/* ---------------- foreign currency (see fx.ts) ---------------- */
+
+/** A document in another currency than the company's: its amounts are in `currency`, the books in the company's. */
+export const isForeign = (rec: Rec) => Boolean(rec.values.currency)
+/** How many of the company's currency one unit of the document's currency is worth (1 for the company's own). */
+export const docRate = (rec: Rec) => (isForeign(rec) ? Number(rec.values.rate) || 1 : 1)
+/** What a posted document still carries in the books, in the company's currency. */
+export const baseBalance = (rec: Rec) => (isForeign(rec) ? Number(rec.values.base_balance ?? 0) : Number(rec.values.balance ?? 0))
+/** A document's totals in the company's currency, line by line (so VAT returns and the books agree to the piastre). */
+export function baseTotals(lines: Line[], rate: number) {
+  const subtotal = round2(lines.reduce((s, l) => s + round2(lineNet(l) * rate), 0))
+  const tax = round2(lines.reduce((s, l) => s + round2(lineTax(l) * rate), 0))
+  return { subtotal, tax, total: round2(subtotal + tax) }
+}
+/** How much of a foreign document's carrying amount a settlement of `amount` (in its currency) takes off. */
+function relieve(rec: Rec, amount: number) {
+  const bal = Number(rec.values.balance ?? 0)
+  const carry = Number(rec.values.base_balance ?? 0)
+  return round2(amount) >= round2(bal) ? carry : round2((carry * amount) / (bal || 1))
+}
+function noForeign(rec: Rec, what: string) {
+  void what
+  if (isForeign(rec)) throw new EngineError(`${rec.number ?? 'This document'} is in ${rec.values.currency}: this isn’t available for documents in another currency yet`)
+}
+
 function applyTotals(rec: Rec) {
   const t = totals(rec.lines ?? [])
   rec.values.subtotal = t.subtotal
@@ -1039,7 +1064,10 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
   }
 
   // Every check is done, so the number is only taken when posting succeeds: numbering stays gapless.
-  const t = totals(lines)
+  // A document in another currency is booked in the company's currency at its rate, line by line.
+  const fx = docRate(rec)
+  const B = (n: number) => round2(n * fx)
+  const t = baseTotals(lines, fx)
   const number = nextNumber(ctx, mod.numberPrefix || 'DOC', date, sample)
 
   if (mod.role === 'invoices') {
@@ -1066,7 +1094,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       date, ref: number, memo: `Sales invoice ${number}`, doc: rec.id,
       lines: [
         { account: '1200', debit: t.total, credit: 0 },
-        ...ccSides('4000', lines.map((l) => ({ cc: l.cc, amount: -lineNet(l) }))),
+        ...ccSides('4000', lines.map((l) => ({ cc: l.cc, amount: -B(lineNet(l)) }))),
         { account: '2200', debit: 0, credit: t.tax },
         ...ccSides('5000', cogsBy),
         { account: '1300', debit: 0, credit: round2(cogs) },
@@ -1081,7 +1109,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       if (l.dcost !== undefined) continue
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
-      const lineValue = lineNet(l)
+      const lineValue = B(lineNet(l))
       const into = putIntoStock(ctx, p, l.qty, lineValue, number, rec.id, date, { lot: l.lot, expiry: l.expiry, wh }, rec)
       priceDiff = round2(priceDiff + into.diff)
       diffBy.push({ cc: l.cc, amount: into.diff })
@@ -1094,7 +1122,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
     let varStock = 0
     for (const l of got) {
       gotValue = round2(gotValue + Number(l.dcost))
-      const v = round2(lineNet(l) - Number(l.dcost))
+      const v = round2(B(lineNet(l)) - Number(l.dcost))
       if (!v) continue
       const p = productRec(ctx, l.product)
       const ratio = p ? Math.max(0, Math.min(1, onHand(ctx.ws, p.id) / (l.qty || 1))) : 0
@@ -1111,7 +1139,7 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
       lines: [
         { account: '1300', debit: received, credit: 0 },
         { account: '2160', debit: gotValue, credit: 0 },
-        ...ccSides('5100', lines.filter((l) => l.dcost === undefined && !productRec(ctx, l.product)?.values.track_stock).map((l) => ({ cc: l.cc, amount: lineNet(l) }))),
+        ...ccSides('5100', lines.filter((l) => l.dcost === undefined && !productRec(ctx, l.product)?.values.track_stock).map((l) => ({ cc: l.cc, amount: B(lineNet(l)) }))),
         { account: '1400', debit: t.tax, credit: 0 },
         { account: '2100', debit: 0, credit: t.total },
         ...ccSides('5000', diffBy),
@@ -1123,7 +1151,8 @@ export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = 
   rec.status = 'posted'
   rec.postedAt = nowISO()
   rec.values.paid = 0
-  rec.values.balance = t.total
+  rec.values.balance = totals(lines).total
+  if (isForeign(rec)) { rec.values.total_base = t.total; rec.values.base_balance = t.total }
   log(ctx, `posted ${mod.singular} ${number}`, rec)
   if (mod.role === 'invoices' && !rec.values.credit_for && !rec.values.opening) sellFromShelves(ctx, rec, String(party), lines)
   for (const o of overLimit) log(ctx, `posted ${number} over the credit limit of ${o.name} (${money(o.limit, ctx.schema.company.currency)})`, rec)
@@ -1420,6 +1449,8 @@ export interface PayOptions {
   account?: string
   /** for a cheque: its number, the drawer's bank, and the date it can be cashed */
   cheque?: { no: string; bank?: string; due: string }
+  /** a document in another currency: the rate on the day of payment (its own rate if not given) */
+  rate?: number
 }
 
 /** The cash box or bank account a payment goes through. Cheques wait in 1150 (received) or 2150 (issued) until cashed. */
@@ -1449,7 +1480,7 @@ function chequeInfo(c: PayOptions['cheque'], date: string) {
 }
 
 /** One payment row and its entry on one document (internal: checks are done by the callers). */
-function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMethod, o: { whtRate: number; account: AccountCode; cheque?: Payment['cheque']; voucher?: string; ref: string }) {
+function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMethod, o: { whtRate: number; account: AccountCode; cheque?: Payment['cheque']; voucher?: string; ref: string; rate?: number }) {
   const incoming = moduleById(ctx.schema, rec.module)!.role === 'invoices'
   // Withholding tax is worked out on the value before VAT: the part of this payment that isn't VAT.
   const total = Number(rec.values.total ?? 0)
@@ -1461,12 +1492,25 @@ function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMet
     id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref: o.ref, account: o.account,
     ...(wht ? { wht } : {}), ...(o.cheque ? { cheque: o.cheque } : {}), ...(o.voucher ? { voucher: o.voucher } : {}),
   }, rec))
+  // In another currency: the money at the payment's rate, the debt at what the books carry; the difference is a
+  // realized exchange gain or loss (4960).
+  const foreign = isForeign(rec)
+  const rate = foreign ? Number(o.rate) || docRate(rec) : 1
+  const handedB = round2(handed * rate)
+  const withheldB = round2(withheld * rate)
+  const relief = foreign ? relieve(rec, amount) : amount
+  const gain = round2(incoming ? handedB + withheldB - relief : relief - handedB - withheldB)
   journal(ctx, {
     date, ref: o.ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}${o.cheque ? `, cheque ${o.cheque.no}` : ''}${wht ? `, ${whtName(o.whtRate)} withheld` : ''}`, doc: rec.id,
     lines: incoming
-      ? [{ account: o.account, debit: handed, credit: 0 }, { account: '1450', debit: withheld, credit: 0 }, { account: '1200', debit: 0, credit: amount }]
-      : [{ account: '2100', debit: amount, credit: 0 }, { account: o.account, debit: 0, credit: handed }, { account: '2400', debit: 0, credit: withheld }],
+      ? [{ account: o.account, debit: handedB, credit: 0 }, { account: '1450', debit: withheldB, credit: 0 }, { account: '1200', debit: 0, credit: relief }, side('4960', -gain)]
+      : [{ account: '2100', debit: relief, credit: 0 }, { account: o.account, debit: 0, credit: handedB }, { account: '2400', debit: 0, credit: withheldB }, side('4960', -gain)],
   }, rec)
+  if (foreign) {
+    const p = ctx.ws.data.payments[0]
+    p.fx = { rate, relief }
+    rec.values.base_balance = round2(Number(rec.values.base_balance ?? 0) - relief)
+  }
   rec.values.paid = round2(Number(rec.values.paid) + amount)
   refreshBalance(rec)
 }
@@ -1497,9 +1541,11 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   checkPayable(ctx, rec, amount, date)
   const incoming = moduleById(ctx.schema, rec.module)!.role === 'invoices'
   const whtRate = whtRateOf(o.wht)
+  if (method === 'cheque') noForeign(rec, 'paying by cheque')
+  if (o.rate !== undefined && !(Number(o.rate) > 0)) throw new EngineError('The exchange rate must be more than 0')
   const cheque = method === 'cheque' ? chequeInfo(o.cheque, date) : undefined
   const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account), cheque, ref })
+  payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account), cheque, ref, rate: o.rate === undefined ? undefined : Number(o.rate) })
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
 }
 
@@ -1520,6 +1566,7 @@ export function moneyVoucher(ctx: Ctx, v: { party: string; date: string; method:
     roles.add(role)
     if (a.rec.values[role === 'invoices' ? 'customer' : 'supplier'] !== v.party) throw new EngineError(`${a.rec.number} belongs to another ${role === 'invoices' ? 'customer' : 'supplier'}`)
     checkPayable(ctx, a.rec, a.amount, v.date)
+    noForeign(a.rec, 'a voucher over several documents')
   }
   if (roles.size > 1) throw new EngineError('A voucher is either a receipt from a customer or a payment to a supplier, not both')
   if (new Set(allocs.map((a) => a.rec!.id)).size !== allocs.length) throw new EngineError('Each document appears once on a voucher')
@@ -1564,6 +1611,7 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
     throw new EngineError(`This quotation expired on ${quote.values.valid_until}. Extend “Valid until” or make a new quotation.`)
   }
   const inv = createRecord({ ...ctx, sample: ctx.sample || quote.sample }, invoices.id, { customer: quote.values.customer, date: ctx.today ?? todayISO() }, { lines: (quote.lines ?? []).map((l) => ({ ...l, id: uid('l') })) })
+  if (isForeign(quote)) { inv.values.currency = quote.values.currency; inv.values.rate = quote.values.rate }
   quote.status = 'invoiced'
   quote.links = { ...quote.links, source: inv.id }
   linkRecords(quote, inv)
@@ -1657,14 +1705,24 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
     lines.push({ id: uid('l'), product: ol.product, description: ol.description, qty, price, discount: ol.discount, ...(discAmt ? { discAmt } : {}), vat: ol.vat, ...(ol.taxCode ? { taxCode: ol.taxCode } : {}), ...(ol.cc ? { cc: ol.cc } : {}), from: ol.id })
   }
   if (!lines.length) throw new EngineError('Choose at least one line and quantity to credit')
-  const t = totals(lines)
+  const foreign = isForeign(orig)
+  const fx = docRate(orig)
+  const B = (n: number) => round2(n * fx)
+  const tf = totals(lines)
   const already = creditNotesOf(ctx.ws, orig).reduce((s, cn) => s - Number(cn.values.total ?? 0), 0)
-  if (round2(already + t.total) > round2(Number(orig.values.total))) throw new EngineError('The credit notes would be more than the original document')
+  if (round2(already + tf.total) > round2(Number(orig.values.total))) throw new EngineError('The credit notes would be more than the original document')
+  if (foreign && tf.total > round2(Number(orig.values.balance ?? 0))) throw new EngineError(`${orig.number} is in ${orig.values.currency}: a credit note can be up to what is still owed on it (${orig.values.balance})`)
+  // the amounts booked: in the company's currency at the original document's rate
+  const t = foreign ? baseTotals(lines, fx) : tf
+  // what the customer or supplier balance comes down by in the books (a foreign document: its carrying amount)
+  const arRelief = foreign ? relieve(orig, tf.total) : t.total
+  const fxGain = round2(arRelief - t.total)
 
   const prefix = sales ? 'CN' : 'DN'
   const number = nextNumber(ctx, prefix, date, Boolean(ctx.sample || orig.sample))
   const party = sales ? 'customer' : 'supplier'
   const rec = createRecord(ctx, orig.module, { [party]: orig.values[party], date, due_date: date }, { silent: true, lines, ownCc: true })
+  if (foreign) { rec.values.currency = orig.values.currency; rec.values.rate = fx }
   if (orig.sample) rec.sample = true
 
   const restock = n.restock !== false
@@ -1672,7 +1730,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   if (sales) {
     // Sales returns and allowances (a contra revenue account) keep the gross sales visible, as the statements show them.
     const returns = systemAccount(ctx.ws, '4100') ? '4100' : '4000'
-    jl.push(...ccSides(returns, lines.map((l) => ({ cc: l.cc, amount: lineNet(l) }))), { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: t.total })
+    jl.push(...ccSides(returns, lines.map((l) => ({ cc: l.cc, amount: B(lineNet(l)) }))), { account: '2200', debit: t.tax, credit: 0 }, { account: '1200', debit: 0, credit: arRelief }, side('4960', fxGain))
     if (restock) {
       for (const l of lines) {
         const p = productRec(ctx, l.product)
@@ -1685,11 +1743,11 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
       }
     }
   } else {
-    jl.push({ account: '2100', debit: t.total, credit: 0 }, { account: '1400', debit: 0, credit: t.tax })
+    jl.push({ account: '2100', debit: arRelief, credit: 0 }, { account: '1400', debit: 0, credit: t.tax }, side('4960', -fxGain))
     const services: { cc?: string; amount: number }[] = []
     for (const l of lines) {
       const p = productRec(ctx, l.product)
-      const net = lineNet(l)
+      const net = B(lineNet(l))
       const tag_ = l.cc ? { cc: l.cc } : {}
       if (!p || !p.values.track_stock) { services.push({ cc: l.cc, amount: -net }); continue }
       if (!restock) { jl.push({ ...side('5000', -net), ...tag_ }); continue }
@@ -1712,15 +1770,17 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
 
   // The credit first reduces what is still owed on the original document.
   const open = Math.max(0, Number(orig.values.balance ?? 0))
-  const applied = round2(Math.min(open, t.total))
+  const applied = round2(Math.min(open, tf.total))
+  if (foreign) orig.values.base_balance = round2(Number(orig.values.base_balance ?? 0) - arRelief)
   orig.values.credited = round2(Number(orig.values.credited ?? 0) + applied)
   refreshBalance(orig)
   rec.number = number
   rec.status = 'posted'
   rec.postedAt = nowISO()
-  rec.values.subtotal = -t.subtotal
-  rec.values.tax = -t.tax
-  rec.values.total = -t.total
+  rec.values.subtotal = -tf.subtotal
+  rec.values.tax = -tf.tax
+  rec.values.total = -tf.total
+  if (foreign) { rec.values.total_base = -t.total; rec.values.base_balance = 0 }
   rec.values.credit_for = orig.id
   rec.values.reason = reason
   rec.values.applied = applied
@@ -1738,6 +1798,7 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   const mod = rec ? moduleById(ctx.schema, rec.module) : undefined
   if (!rec || !mod || !rec.values.credit_for) throw new EngineError('Refunds are made on credit and debit notes')
   if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('There is no credit left to refund')
+  noForeign(rec, 'a refund')
   amount = round2(Number(amount))
   const left = round2(-Number(rec.values.balance ?? 0))
   if (!(amount > 0)) throw new EngineError('The refund must be more than 0')
@@ -1823,6 +1884,8 @@ export function applyCredit(ctx: Ctx, o: { credit: string; doc: string; amount: 
   if (!credit.values.credit_for || (credit.status !== 'posted' && credit.status !== 'partial')) throw new EngineError('That is not a credit that can be used')
   if (doc.values.credit_for || (doc.status !== 'posted' && doc.status !== 'partial')) throw new EngineError('Use a credit on a posted invoice or bill that is still owed')
   if (credit.values[key] !== doc.values[key]) throw new EngineError(`The credit belongs to another ${key}`)
+  noForeign(credit, 'using a credit')
+  noForeign(doc, 'using a credit')
   const amount = round2(Number(o.amount))
   const left = round2(-Number(credit.values.balance ?? 0))
   const owed = round2(Number(doc.values.balance ?? 0))
@@ -1883,6 +1946,7 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
   journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
+  if (p.fx) rec.values.base_balance = round2(Number(rec.values.base_balance ?? 0) + p.fx.relief)
   refreshBalance(rec)
   log(ctx, `reversed payment ${p.ref} (${why})`, rec)
 }
@@ -2147,7 +2211,7 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   checks.push({ id: 'stock', ok: stock === inv, blocking: true, title: 'Stock matches the inventory account', detail: stock === inv ? `Both ${money(inv, cur)}` : `Stock list ${money(stock, cur)}, account 1300 ${money(inv, cur)}` })
   const owed = (role: 'invoices' | 'purchases') => {
     const m = moduleByRole(schema, role)
-    return m ? round2(list(ws, m.id).filter((r) => r.status === 'posted' || r.status === 'partial').reduce((s, r) => s + Number(r.values.balance ?? 0), 0)) : 0
+    return m ? round2(list(ws, m.id).filter((r) => r.status === 'posted' || r.status === 'partial').reduce((s, r) => s + baseBalance(r), 0)) : 0
   }
   const ar = accountBalance(ws, '1200')
   const ap = round2(-accountBalance(ws, '2100'))
@@ -2350,11 +2414,12 @@ export function vatReturn(ws: Workspace, schema: AppSchema, month: string) {
     const sign = j.ref === d.rec.number ? 1 : j.ref === `VOID ${d.rec.number}` ? -1 : 0
     if (!sign) continue
     const credit = d.rec.values.credit_for ? -1 : 1
+    const fx = docRate(d.rec)
     for (const l of d.rec.lines ?? []) {
       const code = lineTaxCode(l)
       const box = boxes[d.side].get(code) ?? { code, name: taxCode(code)?.name ?? `VAT ${l.vat}%`, base: 0, vat: 0 }
-      box.base = round2(box.base + sign * credit * lineNet(l))
-      box.vat = round2(box.vat + sign * credit * lineTax(l))
+      box.base = round2(box.base + sign * credit * round2(lineNet(l) * fx))
+      box.vat = round2(box.vat + sign * credit * round2(lineTax(l) * fx))
       boxes[d.side].set(code, box)
     }
   }
@@ -4549,7 +4614,7 @@ export function ageing(ws: Workspace, schema: AppSchema, role: 'invoices' | 'pur
   const rows = new Map<string, AgeingRow>()
   for (const r of list(ws, mod.id)) {
     if (r.status !== 'posted' && r.status !== 'partial') continue
-    const bal = Number(r.values.balance ?? 0)
+    const bal = baseBalance(r)
     // An unused credit (a credit note not yet refunded or used) counts as not yet due, so the total matches the books.
     if (bal === 0) continue
     const party = String(r.values[role === 'invoices' ? 'customer' : 'supplier'] ?? '')

@@ -164,6 +164,7 @@ export function invoiceDelivered(ctx: Ctx, id: string): Rec {
     return { ...rest, id: uid('l'), qty: qty.get(l.id)!, dline: l.id, ...(l.discAmt ? { discAmt: round2((l.discAmt * qty.get(l.id)!) / l.qty) } : {}) }
   })
   const inv = createRecord({ ...ctx, sample: ctx.sample || o.sample }, invoices.id, { customer: o.values.customer, date: ctx.today ?? todayISO(), from_order: o.id }, { lines, ownCc: true })
+  if (o.values.currency) { inv.values.currency = o.values.currency; inv.values.rate = o.values.rate }
   for (const d of toInvoice) d.invoice = inv.id
   linkRecords(o, inv)
   log(ctx, `invoiced deliveries ${toInvoice.map((d) => d.number).join(', ')} of ${o.values.order_no}`, o)

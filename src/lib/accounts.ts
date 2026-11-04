@@ -55,6 +55,7 @@ export const DEFAULT_CHART: Account[] = [
   sys('4100', 'Sales returns and allowances', 'مردودات ومسموحات المبيعات', 'income', false, true),
   own('4900', 'Other income', 'إيرادات أخرى', 'income'),
   sys('4950', 'Gain or loss on disposal of fixed assets', 'أرباح (خسائر) بيع الأصول الثابتة', 'income'),
+  sys('4960', 'Exchange gains and losses', 'فروق تقييم العملة', 'income'),
   sys('5000', 'Cost of goods sold', 'تكلفة البضاعة المباعة', 'expense'),
   sys('5100', 'Purchased services & expenses', 'مشتريات خدمات ومصروفات', 'expense'),
   own('5200', 'Rent', 'الإيجار', 'expense'),

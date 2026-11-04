@@ -9,6 +9,7 @@ import { list, money, recordTitle, round2, todayISO } from '../lib/engine'
 import { accountLabel, chartOf, moneyAccounts, moneyKind } from '../lib/accounts'
 import { assetsOf, bookValue, chargeUpTo, lastMonth, monthlyCharge, registerTotals } from '../lib/assets'
 import { allowance, DEFAULT_RATES, suggestedAllowance, type Rates } from '../lib/badDebts'
+import { lastRates, openForeign } from '../lib/fx'
 import { monthEnd } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { getLang, N_, tr } from '../lib/i18n'
@@ -238,11 +239,30 @@ export function MonthEndTodo({ month }: { month: string }) {
     dep > 0 && { key: 'dep', text: tr('Assets lose {amount} of value up to {month}', { amount: money(dep, cur), month }), button: tr('Post it'), run: () => act('asset.depreciate', { month }, tr('Depreciation posted'), `Depreciation up to ${month}`) },
     aside > 0 && { key: 'late', text: tr('Customers are late: set aside {amount} in case some never pay', { amount: money(aside, cur) }), button: tr('Set it aside'), run: () => act('debt.allowance', { date: end, amount: need, note: 'Month-end' }, tr('Set aside'), 'Allowance for doubtful debts') },
   ].filter(Boolean) as { key: string; text: string; button: string; run: () => unknown }[]
-  if (!items.length) return null
+  // amounts still owed in another currency: restated at the month's closing rates
+  const foreign = (ws.books?.revaluations ?? []).some((r) => r.month >= month) ? [] : openForeign(ws, schema, end)
+  const codes = [...new Set(foreign.map((r) => String(r.values.currency)))]
+  if (!items.length && !codes.length) return null
   return (
     <div className="note stack" style={{ gap: 8 }}>
       <b>{tr('Before closing')}</b>
       {items.map((i) => <div key={i.key} className="row between" style={{ gap: 10, flexWrap: 'wrap' }}><span className="small">{i.text}</span><button className="small" onClick={i.run}><CheckCircle2 size={13} /> {i.button}</button></div>)}
+      {codes.length > 0 && <Revalue month={month} codes={codes} count={foreign.length} />}
+    </div>
+  )
+}
+
+function Revalue({ month, codes, count }: { month: string; codes: string[]; count: number }) {
+  const { ws, act } = useApp()
+  const [rates, setRates] = useState<Record<string, string>>(() => Object.fromEntries(codes.map((c) => [c, String(lastRates(ws)[c]?.rate ?? '')])))
+  const ready = codes.every((c) => Number(rates[c]) > 0)
+  return (
+    <div className="row between" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
+      <span className="small">{tr('{n} invoices or bills are still owed in another currency: restate them at the closing rate', { n: count })}</span>
+      <span className="row" style={{ gap: 6 }}>
+        {codes.map((c) => <label key={c} className="row tiny" style={{ gap: 4 }}>1 {c} =<input aria-label={c} inputMode="decimal" value={rates[c] ?? ''} onChange={(e) => setRates({ ...rates, [c]: e.target.value })} style={{ width: 80 }} /></label>)}
+        <button className="small" disabled={!ready} onClick={() => act('fx.revalue', { month, rates: Object.fromEntries(codes.map((c) => [c, Number(rates[c])])) }, tr('Revalued at the closing rates'), `Revaluation ${month}`)}><CheckCircle2 size={13} /> {tr('Restate')}</button>
+      </span>
     </div>
   )
 }

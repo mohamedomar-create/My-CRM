@@ -113,7 +113,8 @@ export function receiveGoods(ctx: Ctx, id: string, g: { date: string; lines: { l
   const lines: Receipt['lines'] = []
   let diff = 0
   for (const t of take) {
-    const value = round2((lineNet(t.l) * t.qty) / t.l.qty)
+    // at the order's price, in the company's currency (an order in another currency at its rate)
+    const value = round2(((lineNet(t.l) * t.qty) / t.l.qty) * (o.values.currency ? Number(o.values.rate) || 1 : 1))
     const into = putIntoStock(ctx, stocked(ctx, t.l)!, t.qty, value, number, rid, date, { lot: t.lot, expiry: t.expiry, wh }, o)
     diff = round2(diff + into.diff)
     lines.push({ line: t.l.id, product: t.l.product!, qty: t.qty, cost: value, ...(t.lot ? { lot: t.lot } : {}), ...(t.expiry ? { expiry: t.expiry } : {}) })
@@ -168,6 +169,7 @@ export function billReceived(ctx: Ctx, id: string): Rec {
     ...services.map((l) => ({ ...l, id: uid('l') })),
   ]
   const bill = createRecord({ ...ctx, sample: ctx.sample || o.sample }, o.module, { supplier: o.values.supplier, date: ctx.today ?? todayISO(), from_po: o.id }, { lines, ownCc: true })
+  if (o.values.currency) { bill.values.currency = o.values.currency; bill.values.rate = o.values.rate }
   for (const r of toBill) r.bill = bill.id
   if (services.length) o.values.services_billed = bill.id
   linkRecords(o, bill)
