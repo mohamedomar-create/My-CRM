@@ -4,7 +4,7 @@ import type { AppSchema, FieldDef, ModuleDef } from './schema'
 import { hasErp } from './scope'
 import { GROUPABLE_TYPES, fieldByKey, isNumeric, moduleById } from './schema'
 import { ROLES } from './roles'
-import { brokenColumns, pathFields } from './sheets'
+import { brokenColumns, pathFields, pathModules } from './sheets'
 import { formulaRefs } from './formula'
 
 export type Tab = 'modules' | 'pipelines' | 'reports' | 'automations' | 'rules' | 'roles' | 'settings'
@@ -83,7 +83,7 @@ export function moduleDependents(schema: AppSchema, mod: ModuleDef): string[] {
     if (ROLES[m.role].needs?.includes(mod.role) && schema.modules.filter((x) => x.role === mod.role).length === 1) out.push(`“${m.name}” needs a ${ROLES[mod.role].label} module`)
   }
   for (const r of schema.reports) if (r.module === mod.id) out.push(`report “${r.name}”`)
-  for (const sh of schema.sheets ?? []) if (sh.module === mod.id || sh.columns.some((c) => pathFields(schema, sh, c).some((p) => p.module === mod.id))) out.push(`sheet report “${sh.name}”`)
+  for (const sh of schema.sheets ?? []) if (sh.module === mod.id || sh.columns.some((c) => pathModules(schema, sh, c).includes(mod.id))) out.push(`sheet report “${sh.name}”`)
   for (const w of schema.workflows) if (w.module === mod.id) out.push(`automation “${w.name}”`)
   for (const a of schema.approvals ?? []) if (a.module === mod.id) out.push(`approval “${a.name}”`)
   for (const m of schema.modules) for (const f of m.fields) if (f.rollup?.module === mod.id && m.id !== mod.id) out.push(`rollup “${f.label}” in ${m.name}`)

@@ -1151,3 +1151,26 @@ a.trail-item:hover { border-color: var(--primary); color: var(--primary-600); }
 .sheet-search input { padding-inline-start: 30px; }
 .sheet-card { white-space: normal; min-width: 0; }
 .sheet-card > .stack { min-width: 0; }
+.sheet-editor-head { gap: 8px; }
+.sheet-name { font-size: 1.2rem; font-weight: 700; max-width: 520px; flex: 1 1 280px; }
+.sheet-sources { display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.sheet-source-tabs { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow-y: auto; }
+.sheet-source { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 10px; background: transparent; color: var(--text); border: 1px solid transparent; text-align: start; justify-content: flex-start; font-weight: 500; white-space: normal; }
+.sheet-source:hover { background: var(--surface-2); }
+.sheet-source.on { background: var(--primary-50); border-color: var(--primary-100); color: var(--primary-600); }
+.sheet-source b { font-size: 0.84rem; display: inline-flex; align-items: center; }
+.sheet-source .badge { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
+.sheet-source .count-soft { margin-inline-start: auto; }
+.sheet-source-body { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; min-height: 120px; background: var(--surface-2); }
+.sheet-total { display: flex; flex-direction: column; gap: 2px; }
+.sheet-total select { padding: 4px 6px; width: auto; }
+.sheet-chart-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.sheet-chart-row .field { margin: 0; }
+.sheet-chart-row .seg button { padding: 6px 9px; display: inline-flex; align-items: center; gap: 4px; }
+.sheet-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.sheet-chart h3 { font-size: 0.9rem; margin: 0 0 8px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.sheet-table tfoot td { position: sticky; bottom: 0; background: var(--surface-3); border-top: 2px solid var(--text-2); font-variant-numeric: tabular-nums; }
+.sheet-designer .sheet-step > .row { flex: 1; }
+@media (max-width: 800px) { .sheet-sources { grid-template-columns: 1fr; } .sheet-source-tabs { flex-direction: row; flex-wrap: wrap; max-height: none; } }
+.sheet-card.on, .sheet-card.on:hover { background: var(--primary-50); color: var(--text); border-color: var(--primary-600); }
+.sheet-card.on .muted { color: var(--text-2); }
