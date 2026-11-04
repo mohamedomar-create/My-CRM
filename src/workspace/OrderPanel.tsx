@@ -4,7 +4,9 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileCheck2, PackageCheck, Printer, Truck, Undo2, XCircle } from 'lucide-react'
 import { useApp } from './useApp'
-import { canPost, findRecord, recordTitle, todayISO } from '../lib/engine'
+import { canPost, findRecord, recordTitle, todayISO, usesWarehouses } from '../lib/engine'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
 import { billedBy, orderProgress, type Delivery } from '../lib/orders'
 import type { Rec } from '../lib/types'
 import { getLang, tr } from '../lib/i18n'
@@ -32,6 +34,8 @@ export function OrderPanel({ rec }: { rec: Rec }) {
   const prog = orderProgress(ws, rec)
   const [qty, setQty] = useState<Record<string, string>>({})
   const [date, setDate] = useState(todayISO())
+  const defaultWh = useDefaultWarehouse()
+  const [wh, setWh] = useState('')
   const notes = (ws.deliveries ?? []).filter((d) => d.order === rec.id)
   const left = prog.lines.some((l) => l.left > 0)
   const closed = Boolean(rec.values.closed)
@@ -63,7 +67,8 @@ export function OrderPanel({ rec }: { rec: Rec }) {
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <button type="button" className="ghost small" onClick={() => setQty(Object.fromEntries(prog.lines.map((l) => [l.line.id, l.left ? String(l.left) : ''])))}>{tr('Everything left')}</button>
           <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></label>
-          <button disabled={!sending.length} onClick={() => { if (act('order.deliver', { id: rec.id, date, lines: sending.map((l) => ({ line: l.line.id, qty: Number(qty[l.line.id]) })) }, tr('Delivery note made: the goods left stock')) !== undefined) setQty({}) }}><PackageCheck size={15} /> {tr('Deliver')}</button>
+          <WarehouseSelect value={wh || defaultWh} onChange={setWh} label={tr('From')} />
+          <button disabled={!sending.length} onClick={() => { if (act('order.deliver', { id: rec.id, date, ...(usesWarehouses(ws) ? { warehouse: wh || defaultWh } : {}), lines: sending.map((l) => ({ line: l.line.id, qty: Number(qty[l.line.id]) })) }, tr('Delivery note made: the goods left stock')) !== undefined) setQty({}) }}><PackageCheck size={15} /> {tr('Deliver')}</button>
         </div>
       )}
       {notes.length > 0 && (

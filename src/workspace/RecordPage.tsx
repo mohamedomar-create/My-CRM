@@ -10,9 +10,12 @@ import { DocFlow } from './DocFlow'
 import { LandedPanel } from './LandedPanel'
 import { OrderPanel } from './OrderPanel'
 import { BillMatch, PurchaseOrderPanel } from './PurchaseOrderPanel'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  usesWarehouses,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -121,8 +124,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     if (act('record.update', { id: rec!.id, ...edits() }, tr('Saved'))) settle()
   }
 
+  const defaultWh = useDefaultWarehouse()
+  const [pickedWh, setPostWh] = useState('')
+  const postWh = pickedWh || String(rec?.values.warehouse ?? '') || defaultWh
   function saveAndPost() {
-    const ok = act('record.saveAndPost', { id: rec!.id, ...edits() }, tr('Saved and posted. Stock and accounts are updated.'))
+    const ok = act('record.saveAndPost', { id: rec!.id, ...edits(), ...(usesWarehouses(ws) ? { warehouse: postWh } : {}) }, tr('Saved and posted. Stock and accounts are updated.'))
     if (ok) settle()
   }
 
@@ -179,10 +185,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.role === 'purchases' && rec && rec.status === 'draft' && !rec.values.from_po && !rec.values.credit_for && (rec.lines ?? []).some((l) => l.product) && can({ schema, user }, mod.id, 'edit') && (
             <button className="secondary" disabled={dirty} title={tr('Order the goods first; receive them when they arrive, then bill what came')} onClick={() => act('po.send', { id: rec.id }, tr('Sent as a purchase order'))}><ClipboardList size={15} /> {tr('Send as purchase order')}</button>
           )}
+          {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (rec.lines ?? []).some((l) => l.product) && <WarehouseSelect value={postWh} onChange={setPostWh} label={mod.role === 'invoices' ? tr('From') : tr('Into')} />}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
             dirty
               ? <button className="success" onClick={saveAndPost} title={tr('Save your changes and post in one step')}><Lock size={15} /> {tr('Save & post')}</button>
-              : <button className="success" onClick={() => act('doc.post', { id: rec.id }, tr('Posted. Stock and accounts are updated.'))}><Lock size={15} /> {tr('Post')}</button>
+              : <button className="success" onClick={() => act('doc.post', { id: rec.id, ...(usesWarehouses(ws) ? { warehouse: postWh } : {}) }, tr('Posted. Stock and accounts are updated.'))}><Lock size={15} /> {tr('Post')}</button>
           )}
           {mod.lines && rec && (rec.status === 'posted' || rec.status === 'partial') && canPost({ schema, user }) && !isCredit && (
             <button className="success" onClick={() => setPaying(true)}><Banknote size={15} /> {tr('Register payment')}</button>

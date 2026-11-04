@@ -12,12 +12,12 @@ const r4 = (n: number) => Math.round((n + Number.EPSILON) * 10000) / 10000
 export const ISO = /^\d{4}-\d{2}-\d{2}$/
 
 /** The batches of a product with units on hand, first to expire first (no expiry last). */
-export function lotsOf(ws: Workspace, productId: string): LotBalance[] {
+export function lotsOf(ws: Workspace, productId: string, wh?: string): LotBalance[] {
   const by = new Map<string, LotBalance>()
   // the stock list is newest first: walk it oldest first so the first receipt gives the date and the expiry
   for (let i = ws.data.stock.length - 1; i >= 0; i--) {
     const m = ws.data.stock[i]
-    if (m.product !== productId || !m.lot) continue
+    if (m.product !== productId || !m.lot || (wh && (m.wh ?? 'MAIN') !== wh)) continue
     const b = by.get(m.lot) ?? { lot: m.lot, expiry: m.expiry, qty: 0, firstIn: m.date }
     b.qty = r4(b.qty + m.qty)
     if (!b.expiry && m.expiry) b.expiry = m.expiry
@@ -33,8 +33,8 @@ export const hasLots = (ws: Workspace, productId: string) => ws.data.stock.some(
  * batches can't cover comes from stock with no batch (`lot` undefined). `expired` is how many units are in expired
  * batches, so the person can be told why the sale is short.
  */
-export function allocateFefo(ws: Workspace, productId: string, qty: number, date: string, onHandTotal: number) {
-  const lots = lotsOf(ws, productId)
+export function allocateFefo(ws: Workspace, productId: string, qty: number, date: string, onHandTotal: number, wh?: string) {
+  const lots = lotsOf(ws, productId, wh)
   const lotted = lots.reduce((s, l) => s + l.qty, 0)
   const loose = Math.max(0, r4(onHandTotal - lotted))
   const usable = lots.filter((l) => !l.expiry || l.expiry >= date)

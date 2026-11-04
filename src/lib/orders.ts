@@ -8,7 +8,7 @@ import type { Line, Rec, Workspace } from './types'
 import { moduleById, moduleByRole, uid, type AppSchema } from './schema'
 import {
   can, createRecord, deliveredQty, EngineError, findRecord, heldForOrders, ISO_DATE, journal, linkRecords, log, needFinance, nextNumber, noRealPostingOverSamples,
-  noteLots, nowISO, onHand, productRec, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, type Ctx,
+  noteLots, nowISO, onHand, onHandAt, productRec, warehouseFor, warehouseName, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, type Ctx,
 } from './engine'
 
 export interface Delivery {
@@ -23,6 +23,8 @@ export interface Delivery {
   /** the invoice that bills it (a draft, or posted); free again if that invoice is deleted or voided */
   invoice?: string
   note?: string
+  /** where the goods left from */
+  warehouse?: string
   at: string
   by: string
   undone?: { at: string; by: string; date: string }
@@ -76,7 +78,7 @@ export function confirmOrder(ctx: Ctx, id: string) {
 }
 
 /** Sends goods of an order: a delivery note with the units of each line, taken out of stock into 1310. */
-export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: string; qty: number }[]; note?: string }) {
+export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: string; qty: number }[]; note?: string; warehouse?: string }) {
   needFinance(ctx, 'deliver goods')
   noRealPostingOverSamples(ctx)
   const o = order(ctx, id)
@@ -98,9 +100,11 @@ export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: 
   }
   if (!send.length) throw new EngineError('Enter how many of each line go out')
   // Enough on hand, and not held for other orders (this order's own hold is what it delivers from).
+  const wh = warehouseFor(ctx, d.warehouse)
   const need = new Map<string, number>()
   for (const s of send) if (tracked(ctx, s.l)) need.set(s.l.product!, round4((need.get(s.l.product!) ?? 0) + s.qty))
   for (const [pid, q] of need) {
+    if (wh && !ctx.schema.company.allowNegativeStock && onHandAt(ctx.ws, pid, wh) < q) throw new EngineError(`Only ${onHandAt(ctx.ws, pid, wh)} of ${productRec(ctx, pid)?.values.name} are in ${warehouseName(ctx.ws, wh)}`)
     const free = round4(onHand(ctx.ws, pid) - heldForOrders(ctx.ws, ctx.schema, pid, o.id))
     if (!ctx.schema.company.allowNegativeStock && q > free) {
       const name = productRec(ctx, pid)?.values.name
@@ -112,14 +116,14 @@ export function deliver(ctx: Ctx, id: string, d: { date: string; lines: { line: 
   const lines: Delivery['lines'] = []
   for (const s of send) {
     if (!tracked(ctx, s.l)) { lines.push({ line: s.l.id, product: s.l.product ?? '', qty: s.qty, cost: 0 }); continue }
-    const { issue, lots } = takeFromStock(ctx, s.l.product!, s.qty, date, number, did, o)
+    const { issue, lots } = takeFromStock(ctx, s.l.product!, s.qty, date, number, did, o, wh)
     const noted = [{ ...s.l, qty: s.qty }]
     noteLots(noted, lots)
     lines.push({ line: s.l.id, product: s.l.product!, qty: s.qty, cost: issue, ...(noted[0].lots ? { lots: noted[0].lots } : {}) })
   }
   const cost = round2(lines.reduce((t, l) => t + l.cost, 0))
   if (cost) journal(ctx, { date, ref: number, memo: `Delivery ${number} for ${o.values.order_no}`, lines: [{ account: '1310', debit: cost, credit: 0 }, { account: '1300', debit: 0, credit: cost }] }, o)
-  const note: Delivery = { id: did, number, order: o.id, date, lines, ...(d.note?.trim() ? { note: d.note.trim().slice(0, 200) } : {}), at: nowISO(), by: ctx.user.name }
+  const note: Delivery = { id: did, number, order: o.id, date, lines, ...(wh ? { warehouse: wh } : {}), ...(d.note?.trim() ? { note: d.note.trim().slice(0, 200) } : {}), at: nowISO(), by: ctx.user.name }
   ctx.ws.deliveries = [tag(ctx, note, o), ...(ctx.ws.deliveries ?? [])]
   log(ctx, `delivered ${number} for ${o.values.order_no}`, o)
   return note

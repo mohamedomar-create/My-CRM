@@ -85,6 +85,16 @@ export interface ImportBatch {
   undoneBy?: string
 }
 
+export interface Warehouse {
+  code: string
+  name: string
+  nameAr?: string
+  kind: 'store' | 'van'
+  /** a van's salesperson: their sales leave from it by default */
+  person?: string
+  active: boolean
+}
+
 export interface StockMove {
   id: string
   product: string
@@ -99,6 +109,8 @@ export interface StockMove {
   /** the batch (lot) these units belong to, and its expiry date (see batches.ts) */
   lot?: string
   expiry?: string
+  /** the warehouse or van (see warehouses in Workspace); missing = the main store */
+  wh?: string
 }
 
 /** An account of the chart of accounts (see accounts.ts), e.g. '1100' or one the company added. */
@@ -311,6 +323,8 @@ export interface Workspace {
   plans?: import('./plan').BusinessPlan[]
   /** landed costs: freight, customs and clearing added into the cost of goods (see landed.ts) */
   landed?: import('./landed').LandedCost[]
+  /** the company's warehouses and delivery vans; none = everything is in the main store */
+  warehouses?: Warehouse[]
   /** goods received notes: goods received against purchase orders (see purchasing.ts) */
   receipts?: import('./purchasing').Receipt[]
   /** delivery notes: goods sent against confirmed sales orders (see orders.ts) */

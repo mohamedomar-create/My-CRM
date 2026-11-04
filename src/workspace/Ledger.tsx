@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
 import { showToast, useApp } from './useApp'
-import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
+import { accountBalance, booksHealth, costCenters, form41Csv, missingEInvoices, list, money, onHand, profitAndLoss, round2, todayISO, usesWarehouses, vatReturn, withholdingTax, type VatBox, type WhtRow } from '../lib/engine'
 import { taxCode } from '../lib/tax'
 import { TYPE_LABEL, typeLabel, whtLabel } from './labels'
 import { chartOf, debitNormal, normalSign, type AccountType, accountLabel } from '../lib/accounts'
@@ -13,6 +13,8 @@ import { dateLocale, getLang, msg, tr } from '../lib/i18n'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
 import { MonthEndTodo } from './PeriodEnd'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
 
 
 
@@ -256,12 +258,15 @@ export function StockTools() {
   const [counts, setCounts] = useState<Record<string, string>>({})
   const [countDate, setCountDate] = useState(todayISO())
   const [note, setNote] = useState('')
+  const defaultWh = useDefaultWarehouse()
+  const [wh, setWh] = useState('')
+  const place = usesWarehouses(ws) ? { warehouse: wh || defaultWh } : {}
   if (!products) return null
   const items = list(ws, products.id).filter((p) => p.values.track_stock)
   function adjust(e: React.FormEvent) {
     e.preventDefault()
     const qty = num(adj.qty)
-    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
+    if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date, ...place }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
       setAdj({ ...adj, product: '', qty: '', cost: '', reason: '' })
       setMode('')
     }
@@ -269,7 +274,7 @@ export function StockTools() {
   function count(e: React.FormEvent) {
     e.preventDefault()
     const list_ = Object.entries(counts).filter(([, v]) => v !== '').map(([product, v]) => ({ product, counted: num(v) }))
-    const out = act<{ ref: string; adjusted: number }>('stock.count', { date: countDate, counts: list_, note }, undefined, 'Stock count')
+    const out = act<{ ref: string; adjusted: number }>('stock.count', { date: countDate, counts: list_, note, ...place }, undefined, 'Stock count')
     if (out) {
       showToast({ kind: 'ok', text: out.adjusted ? `Count saved: ${out.adjusted} product${out.adjusted > 1 ? 's' : ''} adjusted` : tr('Count saved: everything matched') })
       setCounts({})
@@ -282,6 +287,7 @@ export function StockTools() {
       <div className="row" style={{ gap: 8 }}>
         <button className={mode === 'adjust' ? '' : 'secondary'} onClick={() => setMode(mode === 'adjust' ? '' : 'adjust')}>{tr('Adjust stock')}</button>
         <button className={mode === 'count' ? '' : 'secondary'} onClick={() => setMode(mode === 'count' ? '' : 'count')}>{tr('Stock count')}</button>
+        {mode && <WarehouseSelect value={wh || defaultWh} onChange={setWh} label={tr('Where')} />}
       </div>
       {mode === 'adjust' && (
         <form className="card stack" onSubmit={adjust}>

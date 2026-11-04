@@ -4,7 +4,7 @@ import { allocateFefo, hasLots, lotsOf } from './batches'
 import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRole, Permission, WorkflowDef, Filter } from './schema'
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
-import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Workspace } from './types'
+import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, Rec, User, Warehouse, Workspace } from './types'
 import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind, systemAccount } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
@@ -876,7 +876,106 @@ export function onHand(ws: Workspace, productId: string) {
   return round2(ws.data.stock.filter((s) => s.product === productId).reduce((s, m) => s + m.qty, 0))
 }
 
-export function postDocument(ctx: Ctx, rec: Rec) {
+/* ---------------- warehouses and vans ---------------- */
+
+/** The main store: where stock is when a company has no warehouses, and every stock movement made before it had any. */
+export const MAIN_STORE = 'MAIN'
+export const whOf = (m: { wh?: string }) => m.wh ?? MAIN_STORE
+/** Whether the company keeps stock in more than one place. */
+export const usesWarehouses = (ws: Workspace) => (ws.warehouses ?? []).some((w) => w.active)
+/** The places stock can be: the main store, then the company's warehouses and vans. */
+export function warehouses(ws: Workspace): Warehouse[] {
+  const own = ws.warehouses ?? []
+  return own.some((w) => w.code === MAIN_STORE) ? own : [{ code: MAIN_STORE, name: 'Main store', nameAr: 'المخزن الرئيسي', kind: 'store', active: true }, ...own]
+}
+export const warehouseName = (ws: Workspace, code: string, lang: 'en' | 'ar' = 'en') => { const w = warehouses(ws).find((x) => x.code === code); return w ? (lang === 'ar' && w.nameAr) || w.name : code }
+/** Units of a product in one place. */
+export function onHandAt(ws: Workspace, productId: string, wh: string) {
+  return round4(ws.data.stock.filter((s) => s.product === productId && whOf(s) === wh).reduce((s, m) => s + m.qty, 0))
+}
+/** Units of a product in each place (only places with stock). */
+export function stockByWarehouse(ws: Workspace, productId: string) {
+  const by = new Map<string, number>()
+  for (const m of ws.data.stock) if (m.product === productId) by.set(whOf(m), round4((by.get(whOf(m)) ?? 0) + m.qty))
+  return by
+}
+/**
+ * The place a stock document works from: the one asked for (it must exist and be active), else the person's own van,
+ * else the main store. Undefined while the company has no warehouses, so nothing changes for it.
+ */
+export function warehouseFor(ctx: Ctx, asked?: unknown): string | undefined {
+  if (!usesWarehouses(ctx.ws)) return undefined
+  const all = warehouses(ctx.ws).filter((w) => w.active)
+  if (asked !== undefined && asked !== null && asked !== '') {
+    const w = all.find((x) => x.code === String(asked))
+    if (!w) throw new EngineError('Choose an active warehouse or van')
+    return w.code
+  }
+  return all.find((w) => w.kind === 'van' && w.person === ctx.user.id)?.code ?? MAIN_STORE
+}
+
+/** Adds or changes a warehouse or van (finance and admins). A place with stock can't be turned off. */
+export function saveWarehouse(ctx: Ctx, w: { code: string; name: string; nameAr?: string; kind: 'store' | 'van'; person?: string; active?: boolean }) {
+  needFinance(ctx, 'manage warehouses')
+  const code = String(w.code ?? '').trim().toUpperCase()
+  if (!/^[A-Z0-9-]{2,12}$/.test(code)) throw new EngineError('A warehouse code is 2 to 12 letters or digits, e.g. ALEX or VAN-1')
+  const name = String(w.name ?? '').trim().slice(0, 60)
+  if (name.length < 2) throw new EngineError('Give the warehouse a name')
+  if (w.kind !== 'store' && w.kind !== 'van') throw new EngineError('Choose a store or a van')
+  if (w.person && !ctx.ws.users.some((u) => u.id === w.person)) throw new EngineError('That person isn’t in the team')
+  const active = w.active !== false
+  if (!active) {
+    const has = [...new Set(ctx.ws.data.stock.filter((m) => whOf(m) === code).map((m) => m.product))].some((pid) => onHandAt(ctx.ws, pid, code) !== 0)
+    if (has) throw new EngineError('This place still has stock: move it elsewhere first')
+  }
+  const list_ = [...(ctx.ws.warehouses ?? [])]
+  const i = list_.findIndex((x) => x.code === code)
+  const next: Warehouse = { code, name, ...(w.nameAr?.trim() ? { nameAr: w.nameAr.trim().slice(0, 60) } : {}), kind: w.kind, ...(w.kind === 'van' && w.person ? { person: w.person } : {}), active }
+  if (i >= 0) list_[i] = next
+  else list_.push(next)
+  ctx.ws.warehouses = list_
+  if (w.kind === 'van') logLedger(ctx, `saved van ${code} ${name}`)
+  else logLedger(ctx, `saved warehouse ${code} ${name}`)
+}
+
+/** Moves goods from one place to another (a store to a van, a van back, between stores): no change in value or books. */
+export function transferStock(ctx: Ctx, t: { from: string; to: string; date: string; lines: { product: string; qty: number; lot?: string }[]; note?: string }) {
+  needFinance(ctx, 'move stock between warehouses')
+  noRealPostingOverSamples(ctx)
+  const all = warehouses(ctx.ws).filter((w) => w.active)
+  const from = all.find((w) => w.code === String(t.from))
+  const to = all.find((w) => w.code === String(t.to))
+  if (!from || !to) throw new EngineError('Choose where the goods leave from and where they go')
+  if (from.code === to.code) throw new EngineError('Choose two different places')
+  const date = String(t.date ?? '')
+  if (!ISO_DATE.test(date)) throw new EngineError('Choose the date')
+  if (date > (ctx.today ?? todayISO())) throw new EngineError('A transfer can’t be dated in the future')
+  const lines = (t.lines ?? []).map((l) => ({ product: String(l.product ?? ''), qty: round4(Number(l.qty) || 0), lot: l.lot ? String(l.lot).trim() : '' })).filter((l) => l.qty)
+  if (!lines.length) throw new EngineError('Choose the goods and how many')
+  const ref = nextNumber(ctx, 'TRN', date)
+  for (const l of lines) {
+    const p = productRec(ctx, l.product)
+    if (!p || !p.values.track_stock) throw new EngineError('Choose a product that tracks stock')
+    if (l.qty < 0) throw new EngineError('Quantities moved are positive')
+    const have = onHandAt(ctx.ws, p.id, from.code)
+    if (have < l.qty) throw new EngineError(`${from.name} has ${have} of ${p.values.name}`)
+    // which batches go: the one chosen, or first to expire first (expired ones may be moved too)
+    const parts = l.lot
+      ? (() => { const b = lotsOf(ctx.ws, p.id, from.code).find((x) => x.lot === l.lot); if (!b || b.qty < l.qty) throw new EngineError(`Batch ${l.lot} of ${p.values.name} has ${b?.qty ?? 0} in ${from.name}`); return [{ lot: b.lot, expiry: b.expiry, qty: l.qty }] })()
+      : hasLots(ctx.ws, p.id) ? allocateFefo(ctx.ws, p.id, l.qty, '0000-01-01', have, from.code).parts : [{ qty: l.qty }]
+    const cost = Number(p.values.cost ?? 0)
+    for (const pt of parts) {
+      const batch = pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -pt.qty, cost, value: 0, doc: '', ref, date, wh: from.code, ...batch }))
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: pt.qty, cost, value: 0, doc: '', ref, date, wh: to.code, ...batch }))
+    }
+  }
+  if (t.note?.trim()) logLedger(ctx, `moved stock ${ref} from ${from.name} to ${to.name} (${t.note.trim().slice(0, 100)})`)
+  else logLedger(ctx, `moved stock ${ref} from ${from.name} to ${to.name}`)
+  return { ref }
+}
+
+export function postDocument(ctx: Ctx, rec: Rec, opts: { warehouse?: string } = {}) {
   const mod = moduleById(ctx.schema, rec.module)!
   if (!canPost(ctx)) throw new EngineError('Only Admin and finance roles can post documents')
   if (rec.status !== 'draft') throw new EngineError('Already posted')
@@ -908,13 +1007,17 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     throw new EngineError('Remove the sample data before posting real documents, so your books start clean (use “Remove sample data” at the top of the app).')
   }
 
+  // Where the goods leave from or arrive at (companies with warehouses or vans): the one chosen, the person's van, or the main store.
+  const wh = qtyBy.size ? warehouseFor(ctx, opts.warehouse ?? rec.values.warehouse) : undefined
+  if (wh) rec.values.warehouse = wh
+  const have = (pid: string) => (wh ? onHandAt(ctx.ws, pid, wh) : onHand(ctx.ws, pid))
   if (mod.role === 'invoices' && !ctx.schema.company.allowNegativeStock) {
-    const short = [...qtyBy].filter(([pid, q]) => onHand(ctx.ws, pid) < q)
-    if (short.length) throw new EngineError(`Not enough stock: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${onHand(ctx.ws, pid)})`).join(', ')}`)
+    const short = [...qtyBy].filter(([pid, q]) => have(pid) < q)
+    if (short.length) throw new EngineError(wh ? `Not enough stock in ${warehouseName(ctx.ws, wh)}: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${have(pid)})`).join(', ')}` : `Not enough stock: ${short.map(([pid, q]) => `${productRec(ctx, pid)?.values.name} (need ${q}, have ${onHand(ctx.ws, pid)})`).join(', ')}`)
     // expired batches are never sold
     for (const [pid, q] of qtyBy) {
       if (!hasLots(ctx.ws, pid)) continue
-      const a = allocateFefo(ctx.ws, pid, q, date, onHand(ctx.ws, pid))
+      const a = allocateFefo(ctx.ws, pid, q, date, have(pid), wh)
       if (a.short > 0) throw new EngineError(`Only ${round4(q - a.short)} of ${productRec(ctx, pid)?.values.name} can be sold: ${a.expired} are in expired batches. Write the expired batches off first.`)
     }
   }
@@ -944,7 +1047,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
     const cogsBy: { cc?: string; amount: number }[] = []
     for (const [pid, q] of qtyBy) {
       const own = lines.filter((l) => l.product === pid && l.dcost === undefined)
-      const { issue, lots } = takeFromStock(ctx, pid, q, date, number, rec.id, rec)
+      const { issue, lots } = takeFromStock(ctx, pid, q, date, number, rec.id, rec, wh)
       cogs += issue
       // The cost of the goods follows each line's cost center, by quantity (the last line takes the cents left).
       let left = issue
@@ -979,7 +1082,7 @@ export function postDocument(ctx: Ctx, rec: Rec) {
       const p = productRec(ctx, l.product)
       if (!p || !p.values.track_stock) continue
       const lineValue = lineNet(l)
-      const into = putIntoStock(ctx, p, l.qty, lineValue, number, rec.id, date, l, rec)
+      const into = putIntoStock(ctx, p, l.qty, lineValue, number, rec.id, date, { lot: l.lot, expiry: l.expiry, wh }, rec)
       priceDiff = round2(priceDiff + into.diff)
       diffBy.push({ cc: l.cc, amount: into.diff })
       received = round2(received + lineValue)
@@ -1084,7 +1187,7 @@ function orderLines(ctx: Ctx, rec: Rec, lines: Line[], sales: boolean) {
  * Takes `q` units of a product out of stock at its moving-average cost (first to expire first, for batches), with one
  * stock move per batch. Returns what they cost and the batches taken. Used by invoices and delivery notes alike.
  */
-export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, ref: string, doc: string, from?: { sample?: boolean }) {
+export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, ref: string, doc: string, from?: { sample?: boolean }, wh?: string) {
   const p = productRec(ctx, pid)!
   const cost = Number(p.values.cost ?? 0)
   const oldQty = onHand(ctx.ws, pid)
@@ -1094,17 +1197,17 @@ export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, re
   const lots: { lot?: string; expiry?: string; qty: number }[] = []
   if (hasLots(ctx.ws, pid)) {
     // first to expire first: one stock move per batch, the cost shared by quantity
-    const a = allocateFefo(ctx.ws, pid, q, date, oldQty)
+    const a = allocateFefo(ctx.ws, pid, q, date, wh ? onHandAt(ctx.ws, pid, wh) : oldQty, wh)
     const parts = a.short > 0 ? [...a.parts, { qty: a.short }] : a.parts
     let rest = issue
     parts.forEach((pt, i) => {
       const v = i === parts.length - 1 ? round2(rest) : round2((issue * pt.qty) / q)
       rest = round2(rest - v)
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -pt.qty, cost, value: -v, doc, ref, date, ...(pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}) }, from))
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -pt.qty, cost, value: -v, doc, ref, date, ...(wh ? { wh } : {}), ...(pt.lot ? { lot: pt.lot, ...(pt.expiry ? { expiry: pt.expiry } : {}) } : {}) }, from))
     })
     lots.push(...parts.filter((pt) => pt.lot).map((pt) => ({ ...pt })))
   } else {
-    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc, ref, date }, from))
+    ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: pid, qty: -q, cost, value: -issue, doc, ref, date, ...(wh ? { wh } : {}) }, from))
   }
   setValuation(ctx.ws, p, oldValue - issue)
   reorderAlert(ctx, p)
@@ -1116,12 +1219,12 @@ export function takeFromStock(ctx: Ctx, pid: string, q: number, date: string, re
  * stock), they were costed at the old price: the difference to the real price is returned for cost of sales, so
  * inventory ends at the right value.
  */
-export function putIntoStock(ctx: Ctx, p: Rec, qty: number, value: number, ref: string, doc: string, date: string, batch: { lot?: string; expiry?: string }, from?: { sample?: boolean }) {
+export function putIntoStock(ctx: Ctx, p: Rec, qty: number, value: number, ref: string, doc: string, date: string, batch: { lot?: string; expiry?: string; wh?: string }, from?: { sample?: boolean }) {
   const unitCost = qty ? value / qty : 0
   const oldQty = onHand(ctx.ws, p.id)
   const oldValue = stockValue(ctx.ws, p)
   const target = oldQty < 0 ? round2((oldQty + qty) * unitCost) : round2(oldValue + value)
-  ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unitCost), value: round2(target - oldValue), doc, ref, date, ...(batch.lot ? { lot: batch.lot, ...(batch.expiry ? { expiry: batch.expiry } : {}) } : {}) }, from))
+  ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost: round4(unitCost), value: round2(target - oldValue), doc, ref, date, ...(batch.wh ? { wh: batch.wh } : {}), ...(batch.lot ? { lot: batch.lot, ...(batch.expiry ? { expiry: batch.expiry } : {}) } : {}) }, from))
   setValuation(ctx.ws, p, target)
   return { diff: round2(oldValue + value - target) }
 }
@@ -1271,7 +1374,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   for (const mv of moves) {
     const p = productRec(ctx, mv.product)
     if (!p || mv.qty <= 0) continue
-    const have = onHand(ctx.ws, p.id)
+    const have = usesWarehouses(ctx.ws) ? onHandAt(ctx.ws, p.id, whOf(mv)) : onHand(ctx.ws, p.id)
     if (have < mv.qty) throw new EngineError(`Can’t void: ${round2(mv.qty - have)} of the ${mv.qty} ${p.values.name} on this bill were already sold. Record a purchase return for what is still in stock instead.`)
     const left = round2(stockValue(ctx.ws, p) - (mv.value ?? round2(mv.qty * mv.cost)))
     if (have - mv.qty > 0 && left < 0) throw new EngineError(`Can’t void: the cost of ${p.values.name} on this bill was already charged to sales. Record a purchase return instead.`)
@@ -1576,7 +1679,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
         if (!p || !p.values.track_stock) continue
         const value = round2(l.qty * issueCost(ctx.ws, orig, p.id))
         const oldValue = stockValue(ctx.ws, p)
-        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date }, rec))
+        ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: l.qty, cost: round4(issueCost(ctx.ws, orig, p.id)), value, doc: rec.id, ref: number, date, ...(orig.values.warehouse ? { wh: String(orig.values.warehouse) } : {}) }, rec))
         setValuation(ctx.ws, p, oldValue + value)
         jl.push(side('1300', value), { ...side('5000', -value), ...(l.cc ? { cc: l.cc } : {}) })
       }
@@ -1591,13 +1694,14 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
       if (!p || !p.values.track_stock) { services.push({ cc: l.cc, amount: -net }); continue }
       if (!restock) { jl.push({ ...side('5000', -net), ...tag_ }); continue }
       // Goods sent back leave stock at the price they were bought for.
-      const have = onHand(ctx.ws, p.id)
+      const owh = orig.values.warehouse ? String(orig.values.warehouse) : undefined
+      const have = owh ? onHandAt(ctx.ws, p.id, owh) : onHand(ctx.ws, p.id)
       if (have < l.qty) throw new EngineError(`Only ${have} ${p.values.name} are in stock to send back`)
       const oldValue = stockValue(ctx.ws, p)
       const value = round2(net)
-      if (have - l.qty > 0 && oldValue - value < 0) throw new EngineError(`${p.values.name} was already charged to sales at a lower cost; record the return with less value or as a price reduction`)
-      const out = have === l.qty ? oldValue : value
-      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -l.qty, cost: round4(net / l.qty), value: -out, doc: rec.id, ref: number, date }, rec))
+      if (onHand(ctx.ws, p.id) - l.qty > 0 && oldValue - value < 0) throw new EngineError(`${p.values.name} was already charged to sales at a lower cost; record the return with less value or as a price reduction`)
+      const out = onHand(ctx.ws, p.id) === l.qty ? oldValue : value
+      ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty: -l.qty, cost: round4(net / l.qty), value: -out, doc: rec.id, ref: number, date, ...(owh ? { wh: owh } : {}) }, rec))
       setValuation(ctx.ws, p, oldValue - out)
       jl.push(side('1300', -out))
       if (round2(value - out)) jl.push({ ...side('5000', round2(out - value)), ...tag_ })
@@ -2536,6 +2640,8 @@ export interface Adjustment {
   /** the batch added to or taken from (a write-off of an expired batch), and its expiry when adding */
   lot?: string
   expiry?: string
+  /** the warehouse or van (companies with more than one place) */
+  warehouse?: string
 }
 
 /** Changes the stock of one product outside a document (damage, loss, found, opening stock), with its accounting. */
@@ -2553,11 +2659,12 @@ export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
   if (reason.length < 3) throw new EngineError('Give the reason for the adjustment')
   const lot = a.lot ? String(a.lot).trim().slice(0, 40) : ''
   const expiry = a.expiry && ISO_DATE.test(String(a.expiry)) ? String(a.expiry) : undefined
+  const wh = warehouseFor(ctx, a.warehouse)
   if (lot && qty < 0) {
-    const have = lotsOf(ctx.ws, p.id).find((b) => b.lot === lot)?.qty ?? 0
+    const have = lotsOf(ctx.ws, p.id, wh).find((b) => b.lot === lot)?.qty ?? 0
     if (have < -qty) throw new EngineError(`Batch ${lot} of ${p.values.name} has ${have} on hand`)
   }
-  const batch = lot ? { lot, ...(expiry ? { expiry } : {}) } : {}
+  const batch = { ...(lot ? { lot, ...(expiry ? { expiry } : {}) } : {}), ...(wh ? { wh } : {}) }
   const number = ref ?? nextNumber(ctx, 'ADJ', date, Boolean(ctx.sample))
   const oldQty = onHand(ctx.ws, p.id)
   const oldValue = stockValue(ctx.ws, p)
@@ -2573,7 +2680,8 @@ export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
     setValuation(ctx.ws, p, target)
   } else {
     const q = -qty
-    if (!ctx.schema.company.allowNegativeStock && oldQty < q) throw new EngineError(`Not enough stock of ${p.values.name}: ${oldQty} on hand`)
+    const here = wh ? onHandAt(ctx.ws, p.id, wh) : oldQty
+    if (!ctx.schema.company.allowNegativeStock && here < q) throw new EngineError(`Not enough stock of ${p.values.name}: ${here} on hand`)
     const issue = oldQty > 0 && q >= oldQty ? round2(oldValue + (q - oldQty) * cost) : round2(q * cost)
     ctx.ws.data.stock.unshift(tag(ctx, { id: uid('s'), product: p.id, qty, cost, value: -issue, doc: '', ref: number, date, ...batch }))
     journal(ctx, { date, ref: number, memo: `Stock adjustment: ${p.values.name} −${q} (${reason})`, lines: [side(other, issue), side('1300', -issue)] })
@@ -2585,7 +2693,7 @@ export function adjustStock(ctx: Ctx, a: Adjustment, ref?: string) {
 }
 
 /** A stock count: for every product counted, the difference to the system's quantity is adjusted. */
-export function countStock(ctx: Ctx, c: { date: string; counts: { product: string; counted: number }[]; note?: string }) {
+export function countStock(ctx: Ctx, c: { date: string; counts: { product: string; counted: number }[]; note?: string; warehouse?: string }) {
   needFinance(ctx, 'record stock counts')
   if (!ISO_DATE.test(String(c.date))) throw new EngineError('Choose the date of the count')
   const counts = (c.counts ?? []).filter((x) => x.counted !== undefined && x.counted !== null && String(x.counted) !== '')
@@ -2595,9 +2703,11 @@ export function countStock(ctx: Ctx, c: { date: string; counts: { product: strin
   for (const x of counts) {
     const counted = Number(x.counted)
     if (!(counted >= 0)) throw new EngineError('Counted quantities can’t be negative')
-    const diff = round4(counted - onHand(ctx.ws, x.product))
+    // a count is of one place: the difference is against what that place should hold
+    const wh = warehouseFor(ctx, c.warehouse)
+    const diff = round4(counted - (wh ? onHandAt(ctx.ws, x.product, wh) : onHand(ctx.ws, x.product)))
     if (!diff) continue
-    adjustStock(ctx, { product: x.product, qty: diff, reason: c.note?.trim() ? `Stock count: ${c.note.trim()}` : 'Stock count', date: c.date }, ref)
+    adjustStock(ctx, { product: x.product, qty: diff, reason: c.note?.trim() ? `Stock count: ${c.note.trim()}` : 'Stock count', date: c.date, ...(wh ? { warehouse: wh } : {}) }, ref)
     adjusted++
   }
   return { ref, adjusted }

@@ -4,7 +4,9 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { FileCheck2, PackageCheck, Printer, Undo2, XCircle, ClipboardList } from 'lucide-react'
 import { useApp } from './useApp'
-import { canPost, findRecord, recordTitle, todayISO } from '../lib/engine'
+import { canPost, findRecord, recordTitle, todayISO, usesWarehouses } from '../lib/engine'
+import { WarehouseSelect } from './Warehouses'
+import { useDefaultWarehouse } from './useApp'
 import { billOf, poProgress, type Receipt } from '../lib/purchasing'
 import type { Rec } from '../lib/types'
 import { getLang, tr } from '../lib/i18n'
@@ -33,6 +35,8 @@ export function PurchaseOrderPanel({ rec }: { rec: Rec }) {
   const [expiry, setExpiry] = useState<Record<string, string>>({})
   const [date, setDate] = useState(todayISO())
   const [ref, setRef] = useState('')
+  const defaultWh = useDefaultWarehouse()
+  const [wh, setWh] = useState('')
   const notes = (ws.receipts ?? []).filter((r) => r.order === rec.id)
   const goods = prog.lines.filter((l) => l.line.product && findRecord(ws, l.line.product)?.values.track_stock)
   const left = goods.some((l) => l.left > 0)
@@ -71,7 +75,8 @@ export function PurchaseOrderPanel({ rec }: { rec: Rec }) {
           <button type="button" className="ghost small" onClick={() => setQty(Object.fromEntries(goods.map((l) => [l.line.id, l.left ? String(l.left) : ''])))}>{tr('Everything left')}</button>
           <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field" style={{ width: 200 }}>{tr('Supplier’s delivery note')}<input value={ref} onChange={(e) => setRef(e.target.value)} /></label>
-          <button disabled={!sending.length} onClick={() => { if (act('po.receive', { id: rec.id, date, supplierRef: ref, lines: sending.map((l) => ({ line: l.line.id, qty: Number(qty[l.line.id]), lot: lot[l.line.id] || undefined, expiry: expiry[l.line.id] || undefined })) }, tr('Goods received: they are in stock')) !== undefined) { setQty({}); setLot({}); setExpiry({}); setRef('') } }}><PackageCheck size={15} /> {tr('Receive')}</button>
+          <WarehouseSelect value={wh || defaultWh} onChange={setWh} label={tr('Into')} />
+          <button disabled={!sending.length} onClick={() => { if (act('po.receive', { id: rec.id, date, supplierRef: ref, ...(usesWarehouses(ws) ? { warehouse: wh || defaultWh } : {}), lines: sending.map((l) => ({ line: l.line.id, qty: Number(qty[l.line.id]), lot: lot[l.line.id] || undefined, expiry: expiry[l.line.id] || undefined })) }, tr('Goods received: they are in stock')) !== undefined) { setQty({}); setLot({}); setExpiry({}); setRef('') } }}><PackageCheck size={15} /> {tr('Receive')}</button>
         </div>
       )}
       {notes.length > 0 && (

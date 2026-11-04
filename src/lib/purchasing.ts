@@ -9,7 +9,7 @@ import type { Line, Rec, Workspace } from './types'
 import { moduleById, uid } from './schema'
 import {
   can, checkLinesPublic, createRecord, EngineError, findRecord, ISO_DATE, journal, lineNet, linkRecords, log, needFinance, nextNumber,
-  noRealPostingOverSamples, nowISO, productRec, putIntoStock, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
+  noRealPostingOverSamples, nowISO, productRec, putIntoStock, warehouseFor, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
 } from './engine'
 
 export interface Receipt {
@@ -24,6 +24,8 @@ export interface Receipt {
   /** the bill for it (a draft, or posted); free again if that bill is deleted or voided */
   bill?: string
   supplierRef?: string
+  /** where the goods went in */
+  warehouse?: string
   at: string
   by: string
   undone?: { at: string; by: string; date: string }
@@ -80,7 +82,7 @@ export function orderPurchase(ctx: Ctx, id: string) {
 }
 
 /** Goods arrived: a goods received note puts them into stock at the order's price, against 2160. */
-export function receiveGoods(ctx: Ctx, id: string, g: { date: string; lines: { line: string; qty: number; lot?: string; expiry?: string }[]; supplierRef?: string }) {
+export function receiveGoods(ctx: Ctx, id: string, g: { date: string; lines: { line: string; qty: number; lot?: string; expiry?: string }[]; supplierRef?: string; warehouse?: string }) {
   needFinance(ctx, 'receive goods')
   noRealPostingOverSamples(ctx)
   const o = po(ctx, id)
@@ -105,19 +107,20 @@ export function receiveGoods(ctx: Ctx, id: string, g: { date: string; lines: { l
     take.push({ l: p.line, qty, ...(lot ? { lot } : {}), ...(expiry ? { expiry } : {}) })
   }
   if (!take.length) throw new EngineError('Enter how many of each line arrived')
+  const wh = warehouseFor(ctx, g.warehouse)
   const number = nextNumber(ctx, 'GRN', date, Boolean(ctx.sample || o.sample))
   const rid = uid('gr')
   const lines: Receipt['lines'] = []
   let diff = 0
   for (const t of take) {
     const value = round2((lineNet(t.l) * t.qty) / t.l.qty)
-    const into = putIntoStock(ctx, stocked(ctx, t.l)!, t.qty, value, number, rid, date, t, o)
+    const into = putIntoStock(ctx, stocked(ctx, t.l)!, t.qty, value, number, rid, date, { lot: t.lot, expiry: t.expiry, wh }, o)
     diff = round2(diff + into.diff)
     lines.push({ line: t.l.id, product: t.l.product!, qty: t.qty, cost: value, ...(t.lot ? { lot: t.lot } : {}), ...(t.expiry ? { expiry: t.expiry } : {}) })
   }
   const value = round2(lines.reduce((s, l) => s + l.cost, 0))
   journal(ctx, { date, ref: number, memo: `Goods received ${number} for ${o.values.po_no}`, lines: [{ account: '1300', debit: round2(value - diff), credit: 0 }, { account: '5000', debit: diff, credit: 0 }, { account: '2160', debit: 0, credit: value }] }, o)
-  const note: Receipt = { id: rid, number, order: o.id, date, lines, ...(g.supplierRef?.trim() ? { supplierRef: g.supplierRef.trim().slice(0, 60) } : {}), at: nowISO(), by: ctx.user.name }
+  const note: Receipt = { id: rid, number, order: o.id, date, lines, ...(wh ? { warehouse: wh } : {}), ...(g.supplierRef?.trim() ? { supplierRef: g.supplierRef.trim().slice(0, 60) } : {}), at: nowISO(), by: ctx.user.name }
   ctx.ws.receipts = [tag(ctx, note, o), ...(ctx.ws.receipts ?? [])]
   log(ctx, `received ${number} for ${o.values.po_no}`, o)
   return note
