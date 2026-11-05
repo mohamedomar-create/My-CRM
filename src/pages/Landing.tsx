@@ -1,5 +1,5 @@
 // The front door: what Nasq360 is, shown rather than told. Glass over a slow aurora, the app itself in the hero, real
-// screens, live charts, the five steps, the industries, the guardrails, and one clear way in. White by default with dark
+// screens, live charts, the five steps, a system made for your industry (which ones stay for after sign-up), the guardrails, and one clear way in. White by default with dark
 // one click away (the choice is remembered, as in the app), right-to-left in Arabic, and still for anyone who asks for less motion.
 import { useEffect, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -7,9 +7,7 @@ import {
   ArrowRight, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, Moon, ShieldCheck,
   Smartphone, Sparkles, Sun, Workflow, Zap,
 } from 'lucide-react'
-import { TEMPLATES } from '../lib/templates'
-import { Icon } from '../components/Icon'
-import { msg, N_, useLang } from '../lib/i18n'
+import { N_, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
 import { getTheme, setTheme } from '../lib/theme'
 import { AnalyticsWall, CountUpInView, HeroScene, LangCompare, PhoneShowcase, ProductTour } from './LandingVisuals'
@@ -79,7 +77,6 @@ export default function Landing() {
           <a href="#features" className="lp-link">{tr('Features')}</a>
           <a href="#tour" className="lp-link">{tr('The real system')}</a>
           <a href="#dashboards" className="lp-link">{tr('Dashboards')}</a>
-          <a href="#industries" className="lp-link">{tr('Industries')}</a>
           <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>
         </div>
         <div className="lp-nav-end">
@@ -117,7 +114,7 @@ export default function Landing() {
       </div>
 
       <section className="lp-stats" aria-label={tr('Nasq360 in numbers')}>
-        <Stat n={TEMPLATES.length} label={tr('ready industry systems')} />
+        <Stat n={5} label={tr('steps from sign-up to a live system')} />
         <Stat n={2} label={tr('languages, Arabic right-to-left')} />
         <Stat n={100} suffix="%" label={tr('of entries balanced, always')} />
         <Stat n={13} label={tr('weeks of cash forecast, built for you')} />
@@ -194,18 +191,18 @@ export default function Landing() {
         </ol>
       </section>
 
-      <section className="lp-sec" id="industries">
-        <SecHead eyebrow={tr('Industries')} title={t('tplTitle')} sub={t('tplSub')} />
-        <div className="lp-tpls" onPointerMove={spotlight}>
-          {TEMPLATES.map((tp) => (
-            <div key={tp.id} className="lp-tpl lp-glass-hover lp-reveal" style={{ ['--c1' as string]: tp.gradient[0], ['--c2' as string]: tp.gradient[1] }}>
-              <span className="lp-tpl-ico"><Icon name={tp.icon} size={20} /></span>
-              <div>
-                <h3>{lang === 'ar' ? tp.nameAr : tp.name}</h3>
-                <p>{msg(tp.tagline)}</p>
-              </div>
-            </div>
-          ))}
+      <section className="lp-sec" id="made-for-you">
+        <SecHead eyebrow={tr('Made for you')} title={tr('A system shaped around your industry')} sub={tr('Answer a few questions about what you do and Nasq360 matches you with a ready system built for your kind of business: its lists, stages, documents and reports. You see it the moment you sign up.')} />
+        <div className="lp-secret">
+          <div className="lp-secret-grid" aria-hidden>
+            {Array.from({ length: 8 }, (_, k) => <span key={k} className="lp-secret-card"><i /><b /><em /><em /></span>)}
+          </div>
+          <div className="lp-secret-lock">
+            <span className="lp-ico gold"><Lock size={18} /></span>
+            <h3>{tr('Your industry is already inside')}</h3>
+            <p>{tr('Sign up free to see the system ready for your business.')}</p>
+            <Link to="/register" className="lp-btn primary lg">{t('start')} <ArrowRight size={16} className="flip" /></Link>
+          </div>
         </div>
       </section>
 
@@ -249,7 +246,6 @@ export default function Landing() {
         <div>
           <h4>{tr('Product')}</h4>
           <a href="#features">{tr('Features')}</a>
-          <a href="#industries">{tr('Industries')}</a>
           <Link to="/pricing">{tr('Pricing')}</Link>
           <Link to="/security">{tr('Security')}</Link>
         </div>
