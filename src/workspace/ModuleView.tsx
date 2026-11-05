@@ -101,8 +101,9 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
 
   function exportCsv() {
     const fields = mod.fields.filter((f) => !hidden(f.key))
-    const header = [tr('Title'), ...(mod.stages ? [tr('Stage')] : []), ...(mod.lines ? [tr('Status')] : []), ...fields.map((f) => f.label)]
-    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [statusLabel(r.status)] : []), ...fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key]))])
+    const header = [tr('Title'), ...(mod.stages ? [tr('Stage')] : []), ...(mod.lines ? [tr('Status')] : []), ...fields.map((f) => f.label), tr('Nasq360 id')]
+    // the record's own id last: the file can be corrected in Excel and imported back onto exactly these records
+    const lines = rows.map((r) => [recordTitle(ws, schema, r), ...(mod.stages ? [mod.stages.find((s) => s.id === r.stage)?.name ?? ''] : []), ...(mod.lines ? [statusLabel(r.status)] : []), ...fields.map((f) => f.type === 'currency' || f.type === 'number' ? String(r.values[f.key] ?? '') : displayValue(ws, schema, f, r.values[f.key])), r.id])
     const csv = [header, ...lines].map((l) => l.map((c) => `"${csvSafe(c).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')

@@ -379,6 +379,8 @@ export interface Workspace {
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */
   warehouses?: Warehouse[]
+  /** the setup session: each decision agreed, by whom and when (see setupSession.ts) */
+  setupSession?: { agreed: Record<string, import('./setupSession').Agreed> }
   /** goods received notes: goods received against purchase orders (see purchasing.ts) */
   receipts?: import('./purchasing').Receipt[]
   /** delivery notes: goods sent against confirmed sales orders (see orders.ts) */

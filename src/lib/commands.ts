@@ -3,6 +3,7 @@
 // one allowed to save. So business rules (who may post, what is locked, how stock and the books move) are enforced
 // by the server, not by whichever browser happens to send the data.
 import { applyStatement, forgetRule, type StatementPosting } from './bankFeed'
+import { agree, reopenDecision, setCompany } from './setupSession'
 import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
@@ -81,6 +82,9 @@ export interface CommandArgs {
   'setup.chooseTemplate': { draft: AppSchema; seedOnPublish: boolean }
   'setup.saveDraft': { draft: AppSchema }
   'setup.publish': Record<string, never>
+  'setup.agree': { id: string; who: string; note?: string }
+  'setup.reopen': { id: string }
+  'setup.company': { taxId?: string; vatRate?: number; fiscalYearStart?: number; allowNegativeStock?: boolean }
   'setup.restoreVersion': { version: number }
   'team.addUser': { id: string; name: string; email: string; roleId: string }
   'team.setRole': { userId: string; roleId: string }
@@ -276,6 +280,9 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'credit.unuse': { run: (ws, u, a) => unuseCredit(ctx(ws, u), String(a.doc ?? ''), String(a.use ?? '')) },
   'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
   'bank.applyStatement': { run: (ws, u, a) => applyStatement(ctx(ws, u), { account: String(a.account ?? ''), lines: (Array.isArray(a.lines) ? a.lines : []).slice(0, 500) }) },
+  'setup.agree': { admin: true, run: (ws, u, a) => agree(ctx(ws, u), { id: String(a.id ?? ''), who: String(a.who ?? ''), note: a.note === undefined ? undefined : String(a.note) }) },
+  'setup.reopen': { admin: true, run: (ws, u, a) => reopenDecision(ctx(ws, u), String(a.id ?? '')) },
+  'setup.company': { admin: true, run: (ws, u, a) => setCompany(ctx(ws, u), a) },
   'bank.forgetRule': { run: (ws, u, a) => forgetRule(ctx(ws, u), String(a.match ?? '')) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },

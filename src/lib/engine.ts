@@ -3339,17 +3339,29 @@ export function csvSafe(c: unknown) {
  * Columns that go somewhere other than a field: the stage, the original dates, and what the old system called the
  * record. They are given in an import's mapping like a field key.
  */
-export const IMPORT_TARGETS = ['__stage', '__stage_date', '__created', '__legacy_id', '__legacy_number', '__legacy_notes', '__lost_reason'] as const
+export const IMPORT_TARGETS = ['__stage', '__stage_date', '__created', '__id', '__legacy_id', '__legacy_number', '__legacy_notes', '__lost_reason'] as const
 /** A column holding the date a record reached one stage: '__stage_at:' followed by the stage's id (Phase H4). */
 export const STAGE_AT = '__stage_at:'
 /** In a value map for a team-member column: the name is someone who has left; add them as a former member. */
 export const FORMER = '\u0001former'
 export type ImportTarget = (typeof IMPORT_TARGETS)[number]
 
+/**
+ * Control totals of an import: for each number column, the total of the file's rows that were imported and the total
+ * of those fields in the records the import saved. They must agree to the piastre.
+ */
+export function importTotals(ws: Workspace, moduleId: string, batch: string, fileTotals: Record<string, number>) {
+  const recs = list(ws, moduleId).filter((r) => r.imports?.some((x) => x.batch === batch))
+  return Object.entries(fileTotals).map(([key, file]) => {
+    const saved = round2(recs.reduce((s, r) => s + (Number(r.values[key]) || 0), 0))
+    return { key, file: round2(file), saved, agrees: round2(file) === saved }
+  })
+}
+
 export interface ImportOptions {
   /** the import this part belongs to: the parts of one file share it. Without it the rows are an import of their own. */
   batch?: { id: string; file: string }
-  /** the field (or '__legacy_id') that finds a record already in Nasq360: a row whose key is known updates that record */
+  /** the field (or '__legacy_id', or '__id' for Nasq360's own id) that finds a record already in Nasq360: a row whose key is known updates that record */
   match?: string
   /** with match: rows whose key isn't found are skipped instead of created */
   onlyUpdate?: boolean
@@ -3501,10 +3513,10 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
   const mod = moduleById(ctx.schema, moduleId)
   if (!mod) throw new EngineError('This module no longer exists')
   need(ctx, moduleId, 'create')
-  const matchField = opts.match && opts.match !== '__legacy_id' ? fieldByKey(mod, opts.match) : undefined
+  const matchField = opts.match && opts.match !== '__legacy_id' && opts.match !== '__id' ? fieldByKey(mod, opts.match) : undefined
   if (opts.match) {
     need(ctx, moduleId, 'edit')
-    if (opts.match !== '__legacy_id' && !matchField) throw new EngineError('Choose the column that finds records already in Nasq360')
+    if (opts.match !== '__legacy_id' && opts.match !== '__id' && !matchField) throw new EngineError('Choose the column that finds records already in Nasq360')
   }
   if (mod.stages && Object.values(mapping).includes('__stage_date') && !Object.values(mapping).includes('__stage')) throw new EngineError('Match the stage column too, to use the date each record reached it')
 
@@ -3522,6 +3534,7 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
 
   // Records already here, by their match key, and by name, phone and e-mail to warn about likely duplicates.
   const keyOf = (r: Rec) => {
+    if (opts.match === '__id') return r.id
     if (opts.match === '__legacy_id') return r.legacy?.id ? importKey(r.legacy.id) : undefined
     const v = opts.match ? r.values[opts.match] : undefined
     return v === undefined || v === null || v === '' ? undefined : matchValue(ctx, matchField, String(v))
@@ -3560,11 +3573,13 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       let stageDate: string | undefined
       let created: string | undefined
       const stageAt = new Map<string, string>()
+      let idRef: string | undefined
       for (const [col, key] of Object.entries(mapping)) {
         column = col
         const raw = String(row[col] ?? '').trim()
         if (raw === '' || !key) continue
-        if (key === '__legacy_id') legacy.id = raw.slice(0, 120)
+        if (key === '__id') idRef = raw
+        else if (key === '__legacy_id') legacy.id = raw.slice(0, 120)
         else if (key === '__legacy_number') legacy.number = raw.slice(0, 120)
         else if (key === '__legacy_notes') legacy.notes = raw.slice(0, 4000)
         else if (key === '__lost_reason') {
@@ -3610,10 +3625,14 @@ export function importRows(ctx: Ctx, moduleId: string, rows: Record<string, stri
       // A record already here?
       let existing: Rec | undefined
       if (opts.match) {
-        const k = opts.match === '__legacy_id' ? (legacy.id ? importKey(legacy.id) : undefined) : values[opts.match] !== undefined ? matchValue(ctx, matchField, String(values[opts.match])) : undefined
+        const k = opts.match === '__id' ? idRef : opts.match === '__legacy_id' ? (legacy.id ? importKey(legacy.id) : undefined) : values[opts.match] !== undefined ? matchValue(ctx, matchField, String(values[opts.match])) : undefined
         const found = k ? byKey.get(k) ?? [] : []
         if (found.length > 1) throw new EngineError(`${matchField?.label ?? 'Old system id'}: ${found.length} records already have “${k}”`)
+        // a Nasq360 id is exact: one that isn't in this list is a mistake in the file, never a new record
+        if (opts.match === '__id' && k && !found.length) throw new EngineError(`Nasq360 id “${k}” isn’t in this list`)
         existing = found[0]
+        // the same key twice in one file: the second row would quietly overwrite the first
+        if (existing?.imports?.some((x) => x.batch === batchId)) throw new EngineError(`The file has “${k}” on more than one row: only its first row is imported`)
       }
 
       if (existing) {

@@ -32,6 +32,7 @@ export const ACTIVITY_TYPES = [N_('Call'), N_('Meeting'), N_('Visit'), N_('E-mai
 
 /** Columns of a module's import that go somewhere other than a field (see IMPORT_TARGETS in the engine). */
 export const IMPORT_COLUMNS: { key: string; label: string; stages?: boolean }[] = [
+  { key: '__id', label: N_('Nasq360 id') },
   { key: '__legacy_id', label: N_('Old system id') },
   { key: '__legacy_number', label: N_('Old system number') },
   { key: '__legacy_notes', label: N_('Notes from the old system') },
