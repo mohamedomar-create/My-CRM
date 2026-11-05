@@ -1,6 +1,12 @@
-import { useState } from 'react'
+// The front door: what Nasq360 is, shown rather than told. Dark glass over a slow aurora, the app itself in the hero,
+// what it does in a bento grid, the five steps, the industries, the guardrails, and one clear way in. Always dark (in
+// either theme), right-to-left in Arabic, and still for anyone who asks for less motion.
+import { useEffect, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, BarChart3, Boxes, Calculator, CheckCircle2, Globe, Languages, Lock, MousePointerClick, ShieldCheck, Sparkles, Workflow, Zap } from 'lucide-react'
+import {
+  ArrowRight, BarChart3, Bell, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, Search, ShieldCheck,
+  Smartphone, Sparkles, Users, Workflow, Zap,
+} from 'lucide-react'
 import { TEMPLATES } from '../lib/templates'
 import { Icon } from '../components/Icon'
 import { msg, N_, useLang } from '../lib/i18n'
@@ -30,158 +36,356 @@ const GUARDS = [
   { icon: Zap, title: N_('Automations that can’t loop'), text: N_('Triggers, conditions and actions are checked before publishing, and actions never re-trigger each other.') },
 ]
 
+const STEPS = [['s1', 's1d'], ['s2', 's2d'], ['s3', 's3d'], ['s4', 's4d'], ['s5', 's5d']] as const
+
+/** The spotlight that follows the pointer across a card. */
+function spotlight(e: PointerEvent<HTMLElement>) {
+  const el = (e.target as HTMLElement).closest<HTMLElement>('.lp-glass-hover')
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  el.style.setProperty('--mx', `${e.clientX - r.left}px`)
+  el.style.setProperty('--my', `${e.clientY - r.top}px`)
+}
+
 export default function Landing() {
   const { t, tr, lang, setLang } = useLang()
   const [year] = useState(() => new Date().getFullYear())
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 12)
+    on()
+    window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [])
+  const otherLang = (
+    <button type="button" className="lp-link lp-lang" onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} aria-label={lang === 'en' ? 'العربية' : 'English'}>
+      <Languages size={16} /> <span>{lang === 'en' ? 'العربية' : 'English'}</span>
+    </button>
+  )
   return (
-    <div className="landing">
-      <nav className="nav">
-        <Logo />
-        <div className="row">
-          <button className="ghost" style={{ color: '#cfe3e3' }} onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}>
-            <Languages size={16} /> {lang === 'en' ? 'العربية' : 'English'}
-          </button>
-          <Link to="/pricing" className="btn ghost on-ink">{tr('Pricing')}</Link>
-          <Link to="/signin" className="btn secondary" style={{ background: 'transparent', color: '#fff', borderColor: '#ffffff33' }}>{t('signin')}</Link>
-          <Link to="/register" className="btn glow">{t('start')}</Link>
+    <div className="lp">
+      <div className="lp-aurora" aria-hidden><i /><i /><i /></div>
+      <div className="lp-gridlines" aria-hidden />
+
+      <nav className={`lp-nav${scrolled ? ' scrolled' : ''}`} aria-label={tr('Main')}>
+        <Link to="/welcome" className="lp-brand"><Logo /></Link>
+        <div className="lp-nav-links">
+          <a href="#features" className="lp-link">{tr('Features')}</a>
+          <a href="#how" className="lp-link">{tr('How it works')}</a>
+          <a href="#industries" className="lp-link">{tr('Industries')}</a>
+          <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>
+        </div>
+        <div className="lp-nav-end">
+          {otherLang}
+          <Link to="/signin" className="lp-link">{t('signin')}</Link>
+          <Link to="/register" className="lp-btn primary sm lp-nav-start">{t('start')}</Link>
         </div>
       </nav>
 
-      <header className="hero">
-        <div>
-          <span className="pill" style={{ background: '#ffffff14', color: '#ddf1f1' }}><Sparkles size={14} /> {t('tagline')}</span>
-          <h1 style={{ marginTop: 18 }}>
-            {t('heroA')} <span className="grad">{t('heroB')}</span>
-          </h1>
-          <p className="lead">{t('heroLead')}</p>
-          <div className="row">
-            <Link to="/register" className="btn glow big">{t('start')} <ArrowRight size={18} className="flip" /></Link>
-            <a href="#how" className="btn secondary big">{tr('See how it works')}</a>
-          </div>
-          <div className="trust">
-            <span><CheckCircle2 size={16} /> {tr('CRM + sales + stock + invoicing')}</span>
-            <span><Globe size={16} /> {tr('English & العربية, any currency')}</span>
-            <span><ShieldCheck size={16} /> {tr('VAT-ready (Egypt 14% by default)')}</span>
-          </div>
+      <header className="lp-hero">
+        <a href="#features" className="lp-badge lp-in" style={{ ['--d' as string]: '0ms' }}>
+          <span className="lp-badge-dot"><Sparkles size={12} /></span>
+          <span>{t('tagline')}</span>
+          <ArrowRight size={14} className="flip" />
+        </a>
+        <h1 className="lp-in" style={{ ['--d' as string]: '80ms' }}>{t('heroA')} <span className="lp-grad">{t('heroB')}</span></h1>
+        <p className="lp-lead lp-in" style={{ ['--d' as string]: '160ms' }}>{t('heroLead')}</p>
+        <div className="lp-ctas lp-in" style={{ ['--d' as string]: '240ms' }}>
+          <Link to="/register" className="lp-btn primary lg">{t('start')} <ArrowRight size={18} className="flip" /></Link>
+          <a href="#how" className="lp-btn glass lg">{tr('See how it works')}</a>
         </div>
-        <HeroMock />
+        <ul className="lp-checks lp-in" style={{ ['--d' as string]: '320ms' }}>
+          <li><CheckCircle2 size={16} /> {tr('CRM + sales + stock + invoicing')}</li>
+          <li><Globe size={16} /> {tr('English & العربية, any currency')}</li>
+          <li><ShieldCheck size={16} /> {tr('VAT-ready (Egypt 14% by default)')}</li>
+        </ul>
       </header>
 
-      <section className="section" id="how">
-        <h2 className="big">{t('howTitle')}</h2>
-        <p className="sub">{t('howSub')}</p>
-        <div className="steps">
-          {(
-            [
-              ['s1', 's1d', '#0f8b8d'],
-              ['s2', 's2d', '#2a78d6'],
-              ['s3', 's3d', '#1baf7a'],
-              ['s4', 's4d', '#eda100'],
-              ['s5', 's5d', '#eb6834'],
-            ] as const
-          ).map(([h, d, c], i) => (
-            <div className="step-card" key={h}>
-              <div className="n" style={{ background: c }}>{i + 1}</div>
+      <div className="lp-stage">
+        <div className="lp-stage-glow" aria-hidden />
+        <AppPreview />
+      </div>
+
+      <section className="lp-stats" aria-label={tr('Nasq360 in numbers')}>
+        <Stat n={String(TEMPLATES.length)} label={tr('ready industry systems')} />
+        <Stat n="2" label={tr('languages, Arabic right-to-left')} />
+        <Stat n="100%" label={tr('of entries balanced, always')} />
+        <Stat n="0" label={tr('lines of code to write')} />
+      </section>
+
+      <section className="lp-sec" id="features">
+        <SecHead eyebrow={tr('Features')} title={tr('One system for the whole company')} sub={tr('Customers, sales, stock, invoices and the books, in one place that talks to itself. Change one thing and everything that depends on it follows.')} />
+        <div className="lp-bento" onPointerMove={spotlight}>
+          <article className="lp-tile lp-glass-hover wide">
+            <div className="lp-tile-text"><span className="lp-ico teal"><LayoutDashboard size={18} /></span><h3>{tr('Dashboards you arrange yourself')}</h3><p>{tr('Drag the charts you care about onto the dashboard and build Excel reports that stay live.')}</p></div>
+            <MiniDash />
+          </article>
+          <article className="lp-tile lp-glass-hover">
+            <div className="lp-tile-text"><span className="lp-ico gold"><Calculator size={18} /></span><h3>{tr('Books that always balance')}</h3><p>{tr('Every invoice and payment writes its own journal entry.')}</p></div>
+            <MiniLedger />
+          </article>
+          <article className="lp-tile lp-glass-hover">
+            <div className="lp-tile-text"><span className="lp-ico sky"><Languages size={18} /></span><h3>{tr('Arabic and English, side by side')}</h3><p>{tr('Every screen, document and report in both, right-to-left where it should be.')}</p></div>
+            <div className="lp-mini lp-bilingual" aria-hidden>
+              <div><FileText size={14} /> {'Tax invoice'}</div>
+              <div dir="rtl"><FileText size={14} /> فاتورة ضريبية</div>
+            </div>
+          </article>
+          <article className="lp-tile lp-glass-hover">
+            <div className="lp-tile-text"><span className="lp-ico mint"><Boxes size={18} /></span><h3>{tr('Stock that matches reality')}</h3><p>{tr('Quantities and costs move with every sale and purchase, with reorder alerts.')}</p></div>
+            <MiniStock />
+          </article>
+          <article className="lp-tile lp-glass-hover wide">
+            <div className="lp-tile-text"><span className="lp-ico violet"><Workflow size={18} /></span><h3>{tr('Automations that work while you sleep')}</h3><p>{tr('When something happens, check a condition, then act: create a task, send a message, move a deal.')}</p></div>
+            <MiniFlow />
+          </article>
+          <article className="lp-tile lp-glass-hover">
+            <div className="lp-tile-text"><span className="lp-ico coral"><Smartphone size={18} /></span><h3>{tr('On the phone, even offline')}</h3><p>{tr('Install it like an app. The shop counter keeps selling when the internet drops.')}</p></div>
+            <div className="lp-mini lp-phone" aria-hidden><span /><span /><span /><b><Coins size={14} /> {'EGP 2,450'}</b></div>
+          </article>
+        </div>
+      </section>
+
+      <section className="lp-sec tight" aria-label={tr('The best ideas from the world’s top systems, in one builder')}>
+        <SecHead eyebrow={tr('Inspired by the best')} title={tr('The best ideas from the world’s top systems, in one builder')} sub={tr('Features you would normally buy from five different products, ready to switch on and shape around your business.')} />
+        <Marquee items={BEST} />
+        <Marquee items={[...BEST].reverse()} reverse />
+      </section>
+
+      <section className="lp-sec" id="how">
+        <SecHead eyebrow={tr('How it works')} title={t('howTitle')} sub={t('howSub')} />
+        <ol className="lp-steps" onPointerMove={spotlight}>
+          {STEPS.map(([h, d], i) => (
+            <li key={h} className="lp-step lp-glass-hover lp-reveal">
+              <span className="lp-step-n">{i + 1}</span>
               <h3>{t(h)}</h3>
               <p>{t(d)}</p>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
 
-      <section className="section">
-        <h2 className="big">{t('tplTitle')}</h2>
-        <p className="sub">{t('tplSub')}</p>
-        <div className="tpl-grid">
+      <section className="lp-sec" id="industries">
+        <SecHead eyebrow={tr('Industries')} title={t('tplTitle')} sub={t('tplSub')} />
+        <div className="lp-tpls" onPointerMove={spotlight}>
           {TEMPLATES.map((tp) => (
-            <div key={tp.id} className="tpl" style={{ background: `linear-gradient(135deg, ${tp.gradient[0]}, ${tp.gradient[1]})` }}>
-              <Icon name={tp.icon} size={28} />
-              <h3>{lang === 'ar' ? tp.nameAr : tp.name}</h3>
-              <p>{msg(tp.tagline)}</p>
+            <div key={tp.id} className="lp-tpl lp-glass-hover lp-reveal" style={{ ['--c1' as string]: tp.gradient[0], ['--c2' as string]: tp.gradient[1] }}>
+              <span className="lp-tpl-ico"><Icon name={tp.icon} size={20} /></span>
+              <div>
+                <h3>{lang === 'ar' ? tp.nameAr : tp.name}</h3>
+                <p>{msg(tp.tagline)}</p>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="section">
-        <h2 className="big">{tr('The best ideas from the world’s top systems, in one builder')}</h2>
-        <p className="sub">{tr('Features you would normally buy from five different products, ready to switch on and shape around your business.')}</p>
-        <div className="tpl-grid">
-          {BEST.map(([f, from]) => (
-            <div key={f} className="guard" style={{ padding: 18 }}>
-              <h3 style={{ fontSize: '0.98rem' }}><CheckCircle2 size={18} color="#5fd3a0" /> {tr(f)}</h3>
-              <p className="small">{tr('Inspired by {from}', { from: tr(from) })}</p>
-            </div>
-          ))}
+      <section className="lp-sec">
+        <div className="lp-split">
+          <div className="lp-split-head">
+            <span className="lp-eyebrow">{tr('Built-in safety')}</span>
+            <h2>{t('guardTitle')}</h2>
+            <p className="lp-sub start">{t('guardSub')}</p>
+            <MiniJournal />
+          </div>
+          <div className="lp-guards" onPointerMove={spotlight}>
+            {GUARDS.map((g) => (
+              <div className="lp-guard lp-glass-hover lp-reveal" key={g.title}>
+                <span className="lp-ico teal"><g.icon size={18} /></span>
+                <div><h3>{tr(g.title)}</h3><p>{tr(g.text)}</p></div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="section">
-        <h2 className="big">{t('guardTitle')}</h2>
-        <p className="sub">{t('guardSub')}</p>
-        <div className="guard-grid">
-          {GUARDS.map((g) => (
-            <div className="guard" key={g.title}>
-              <h3><g.icon size={20} color="#9fd6d7" /> {tr(g.title)}</h3>
-              <p>{tr(g.text)}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="cta">
-          <MousePointerClick size={36} />
+      <section className="lp-sec">
+        <div className="lp-cta">
+          <div className="lp-cta-aurora" aria-hidden><i /><i /></div>
           <h2>{t('ctaTitle')}</h2>
-          <p style={{ opacity: 0.9, maxWidth: 560, margin: '0 auto 22px' }}>{tr('Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.')}</p>
-          <Link to="/register" className="btn big" style={{ background: '#fff', color: '#0b6e70' }}>{t('start')} <ArrowRight size={18} /></Link>
+          <p>{tr('Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.')}</p>
+          <div className="lp-ctas center">
+            <Link to="/register" className="lp-btn primary lg">{t('start')} <ArrowRight size={18} className="flip" /></Link>
+            <Link to="/pricing" className="lp-btn glass lg">{tr('See the prices')}</Link>
+          </div>
         </div>
       </section>
-      <footer className="footer">© {year} Nasq360 · {tr('Made in Egypt for the world')} · <Link to="/privacy">{tr('Privacy')}</Link> · <Link to="/terms">{tr('Terms')}</Link> · <Link to="/dpa">{tr('Data processing')}</Link></footer>
+
+      <footer className="lp-footer">
+        <div className="lp-footer-brand">
+          <Logo />
+          <p>{tr('Made in Egypt for the world')}</p>
+          {otherLang}
+        </div>
+        <div>
+          <h4>{tr('Product')}</h4>
+          <a href="#features">{tr('Features')}</a>
+          <a href="#industries">{tr('Industries')}</a>
+          <Link to="/pricing">{tr('Pricing')}</Link>
+          <Link to="/security">{tr('Security')}</Link>
+        </div>
+        <div>
+          <h4>{tr('Legal')}</h4>
+          <Link to="/privacy">{tr('Privacy')}</Link>
+          <Link to="/terms">{tr('Terms')}</Link>
+          <Link to="/dpa">{tr('Data processing')}</Link>
+        </div>
+        <div>
+          <h4>{tr('Your account')}</h4>
+          <Link to="/signin">{t('signin')}</Link>
+          <Link to="/register">{t('start')}</Link>
+        </div>
+        <p className="lp-copy">© {year} Nasq360</p>
+      </footer>
     </div>
   )
 }
 
-function HeroMock() {
+function SecHead({ eyebrow, title, sub }: { eyebrow: string; title: string; sub: string }) {
+  return (
+    <div className="lp-sec-head lp-reveal">
+      <span className="lp-eyebrow">{eyebrow}</span>
+      <h2>{title}</h2>
+      <p className="lp-sub">{sub}</p>
+    </div>
+  )
+}
+
+function Stat({ n, label }: { n: string; label: string }) {
+  return <div className="lp-stat lp-reveal"><b dir="ltr">{n}</b><span>{label}</span></div>
+}
+
+function Marquee({ items, reverse }: { items: string[][]; reverse?: boolean }) {
+  const { tr } = useLang()
+  const row = (hidden: boolean) => items.map(([f, from]) => (
+    <span className="lp-chip" key={f + hidden} aria-hidden={hidden || undefined}>
+      <CheckCircle2 size={15} /> <b>{tr(f)}</b> <small>{tr('Inspired by {from}', { from: tr(from) })}</small>
+    </span>
+  ))
+  return (
+    <div className="lp-marquee">
+      <div className={`lp-marquee-track${reverse ? ' reverse' : ''}`}>{row(false)}{row(true)}</div>
+    </div>
+  )
+}
+
+/** The app itself, as a glass window: menu, figures, a chart and the pipeline. */
+function AppPreview() {
   const { tr } = useLang()
   const cols = [
-    { name: tr('Proposal'), c: '#0f8b8d', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
-    { name: tr('Negotiation'), c: '#eda100', items: [tr('Cairo Care – ICU kit')] },
-    { name: tr('Won'), c: '#2e9e6a', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
+    { name: tr('Proposal'), c: 'var(--lp-teal)', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
+    { name: tr('Negotiation'), c: 'var(--lp-gold)', items: [tr('Cairo Care – ICU kit')] },
+    { name: tr('Won'), c: 'var(--lp-mint)', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
+  ]
+  const kpis = [
+    { l: tr('Sales this month'), v: 'EGP 1.28M', d: '+18%' },
+    { l: tr('Cash in the bank'), v: 'EGP 640K', d: '+6%' },
+    { l: tr('To collect'), v: 'EGP 312K', d: '−4%' },
   ]
   return (
-    <div className="mock" aria-hidden>
-      <div className="mock-inner">
-        <div className="mock-side">
-          <span className="on"><BarChart3 size={12} /> {tr('Dashboard')}</span>
-          <span>{tr('Customers')}</span>
-          <span>{tr('Projects')}</span>
-          <span>{tr('Site surveys')}</span>
-          <span>{tr('Invoices')}</span>
-          <span>{tr('Stock')}</span>
-        </div>
-        <div className="stack">
-          <div className="row between">
-            <b style={{ fontSize: '0.85rem' }}>{tr('Projects pipeline')}</b>
-            <span className="pill green">{tr('EGP 4.2M open')}</span>
+    <div className="lp-window" aria-hidden>
+      <div className="lp-window-bar">
+        <span className="lp-dots"><i /><i /><i /></span>
+        <span className="lp-search"><Search size={12} /> {tr('Search or jump to…')} <kbd>{'Ctrl K'}</kbd></span>
+        <span className="lp-bar-end"><Bell size={13} /><span className="lp-avatar">M</span></span>
+      </div>
+      <div className="lp-window-body">
+        <aside className="lp-side">
+          <span className="on"><BarChart3 size={13} /> {tr('Dashboard')}</span>
+          <span><Users size={13} /> {tr('Customers')}</span>
+          <span><Workflow size={13} /> {tr('Projects')}</span>
+          <span><FileText size={13} /> {tr('Invoices')}</span>
+          <span><Boxes size={13} /> {tr('Stock')}</span>
+          <span><Calculator size={13} /> {tr('Accounting')}</span>
+        </aside>
+        <div className="lp-main">
+          <div className="lp-kpis">
+            {kpis.map((k) => (
+              <div className="lp-kpi" key={k.l}><small>{k.l}</small><b dir="ltr">{k.v}</b><em dir="ltr" className={k.d.startsWith('+') ? 'up' : 'down'}>{k.d}</em></div>
+            ))}
           </div>
-          <div className="mock-cols">
+          <div className="lp-chart">
+            <div className="row between"><b>{tr('Projects pipeline')}</b><span className="lp-pill" dir="ltr">{'EGP 4.2M'}</span></div>
+            <svg viewBox="0 0 300 80" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="lpArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--lp-teal)" stopOpacity=".55" /><stop offset="1" stopColor="var(--lp-teal)" stopOpacity="0" /></linearGradient>
+                <linearGradient id="lpLine" x1="0" x2="1"><stop offset="0" stopColor="var(--lp-teal)" /><stop offset="1" stopColor="var(--lp-gold)" /></linearGradient>
+              </defs>
+              {[18, 30, 24, 40, 34, 52, 46, 60].map((h, i) => <rect key={i} x={8 + i * 37} y={80 - h} width="14" height={h} rx="3" className="lp-bar" />)}
+              <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10 L300 80 L0 80Z" fill="url(#lpArea)" />
+              <path className="lp-line" d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10" fill="none" stroke="url(#lpLine)" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="lp-cols">
             {cols.map((c) => (
-              <div className="mock-col" key={c.name}>
+              <div className="lp-col" key={c.name}>
                 <b>{c.name}</b>
-                {c.items.map((i) => <div key={i} className="mock-card" style={{ ['--c' as string]: c.c }}>{i}</div>)}
+                {c.items.map((i) => <div key={i} className="lp-card" style={{ ['--c' as string]: c.c }}>{i}</div>)}
               </div>
             ))}
           </div>
-          <svg viewBox="0 0 300 80" style={{ width: '100%', height: 90 }}>
-            <defs><linearGradient id="hm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0f8b8d" stopOpacity=".5" /><stop offset="1" stopColor="#0f8b8d" stopOpacity="0" /></linearGradient></defs>
-            <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10 L300 80 L0 80Z" fill="url(#hm)" />
-            <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10" fill="none" stroke="#0f8b8d" strokeWidth="3" />
-          </svg>
         </div>
       </div>
-      <div className="mock-float" style={{ top: -18, insetInlineEnd: 30 }}><CheckCircle2 size={16} color="#2e9e6a" /> {tr('Health check: 100%')}</div>
-      <div className="mock-float" style={{ bottom: -16, insetInlineStart: -10 }}><Zap size={16} color="#e0a526" /> {tr('Task created: call new lead')}</div>
+      <div className="lp-float f1"><CheckCircle2 size={16} /> {tr('Health check: 100%')}</div>
+      <div className="lp-float f2"><Zap size={16} /> {tr('Task created: call new lead')}</div>
+      <div className="lp-float f3"><Calculator size={16} /> {tr('Invoice posted · books balanced')}</div>
+    </div>
+  )
+}
+
+function MiniDash() {
+  return (
+    <div className="lp-mini lp-minidash" aria-hidden>
+      <svg viewBox="0 0 200 70" preserveAspectRatio="none">
+        <path d="M0 55 C30 50 40 30 70 34 S120 12 150 20 S185 8 200 4" fill="none" stroke="var(--lp-teal)" strokeWidth="2.5" />
+        <path d="M0 62 C30 60 50 50 80 52 S130 40 160 44 S190 36 200 34" fill="none" stroke="var(--lp-gold)" strokeWidth="2" strokeDasharray="4 4" />
+      </svg>
+      <div className="lp-donut" />
+    </div>
+  )
+}
+
+function MiniLedger() {
+  return (
+    <div className="lp-mini lp-ledger" aria-hidden dir="ltr">
+      <div><span>1110</span><b>14,250</b><i>—</i></div>
+      <div><span>4000</span><i>—</i><b>12,500</b></div>
+      <div><span>2400</span><i>—</i><b>1,750</b></div>
+      <div className="sum"><span>Σ</span><b>14,250</b><b>14,250</b></div>
+    </div>
+  )
+}
+
+function MiniStock() {
+  return (
+    <div className="lp-mini lp-stock" aria-hidden>
+      {[70, 45, 88, 22, 60, 36].map((h, i) => <span key={i} style={{ height: `${h}%` }} className={h < 30 ? 'low' : ''} />)}
+      <i className="lp-reorder" />
+    </div>
+  )
+}
+
+function MiniFlow() {
+  const { tr } = useLang()
+  return (
+    <div className="lp-mini lp-flow" aria-hidden>
+      <span className="lp-node"><Zap size={13} /> {tr('A deal is won')}</span>
+      <span className="lp-wire" />
+      <span className="lp-node"><ShieldCheck size={13} /> {tr('Over EGP 50K?')}</span>
+      <span className="lp-wire" />
+      <span className="lp-node on"><CheckCircle2 size={13} /> {tr('Create the invoice')}</span>
+    </div>
+  )
+}
+
+function MiniJournal() {
+  const { tr } = useLang()
+  return (
+    <div className="lp-journal lp-reveal" aria-hidden>
+      <div className="lp-journal-head"><b>{tr('Journal entry')}</b><span className="lp-pill ok"><CheckCircle2 size={12} /> {tr('Balanced')}</span></div>
+      <div className="lp-journal-row"><span>{tr('Customers')}</span><b dir="ltr">11,400.00</b><i /></div>
+      <div className="lp-journal-row"><span>{tr('Sales')}</span><i /><b dir="ltr">10,000.00</b></div>
+      <div className="lp-journal-row"><span>{tr('VAT')}</span><i /><b dir="ltr">1,400.00</b></div>
     </div>
   )
 }
