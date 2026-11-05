@@ -641,13 +641,22 @@ button.small, .btn.small { min-height: 30px; padding: 5px 11px; font-size: 0.86r
 .lp-step h3 { margin: 18px 0 6px; font-size: 1.05rem; }
 .lp-step p { margin: 0; font-size: .9rem; line-height: 1.55; color: var(--lp-body); }
 
-/* the industries */
-.lp-tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.lp-tpl { display: flex; gap: 14px; align-items: flex-start; padding: 18px; border-radius: 18px; }
-.lp-tpl::after { content: ''; position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, var(--c1), var(--c2)); opacity: .7; }
-.lp-tpl-ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); box-shadow: 0 10px 24px -8px var(--c1); }
-.lp-tpl h3 { margin: 0 0 4px; font-size: .98rem; line-height: 1.3; }
-.lp-tpl p { margin: 0; font-size: .84rem; line-height: 1.5; color: var(--lp-muted); }
+
+/* made for your industry: which ones stay a surprise until sign-up */
+.lp-secret { position: relative; border-radius: 24px; padding: 22px; overflow: hidden; background: var(--lp-glass); border: 1px solid var(--lp-edge); }
+.lp-secret-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; filter: blur(5px) saturate(120%); opacity: .75; pointer-events: none; user-select: none; }
+.lp-secret-card { display: grid; gap: 8px; padding: 18px; border-radius: 16px; min-height: 120px; background: rgb(var(--lp-g) / calc(.05 * var(--lp-ga))); border: 1px solid var(--lp-edge); --c1: #0f8b8d; --c2: #2cc5c0; }
+.lp-secret-card:nth-child(2) { --c1: #2f6fd6; --c2: #6aa8ff; } .lp-secret-card:nth-child(3) { --c1: #6a4fd6; --c2: #a78bfa; } .lp-secret-card:nth-child(4) { --c1: #c98a00; --c2: #f2c94c; }
+.lp-secret-card:nth-child(5) { --c1: #cf5a33; --c2: #ff8a65; } .lp-secret-card:nth-child(6) { --c1: #11865a; --c2: #5fd3a0; } .lp-secret-card:nth-child(7) { --c1: #0d7f81; --c2: #6aa8ff; } .lp-secret-card:nth-child(8) { --c1: #6a4fd6; --c2: #ff8a65; }
+.lp-secret-card i { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.lp-secret-card b { height: 12px; width: 70%; border-radius: 6px; background: rgb(var(--lp-ink) / .25); }
+.lp-secret-card em { height: 8px; border-radius: 4px; background: rgb(var(--lp-ink) / .12); } .lp-secret-card em:last-child { width: 60%; }
+.lp-secret-lock { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 40px)); display: grid; justify-items: center; gap: 10px; text-align: center; padding: 28px 26px; border-radius: 22px;
+  background: rgb(var(--lp-deep) / .78); border: 1px solid var(--lp-edge); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 30px 80px -30px var(--lp-sh), inset 0 1px 0 rgb(255 255 255 / .1); }
+.lp-secret-lock h3 { margin: 6px 0 0; font-size: 1.2rem; }
+.lp-secret-lock p { margin: 0 0 8px; color: var(--lp-body); }
+.lp.light .lp-secret-lock { background: rgb(255 255 255 / .86); }
+@media (max-width: 760px) { .lp-secret-grid { grid-template-columns: 1fr 1fr; } .lp-secret-card:nth-child(n+5) { display: none; } .lp-secret { min-height: 380px; } }
 
 /* safety: the promise on one side, how it is kept on the other */
 .lp-split { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 48px; align-items: start; }

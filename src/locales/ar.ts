@@ -5660,4 +5660,10 @@ export const AR: Record<string, string> = {
   'From draft to paid in three clear steps; the books and the stock update by themselves.': 'من المسودة إلى السداد في ثلاث خطوات واضحة؛ وتتحدّث الحسابات والمخزون تلقائياً.',
   'Quantities and average costs that always match the books, with reorder alerts.': 'كميات ومتوسط تكلفة تطابق الحسابات دائماً، مع تنبيهات إعادة الطلب.',
   'Profit and loss, balance sheet and cash flow, live, with a check that the books balance.': 'الأرباح والخسائر والميزانية والتدفقات النقدية مباشرةً، مع فحص لتوازن الحسابات.',
+  'steps from sign-up to a live system': 'خطوات من التسجيل إلى نظام يعمل',
+  'Made for you': 'مصمم لك',
+  'A system shaped around your industry': 'نظام مفصّل على مجال عملك',
+  'Answer a few questions about what you do and Nasq360 matches you with a ready system built for your kind of business: its lists, stages, documents and reports. You see it the moment you sign up.': 'أجب عن بضعة أسئلة عن نشاطك، ويختار لك Nasq360 نظاماً جاهزاً مبنياً لنوع عملك: قوائمه ومراحله ومستنداته وتقاريره. تراه لحظة تسجيلك.',
+  'Your industry is already inside': 'مجال عملك موجود بالفعل',
+  'Sign up free to see the system ready for your business.': 'سجّل مجاناً لترى النظام الجاهز لعملك.',
 }
