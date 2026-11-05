@@ -1513,6 +1513,8 @@ export interface PayOptions {
   cheque?: { no: string; bank?: string; due: string }
   /** a document in another currency: the rate on the day of payment (its own rate if not given) */
   rate?: number
+  /** the other system's id of this payment: the same one is never recorded twice */
+  external?: string
 }
 
 /** The cash box or bank account a payment goes through. Cheques wait in 1150 (received) or 2150 (issued) until cashed. */
@@ -1611,9 +1613,12 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   const whtRate = whtRateOf(o.wht)
   if (method === 'cheque') noForeign(rec, 'paying by cheque')
   if (o.rate !== undefined && !(Number(o.rate) > 0)) throw new EngineError('The exchange rate must be more than 0')
+  const external = o.external === undefined ? '' : String(o.external).trim().slice(0, 120)
+  if (external && ctx.ws.data.payments.some((p) => p.external === external && !p.reverses && !ctx.ws.data.payments.some((x) => x.reverses === p.id))) throw new EngineError(`external_id ${external} was already recorded`)
   const cheque = method === 'cheque' ? chequeInfo(o.cheque, date) : undefined
   const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
   payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account, isForeign(rec) ? String(rec.values.currency) : undefined), cheque, ref, rate: o.rate === undefined ? undefined : Number(o.rate) })
+  if (external) ctx.ws.data.payments[0].external = external
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
 }
 

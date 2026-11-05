@@ -177,6 +177,8 @@ export interface Payment {
   cheque?: { id: string; no: string; bank?: string; due: string }
   /** the receipt or payment voucher (RV-/PV-…) when one payment covered several documents */
   voucher?: string
+  /** the other system's id of this payment (a shop or payment gateway): the same one is never recorded twice */
+  external?: string
   /** a document in another currency: the payment's rate, and what it took off the books' carrying amount */
   fx?: { rate: number; relief: number }
 }
@@ -379,6 +381,9 @@ export interface Workspace {
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */
   warehouses?: Warehouse[]
+  /** projects (each with its own cost center) and the hours logged on them (see projects.ts) */
+  projects?: import('./projects').Project[]
+  timesheets?: import('./projects').TimeEntry[]
   /** the setup session: each decision agreed, by whom and when (see setupSession.ts) */
   setupSession?: { agreed: Record<string, import('./setupSession').Agreed> }
   /** goods received notes: goods received against purchase orders (see purchasing.ts) */

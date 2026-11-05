@@ -80,6 +80,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
         ...(erp && has('products') && (finance || own('ops')) ? [page('stock', '/app/inventory', N_('Stock'), 'stock')] : []),
         ...(erp && finance ? [page('accounting', '/app/accounting', N_('Accounting'), 'accounting')] : []),
         ...(erp && (admin || Boolean(role?.payroll)) ? [page('payroll', '/app/payroll', N_('Payroll'), 'payroll')] : []),
+        ...(erp && has('invoices') && (finance || admin || own('ops')) ? [page('projects', '/app/projects', N_('Projects & time'), 'projects')] : []),
       ]
       return own('ops') || pages.length ? [...modules('ops'), ...(crmScope ? [] : inbox), ...pages, ...(erp ? approvals : []), ...workReports] : []
     }
@@ -93,6 +94,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
       ]
     case 'setup':
       return [
+        ...(admin ? [page('session', '/app/setup-session', N_('Setup session'), 'session')] : []),
         ...(admin || finance ? [page('doctor', '/app/doctor', N_('Company check-up'), 'doctor')] : []),
         ...(admin || finance ? [page('migrate', '/app/migrate', N_('Bring your data in'), 'migrate')] : []),
         ...(admin ? [page('team', '/app/team', N_('Team'), 'team')] : []),

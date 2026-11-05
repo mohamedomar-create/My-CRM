@@ -41,7 +41,7 @@ export function decisions(ws: Workspace, schema: AppSchema): Decision[] {
     now: N_('Tax number {tax}, VAT {vat}%, currency {cur}'), values: { tax: c.taxId?.trim() || '—', vat: c.vatRate, cur: c.currency }, ready: Boolean(c.taxId?.trim()) })
   const people = ws.users.filter((u) => !u.demo && !u.former)
   out.push({ id: 'team', who: 'owner', title: N_('Who uses the system, and what each one sees'), why: N_('Each person sees and changes only their part; the owner sees everything.'),
-    now: N_('{n} people, {r} roles'), values: { n: people.length, r: schema.roles.length }, ready: people.length > 1 })
+    now: N_('People: {n} · roles: {r}'), values: { n: people.length, r: schema.roles.length }, ready: people.length > 1 })
   if (erp) {
     out.push({ id: 'year', who: 'accountant', title: N_('When the financial year starts'), why: N_('Year-end closing and the yearly reports follow it.'),
       now: N_('Starts in {m}'), values: { m: MONTHS[(c.fiscalYearStart || 1) - 1] }, ready: true })

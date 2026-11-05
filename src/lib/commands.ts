@@ -4,6 +4,7 @@
 // by the server, not by whichever browser happens to send the data.
 import { applyStatement, forgetRule, type StatementPosting } from './bankFeed'
 import { agree, reopenDecision, setCompany } from './setupSession'
+import { billTime, logTime, removeTime, saveProject, setProjectStatus } from './projects'
 import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
@@ -28,7 +29,7 @@ import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
 import {
-  EngineError, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
+  EngineError, list, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
@@ -48,7 +49,7 @@ type Method = 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
 
 /** The arguments each command takes. */
 export interface CommandArgs {
-  'record.create': { module: string; values: Record<string, unknown>; lines?: Line[] }
+  'record.create': { module: string; values: Record<string, unknown>; lines?: Line[]; externalId?: string }
   'record.update': { id: string; values?: Record<string, unknown>; lines?: Line[] }
   'record.saveAndPost': { id: string; values?: Record<string, unknown>; lines?: Line[]; warehouse?: string }
   'record.delete': { id: string }
@@ -59,7 +60,7 @@ export interface CommandArgs {
   'deal.toQuote': { id: string }
   'doc.post': { id: string; warehouse?: string }
   'doc.void': { id: string }
-  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number }
+  'doc.pay': { id: string; amount: number; date: string; method: Method; wht?: number; account?: string; cheque?: { no: string; bank?: string; due: string }; rate?: number; external?: string }
   'payment.voucher': { party: string; date: string; method: Method; account?: string; wht?: number; cheque?: { no: string; bank?: string; due: string }; allocations: { doc: string; amount: number }[] }
   'cheque.deposit': { id: string; account: string; date: string }
   'cheque.clear': { id: string; date: string; account?: string }
@@ -82,6 +83,11 @@ export interface CommandArgs {
   'setup.chooseTemplate': { draft: AppSchema; seedOnPublish: boolean }
   'setup.saveDraft': { draft: AppSchema }
   'setup.publish': Record<string, never>
+  'project.save': { id?: string; name: string; customer?: string; rate?: number; budgetHours?: number; budget?: number; start?: string }
+  'project.status': { id: string; status: 'open' | 'done' }
+  'project.bill': { id: string; upTo?: string }
+  'time.log': { project: string; date: string; hours: number; note?: string; user?: string }
+  'time.remove': { id: string }
   'setup.agree': { id: string; who: string; note?: string }
   'setup.reopen': { id: string }
   'setup.company': { taxId?: string; vatRate?: number; fiscalYearStart?: number; allowNegativeStock?: boolean }
@@ -254,7 +260,17 @@ function sheet(rows: unknown): SheetRow[] {
 }
 
 export const COMMANDS: { [N in CommandName]: Def<N> } = {
-  'record.create': { run: (ws, u, a) => ({ id: createRecord(ctx(ws, u), a.module, a.values, { lines: a.lines }).id }) },
+  'record.create': {
+    run: (ws, u, a) => {
+      // another system's id (a shop's order number): the same one is never made twice, even by two calls at once
+      const ext = a.externalId === undefined ? '' : String(a.externalId).trim().slice(0, 120)
+      const twin = ext ? list(ws, String(a.module)).find((r) => r.legacy?.id === ext) : undefined
+      if (twin) throw new EngineError(`external_id ${ext} is already ${twin.number ?? twin.id}`)
+      const rec = createRecord(ctx(ws, u), a.module, a.values, { lines: a.lines })
+      if (ext) rec.legacy = { ...rec.legacy, id: ext }
+      return { id: rec.id }
+    },
+  },
   'record.update': { run: (ws, u, a) => void edits(ctx(ws, u), a.id, a.values, a.lines) },
   'record.saveAndPost': {
     run: (ws, u, a) => {
@@ -270,7 +286,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'deal.toQuote': { run: (ws, u, a) => ({ id: dealToQuote(ctx(ws, u), rec(ws, a.id)).id }) },
   'doc.post': { run: (ws, u, a) => postDocument(ctx(ws, u), rec(ws, a.id), { warehouse: a.warehouse ? String(a.warehouse) : undefined }) },
   'doc.void': { run: (ws, u, a) => voidDocument(ctx(ws, u), rec(ws, a.id)) },
-  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque, rate: a.rate === undefined ? undefined : Number(a.rate) }) },
+  'doc.pay': { run: (ws, u, a) => registerPayment(ctx(ws, u), rec(ws, a.id), Number(a.amount), String(a.date), a.method, { wht: Number(a.wht ?? 0), account: a.account, cheque: a.cheque, rate: a.rate === undefined ? undefined : Number(a.rate), ...(a.external ? { external: String(a.external) } : {}) }) },
   'payment.voucher': { run: (ws, u, a) => moneyVoucher(ctx(ws, u), a) },
   'cheque.deposit': { run: (ws, u, a) => depositCheque(ctx(ws, u), String(a.id), String(a.account), String(a.date)) },
   'cheque.clear': { run: (ws, u, a) => clearCheque(ctx(ws, u), String(a.id), String(a.date), a.account) },
@@ -280,6 +296,11 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'credit.unuse': { run: (ws, u, a) => unuseCredit(ctx(ws, u), String(a.doc ?? ''), String(a.use ?? '')) },
   'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
   'bank.applyStatement': { run: (ws, u, a) => applyStatement(ctx(ws, u), { account: String(a.account ?? ''), lines: (Array.isArray(a.lines) ? a.lines : []).slice(0, 500) }) },
+  'project.save': { run: (ws, u, a) => ({ id: saveProject(ctx(ws, u), a) }) },
+  'project.status': { run: (ws, u, a) => setProjectStatus(ctx(ws, u), String(a.id ?? ''), a.status === 'done' ? 'done' : 'open') },
+  'project.bill': { run: (ws, u, a) => ({ id: billTime(ctx(ws, u), String(a.id ?? ''), a.upTo ? String(a.upTo) : undefined).id }) },
+  'time.log': { run: (ws, u, a) => ({ id: logTime(ctx(ws, u), a) }) },
+  'time.remove': { run: (ws, u, a) => removeTime(ctx(ws, u), String(a.id ?? '')) },
   'setup.agree': { admin: true, run: (ws, u, a) => agree(ctx(ws, u), { id: String(a.id ?? ''), who: String(a.who ?? ''), note: a.note === undefined ? undefined : String(a.note) }) },
   'setup.reopen': { admin: true, run: (ws, u, a) => reopenDecision(ctx(ws, u), String(a.id ?? '')) },
   'setup.company': { admin: true, run: (ws, u, a) => setCompany(ctx(ws, u), a) },

@@ -31,6 +31,8 @@ const PAGE_TEXT: Record<string, string> = {
   audit: N_('Who changed what, and when'),
   inbox: N_('Customers’ WhatsApp messages, answered by the team'),
   payroll: N_('Salaries each month, approved, posted and sent to the bank in its own file'),
+  projects: N_('Hours logged, billed in one click, and each project’s profit from the books'),
+  session: N_('Settle every setup decision with your team, and print the minutes'),
   connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
 }
 
