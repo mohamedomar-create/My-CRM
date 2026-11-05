@@ -20,12 +20,14 @@ interface Opts {
   today: string
   /** money formatter, so the text says the amount still due */
   money: (n: number) => string
+  /** a purchase order's progress: what came in, what is billed */
+  po?: { received: 'none' | 'part' | 'all'; toBill: boolean; billedAny: boolean; closed: boolean }
 }
 
 const states = (labels: string[], cur: number, stopped = false) =>
   labels.map((label, i) => ({ label, state: (i < cur ? 'done' : i === cur ? (stopped ? 'stopped' : 'cur') : 'todo') as StepState }))
 
-export function docFlow({ role, rec, canPost, today, money }: Opts): Flow | null {
+export function docFlow({ role, rec, canPost, today, money, po }: Opts): Flow | null {
   // Credit and debit notes, advances and balances brought in from the old system have their own explanation.
   if (rec?.values.credit_for || rec?.values.opening) return null
   const status = rec?.status ?? 'draft'
@@ -45,6 +47,18 @@ export function docFlow({ role, rec, canPost, today, money }: Opts): Flow | null
         return { steps: [...states(labels.slice(0, 2), 2), { label: N_('Declined'), state: 'stopped' }], next: N_('The customer declined it. Nothing more to do.'), tone: 'stopped' }
     }
     return null
+  }
+  // a bill sent to the supplier as a purchase order: ordered, then received (a goods received note), then billed
+  if (role === 'purchases' && status === 'ordered') {
+    const labels = [N_('Ordered'), N_('Received'), N_('Billed')]
+    if (!po) return { steps: states(labels, 1), next: N_('Next: when the goods arrive, enter what came under “Arrived now” and press Receive.'), tone: 'info' }
+    if (po.closed) return { steps: [...states(labels.slice(0, 1), 1), { label: N_('Closed'), state: 'stopped' }], next: N_('Closed: the rest won’t come. Bill what was received, if not yet billed.'), tone: 'stopped' }
+    if (po.received === 'all' && !po.toBill) return { steps: states(labels, 3), next: N_('Done: everything was received and billed. Pay the bill from the bill itself.'), tone: 'ok' }
+    if (po.received === 'all') return { steps: states(labels, 2), next: N_('Everything has arrived. Next: press Bill what was received.'), tone: 'info' }
+    if (po.received === 'part') {
+      return { steps: [...states(labels.slice(0, 1), 1), { label: N_('Partly received'), state: 'cur' }, { label: N_('Billed'), state: po.billedAny ? 'done' : 'todo' }], next: po.toBill ? N_('Part has arrived. Press Bill what was received for what came, receive the rest when it arrives, or close the order if it won’t come.') : N_('Part has arrived and is billed. Receive the rest when it arrives, or close the order if it won’t come.'), tone: 'info' }
+    }
+    return { steps: states(labels, 1), next: N_('Next: when the goods arrive, enter what came under “Arrived now” and press Receive.'), tone: 'info' }
   }
   const sale = role === 'invoices'
   const labels = [N_('Draft'), N_('Posted'), N_('Paid in full')]

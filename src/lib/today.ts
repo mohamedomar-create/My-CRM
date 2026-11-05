@@ -105,3 +105,39 @@ export function mineFilter(schema: AppSchema, moduleId: string, user: User): Fil
   const f = mod?.fields.find((x) => x.type === 'user' && (x.key === 'owner' || x.key === 'assignee'))
   return f ? { field: f.key, op: 'eq', value: user.id } : undefined
 }
+
+type ActivityItem = Workspace['data']['activity'][number]
+/** An activity line, and how many records it covers when an automation ran on several at once. */
+export type ActivityLine = ActivityItem & { count: number }
+
+/**
+ * Recent activity without the flood: one date-based automation run on 30 overdue invoices logs 30 “ran …” lines
+ * (and the changes it made on each). On the home those become one line per automation with the number of records;
+ * each record's own history still has the details.
+ */
+export function summarizeActivity(items: ActivityItem[], max: number): ActivityLine[] {
+  const out: ActivityLine[] = []
+  let i = 0
+  while (i < items.length && out.length < max) {
+    if (items[i].user !== 'Automation') {
+      out.push({ ...items[i], count: 1 })
+      i++
+      continue
+    }
+    let j = i
+    while (j < items.length && items[j].user === 'Automation') j++
+    const batch = items.slice(i, j)
+    const ran = new Map<string, ActivityLine>()
+    for (const a of batch) {
+      if (!a.text.startsWith('ran “')) continue
+      const seen = ran.get(a.text)
+      if (seen) seen.count++
+      else ran.set(a.text, { ...a, count: 1 })
+    }
+    const groups = [...ran.values()]
+    if (groups.some((g) => g.count > 1)) out.push(...groups.map((g) => (g.count > 1 ? { ...g, record: undefined } : g)))
+    else out.push(...batch.map((a) => ({ ...a, count: 1 })))
+    i = j
+  }
+  return out.slice(0, max)
+}

@@ -111,7 +111,8 @@ export function reorderPlan(ws: Workspace, schema: AppSchema, today = todayISO()
   if (!mod) return []
   const out: ReorderRow[] = []
   for (const p of list(ws, mod.id)) {
-    if (!p.values.track_stock || p.sample || p.values.reorder_level === undefined || p.values.reorder_level === '' || p.values.reorder_level === null) continue
+    // sample products are suggested too (an order for them is a sample order, removed with the sample data)
+    if (!p.values.track_stock || p.values.reorder_level === undefined || p.values.reorder_level === '' || p.values.reorder_level === null) continue
     const level = Number(p.values.reorder_level)
     const have = onHand(ws, p.id)
     const held = heldForOrders(ws, schema, p.id)
@@ -149,7 +150,10 @@ export function orderSuggested(ctx: Ctx, o: { supplier: string; lines: { product
     return { id: uid('l'), product: p.id, description: String(p.values.name ?? ''), qty, price: round2(Number(x.price ?? p.values.cost ?? 0)), discount: 0, vat: Number(p.values.vat_rate ?? ctx.schema.company.vatRate ?? 0) || 0 }
   })
   if (!lines.length) throw new EngineError('Choose what to order')
-  const rec = createRecord(ctx, purchases.id, { supplier: s.id, date: ctx.today ?? todayISO() }, { lines })
-  const number = orderPurchase(ctx, rec.id)
+  // an order for sample products or a sample supplier is a sample too, so it goes with the sample data and never
+  // ties real work to it
+  const sample = ctx.sample || Boolean(s.sample) || lines.some((l) => productRec(ctx, l.product!)?.sample)
+  const rec = createRecord({ ...ctx, sample }, purchases.id, { supplier: s.id, date: ctx.today ?? todayISO() }, { lines })
+  const number = orderPurchase({ ...ctx, sample }, rec.id)
   return { id: rec.id, number }
 }

@@ -458,7 +458,9 @@ export function CloseBooks() {
   const [picked, setMonth] = useState('')
   const month = months.includes(picked) ? picked : (months[0] ?? '')
   const lastYear = Number(today.slice(0, 4)) - 1
-  const years = [lastYear, lastYear - 1, lastYear - 2].filter((y) => !closedYears.some((c) => c.year >= y) && !(lock && lock > `${y}-12-31`))
+  // Only years with something in the books: a company that started this year has no last year to close.
+  const booked = new Set(ws.data.journal.map((j) => j.date.slice(0, 4)))
+  const years = [lastYear, lastYear - 1, lastYear - 2].filter((y) => booked.has(String(y)) && !closedYears.some((c) => c.year >= y) && !(lock && lock > `${y}-12-31`))
   const [pickedYear, setYear] = useState(0)
   const year = years.includes(pickedYear) ? pickedYear : (years[0] ?? lastYear)
   const [reopenDate, setReopenDate] = useState('')

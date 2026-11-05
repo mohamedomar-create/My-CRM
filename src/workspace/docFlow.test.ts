@@ -46,4 +46,19 @@ describe('where a document is and what to do next', () => {
     expect(docFlow({ role: 'invoices', rec: doc('posted', { credit_for: 'r_y' }), canPost: true, today: '2026-11-04', money })).toBeNull()
     expect(docFlow({ role: 'invoices', rec: doc('posted', { opening: true }), canPost: true, today: '2026-11-04', money })).toBeNull()
   })
+  it('a purchase order goes Ordered → Received → Billed, and a partly received or closed one says what is left', () => {
+    const po = (state: { received: 'none' | 'part' | 'all'; toBill: boolean; billedAny: boolean; closed: boolean }) => docFlow({ role: 'purchases', rec: doc('ordered'), canPost: true, today: '2026-11-04', money, po: state })!
+    const none = po({ received: 'none', toBill: false, billedAny: false, closed: false })
+    expect(none.steps.map((s) => s.label)).toEqual(['Ordered', 'Received', 'Billed'])
+    expect([cur(none), none.next]).toEqual(['Received', expect.stringMatching(/press Receive/)])
+    const part = po({ received: 'part', toBill: true, billedAny: false, closed: false })
+    expect([cur(part), part.next]).toEqual(['Partly received', expect.stringMatching(/Bill what was received/)])
+    expect(po({ received: 'part', toBill: false, billedAny: true, closed: false }).steps[2].state).toBe('done')
+    expect(po({ received: 'all', toBill: true, billedAny: false, closed: false }).next).toMatch(/Bill what was received/)
+    const done = po({ received: 'all', toBill: false, billedAny: true, closed: false })
+    expect([done.tone, done.steps.every((s) => s.state === 'done')]).toEqual(['ok', true])
+    expect(cur(po({ received: 'part', toBill: false, billedAny: true, closed: true }))).toBe('Closed')
+    // a bill (not an order) keeps Draft → Posted → Paid in full
+    expect(run('purchases', doc('draft')).steps[0].label).toBe('Draft')
+  })
 })

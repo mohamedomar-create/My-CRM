@@ -429,8 +429,6 @@ reset role;
 select pg_temp.check('adding and undoing are in the audit trail', (select count(*) = 3 from public.audit_events where workspace_id = 'ws_books000001' and command like 'history.%'));
 
 
--- Billing, as it works once charging is on (the launch period has it off; see the end).
-update public.billing_settings set charging = true;
 -- Phase 6.1a: billing. A trial for every new company; read-only after it; seats; the Free plan; paid periods.
 set role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated","aal":"aal2"}', false);
@@ -705,14 +703,6 @@ select pg_temp.check('a stranger can''t remove one', (select count(*) = 1 from s
 set role anon;
 select pg_temp.check('nobody signed out sees them', (select count(*) = 0 from storage.objects where bucket_id = 'product-images'));
 reset role;
-
--- The launch period: charging off. Nothing locks: a company whose trial ended can save, invite and grow; it has
--- everything; a company being deleted still can't be changed.
-update public.billing_settings set charging = false;
-update public.subscriptions set status = 'trial', trial_ends_at = now() - interval '1 day', paid_until = null where workspace_id = 'ws_test123456';
-select pg_temp.check('launch: a company past its trial has everything and can be changed', (select b ->> 'state' = 'launch' and (b ->> 'writable')::boolean and b -> 'features' ? 'books' and (b ->> 'seat_limit')::int >= 1000 from (select private.billing_state('ws_test123456') b) x));
-select pg_temp.allowed('launch: a new member joins with no seat limit', $q$insert into public.workspace_members (workspace_id, email) values ('ws_test123456', 'launch-member@test.dev')$q$);
-select pg_temp.check('launch: a company being deleted is still read-only', (select b ->> 'state' = 'read_only' and b ->> 'reason' = 'deleting' from (select private.billing_state(w.workspace_id) b from public.workspace_deletions w limit 1) x) or not exists (select 1 from public.workspace_deletions));
 
 -- The product is Nasq360: no message from the database says the old name.
 select pg_temp.check('no database message names the old product name', not exists (

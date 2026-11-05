@@ -23,7 +23,7 @@ import { QuoteSharePanel } from './QuoteSharePanel'
 import { docFlow } from './docFlow'
 import {
   can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
-  usesWarehouses, unitsOf, approvalRoles,
+  usesWarehouses, unitsOf, approvalRoles, quoteLocked,
 } from '../lib/engine'
 import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
@@ -46,6 +46,7 @@ import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
 import { ProductPhotoCard } from './ProductPhoto'
 import { PRODUCT_PHOTOS } from '../lib/config'
+import { poProgress } from '../lib/purchasing'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -87,7 +88,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const isCredit = Boolean(rec?.values.credit_for)
   const credits = rec && mod.lines ? creditNotesOf(ws, rec) : []
   const isNew = !rec
-  const docLocked = Boolean(mod.lines && rec && rec.status !== 'draft' && mod.role !== 'quotes') || Boolean(mod.role === 'quotes' && rec && (rec.status === 'invoiced' || rec.status === 'ordered'))
+  // a sent quotation is the customer's copy: changing it starts a revision (Revise), so it is locked like a posted document
+  const docLocked = Boolean(mod.lines && rec && rec.status && rec.status !== 'draft')
   const editable = !docLocked && can({ schema, user }, mod.id, isNew ? 'create' : 'edit')
   // On a new document the due date follows the date and the customer's or supplier's payment terms, until changed by hand.
   const partyKey = mod.role === 'purchases' ? 'supplier' : 'customer'
@@ -160,7 +162,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   // A posted document is shown as read-only paper (4.2b); drafts and quotations keep the form.
   const paper = Boolean(mod.lines && rec && mod.role !== 'quotes' && rec.status && rec.status !== 'draft')
   const flow = mod.lines && (mod.role === 'invoices' || mod.role === 'purchases' || mod.role === 'quotes')
-    ? docFlow({ role: mod.role, rec, canPost: canPost({ schema, user }), today: todayISO(), money: (n) => money(n, schema.company.currency) })
+    ? docFlow({ role: mod.role, rec, canPost: canPost({ schema, user }), today: todayISO(), money: (n) => money(n, schema.company.currency), po: rec?.status === 'ordered' && mod.role === 'purchases' ? poState(ws, rec) : undefined })
     : null
   const reversePayment = (id: string) => {
     const p = ws.data.payments.find((x) => x.id === id)
@@ -292,7 +294,13 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         <div className="stack">
           {paper && rec && <PaperView rec={rec} mod={mod} onReverse={reversePayment} />}
           {!paper && <div className="card">
-            {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role === 'quotes' ? tr('This quotation was turned into an invoice.') : tr('Posted documents are locked to keep your books correct. Void it and create a new one to make changes.')}</div>}
+            {docLocked && <div className="info" style={{ marginBottom: 12 }}><Lock size={13} /> {mod.role !== 'quotes' ? tr('Posted documents are locked to keep your books correct. Void it and create a new one to make changes.') : rec?.status === 'invoiced' ? tr('This quotation was turned into an invoice.') : msg(quoteLocked(rec?.status ?? ''))}
+              {mod.role === 'quotes' && rec && (rec.status === 'sent' || rec.status === 'accepted') && can({ schema, user }, mod.id, 'edit') && (
+                <label className="row small" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>{tr('Valid until')}
+                  <input type="date" style={{ width: 'auto' }} value={String(rec.values.valid_until ?? '')} onChange={(e) => e.target.value && act('record.update', { id: rec.id, values: { valid_until: e.target.value } }, tr('Valid until changed'))} />
+                </label>
+              )}
+            </div>}
             <div className="form-grid">
               {mod.fields.filter((f) => !(mod.lines && ['subtotal', 'tax', 'total', 'paid', 'balance'].includes(f.key)) && !(!costs && secret.includes(f.key)) && isVisible(mod, f, values)).map((f) => (
                 <div key={f.id} className={f.width === 2 || f.type === 'longtext' ? 'w2' : ''}>
@@ -901,4 +909,14 @@ function NextFor({ rec, role }: { rec: Rec; role: 'accounts' | 'suppliers' }) {
       ))}
     </>
   )
+}
+
+/** Where a purchase order is: nothing, part or everything received; anything waiting to be billed; closed. */
+function poState(ws: Workspace, rec: Rec) {
+  const p = poProgress(ws, rec)
+  const goods = p.lines.filter((l) => l.line.product && findRecord(ws, l.line.product)?.values.track_stock)
+  const got = goods.reduce((s, l) => s + l.received, 0)
+  const received: 'none' | 'part' | 'all' = !goods.length ? 'all' : got === 0 ? 'none' : goods.every((l) => l.left === 0) ? 'all' : 'part'
+  const billedAny = p.lines.some((l) => l.billed > 0) || p.servicesBilled
+  return { received, toBill: p.toBill.length > 0 || (!goods.length && !p.servicesBilled), billedAny, closed: Boolean(rec.values.closed) }
 }
