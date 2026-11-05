@@ -4,3 +4,6 @@ dist
 .env
 .env.*
 !.env.example
+
+# temporary scripts used while checking screens (never committed)
+src/zz_*
