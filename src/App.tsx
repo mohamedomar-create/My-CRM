@@ -24,6 +24,7 @@ const Accounting = lazy(loadScreen(() => import('./workspace/Accounting')))
 const Pos = lazy(loadScreen(() => import('./workspace/Pos')))
 const Connections = lazy(loadScreen(() => import('./workspace/Connections')))
 const Inbox = lazy(loadScreen(() => import('./workspace/Inbox')))
+const Payroll = lazy(loadScreen(() => import('./workspace/Payroll')))
 const Team = lazy(loadScreen(() => import('./workspace/Team')))
 const Approvals = lazy(loadScreen(() => import('./workspace/Approvals')))
 const Migrate = lazy(loadScreen(() => import('./workspace/Migrate')))
@@ -194,6 +195,7 @@ export default function App() {
         <Route path="pos" element={<NeedsErp><Pos /></NeedsErp>} />
         <Route path="connections" element={<Connections />} />
         <Route path="inbox" element={<Inbox />} />
+        <Route path="payroll" element={<NeedsErp><Payroll /></NeedsErp>} />
         <Route path="group" element={<NeedsErp><Group /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />

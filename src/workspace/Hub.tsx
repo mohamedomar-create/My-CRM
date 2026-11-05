@@ -30,6 +30,7 @@ const PAGE_TEXT: Record<string, string> = {
   billing: N_('Your plan, seats and payments'),
   audit: N_('Who changed what, and when'),
   inbox: N_('Customers’ WhatsApp messages, answered by the team'),
+  payroll: N_('Salaries each month, approved, posted and sent to the bank in its own file'),
   connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
 }
 

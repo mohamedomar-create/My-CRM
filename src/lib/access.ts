@@ -37,7 +37,7 @@ function apply(ws: Workspace, id: string, fn: (r: RoleDef, s: AppSchema) => void
 }
 
 /** Saves a role's name, its rights in every list, and its finance and costs rights. The Admin role can't be limited. */
-export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?: unknown; finance?: unknown; costs?: unknown; pos?: unknown }) {
+export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?: unknown; finance?: unknown; costs?: unknown; pos?: unknown; payroll?: unknown }) {
   const schema = live(ctx.ws)
   const role = schema.roles.find((r) => r.id === input.id)
   if (!role) throw new EngineError('That role no longer exists')
@@ -47,11 +47,15 @@ export function saveRole(ctx: Ctx, input: { id: string; name?: unknown; access?:
   const finance = input.finance === undefined ? Boolean(role.finance) : input.finance === true
   const costs = input.costs === undefined ? Boolean(role.costs) : input.costs === true
   const pos = input.pos === undefined ? Boolean(role.pos) : input.pos === true
+  const payroll = input.payroll === undefined ? Boolean(role.payroll) : input.payroll === true
   apply(ctx.ws, role.id, (r, s) => {
     r.name = name
     r.finance = finance || undefined
     r.costs = costs || undefined
     r.pos = pos || undefined
+    // payroll's records are seen only by roles with the right (the server reads the role's lists to decide)
+    r.payroll = payroll || undefined
+    for (const k of ['payroll_people', 'payroll_runs']) { if (payroll) r.access[k] = ['view', 'create', 'edit']; else delete r.access[k] }
     // Only lists that exist in that setup; a list left out keeps what it had.
     for (const m of s.modules) if (m.id in given) r.access[m.id] = cleanPerms(given[m.id])
   })

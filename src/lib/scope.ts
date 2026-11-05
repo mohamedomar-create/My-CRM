@@ -122,7 +122,8 @@ export function changeScope(schema: AppSchema, ws: Pick<Workspace, 'data'>, to: 
     }
   }
   pruneFields(next.modules)
-  for (const r of next.roles) for (const id of Object.keys(r.access)) if (!next.modules.some((m) => m.id === id)) delete r.access[id]
+  // a role's payroll right lives in its access too (payroll's records aren't lists of the setup): kept
+  for (const r of next.roles) for (const id of Object.keys(r.access)) if (!next.modules.some((m) => m.id === id) && !(r.payroll && id.startsWith('payroll_'))) delete r.access[id]
   next.reports = next.reports.filter((rep) => next.modules.some((m) => m.id === rep.module))
   next.workflows = next.workflows.filter((w) => next.modules.some((m) => m.id === w.module))
   next.approvals = (next.approvals ?? []).filter((a) => next.modules.some((m) => m.id === a.module))

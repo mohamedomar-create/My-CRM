@@ -13,6 +13,7 @@ import { cancelProduction, completeProduction, planProduction, setRecipe } from 
 import { reinstate, setAllowance, writeOff } from './badDebts'
 import { orderSuggested, setBarcodes } from './scan'
 import { accrueMissingBill, prepareClose } from './closePrep'
+import { approvePayroll, payPayroll, preparePayroll, saveEmployee, savePayrollSetup, type BankTemplate, type Employee } from './payroll'
 import { closeCounter, counterReturn, openCounter, saveCounter, sell, type CounterPay, type SaleLine } from './pos'
 import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
@@ -97,7 +98,7 @@ export interface CommandArgs {
   'costCenter.add': { code: string; name: string; nameAr?: string; parent?: string }
   'costCenter.update': { code: string; name?: string; nameAr?: string; parent?: string | null; active?: boolean }
   'team.setCostCenter': { userId: string; code?: string }
-  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean; pos?: boolean }
+  'access.saveRole': { id: string; name?: string; access?: Record<string, Permission[]>; finance?: boolean; costs?: boolean; pos?: boolean; payroll?: boolean }
   'access.addRole': { name: string; copyFrom?: string }
   'access.removeRole': { id: string }
   'sheet.save': { sheet: SheetReportDef }
@@ -123,6 +124,11 @@ export interface CommandArgs {
   'product.setBarcodes': { id: string; codes: { code: string; unit?: string }[] }
   'whatsapp.setShown': { phone: string | null }
   'close.prepare': { month: string }
+  'payroll.saveEmployee': Partial<Employee> & { id?: string }
+  'payroll.prepare': { month: string; changes?: Record<string, { additions?: number; deductions?: number; note?: string }> }
+  'payroll.approve': { id: string }
+  'payroll.pay': { id: string; date: string; bank?: string; cash?: string }
+  'payroll.setup': { bank?: string; template?: BankTemplate; remove?: string }
   'close.accrue': { month: string; supplier: string }
   'po.fromSuggestions': { supplier: string; lines: { product: string; qty: number; price?: number }[] }
   'pos.saveCounter': { id?: string; name: string; cash?: string; bank?: string; warehouse?: string; maxDiscount?: number; active?: boolean }
@@ -398,7 +404,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'plan.create': { run: (ws, u, a) => createPlan(ctx(ws, u), { name: a.name === undefined ? undefined : String(a.name), startYear: Number(a.startYear), years: a.years === undefined ? undefined : Number(a.years), fromBooks: a.fromBooks !== false, labels: planLabels(a.labels) }) },
   'plan.save': { run: (ws, u, a) => void savePlan(ctx(ws, u), String(a.id ?? ''), a.plan) },
   'plan.delete': { run: (ws, u, a) => void deletePlan(ctx(ws, u), String(a.id ?? '')) },
-  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs, pos: a.pos }) },
+  'access.saveRole': { admin: true, run: (ws, u, a) => void saveRole(ctx(ws, u), { id: String(a.id ?? ''), name: a.name, access: a.access, finance: a.finance, costs: a.costs, pos: a.pos, payroll: a.payroll }) },
   'access.addRole': { admin: true, run: (ws, u, a) => ({ id: addRole(ctx(ws, u), { name: a.name, copyFrom: a.copyFrom }) }) },
   'access.removeRole': { admin: true, run: (ws, u, a) => void removeRole(ctx(ws, u), String(a.id ?? '')) },
   'landed.allocate': { run: (ws, u, a) => allocateLanded(ctx(ws, u), { from: a.from ? String(a.from) : undefined, paid: a.paid && typeof a.paid === 'object' ? { account: String(a.paid.account ?? ''), vat: Number(a.paid.vat ?? 0) || 0, what: String(a.paid.what ?? '') } : undefined, to: Array.isArray(a.to) ? a.to.map(String).slice(0, 50) : [], method: a.method, amount: a.amount === undefined ? undefined : Number(a.amount), date: typeof a.date === 'string' ? a.date : undefined }) },
@@ -426,6 +432,11 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'recurring.resume': { run: (ws, u, a) => resumeRecurring(ctx(ws, u), String(a.id ?? '')) },
   'recurring.postDue': { run: (ws, u) => postDue(ctx(ws, u)) },
   'spread.create': { run: (ws, u, a) => spreadOverMonths(ctx(ws, u), { kind: a.kind, doc: a.doc ? String(a.doc) : undefined, memo: a.memo, amount: Number(a.amount), months: Number(a.months), start: a.start || undefined, holding: a.holding || undefined, account: a.account || undefined, cc: a.cc || undefined }) },
+  'payroll.saveEmployee': { run: (ws, u, a) => saveEmployee(ctx(ws, u), a) },
+  'payroll.prepare': { run: (ws, u, a) => preparePayroll(ctx(ws, u), String(a.month ?? ''), a.changes && typeof a.changes === 'object' ? a.changes : {}) },
+  'payroll.approve': { run: (ws, u, a) => approvePayroll(ctx(ws, u), String(a.id ?? '')) },
+  'payroll.pay': { run: (ws, u, a) => void payPayroll(ctx(ws, u), String(a.id ?? ''), { date: String(a.date ?? ''), bank: a.bank, cash: a.cash }) },
+  'payroll.setup': { run: (ws, u, a) => void savePayrollSetup(ctx(ws, u), a) },
   'close.prepare': { run: (ws, u, a) => { const c = ctx(ws, u); needFinance(c, 'prepare the close'); return prepareClose(c, String(a.month ?? '')) } },
   'close.accrue': { run: (ws, u, a) => accrueMissingBill(ctx(ws, u), String(a.month ?? ''), String(a.supplier ?? '')).ref },
   'whatsapp.setShown': {

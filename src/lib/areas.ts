@@ -79,6 +79,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
         ...(erp && has('products') && has('invoices') && (finance || Boolean(role?.pos)) ? [page('pos', '/app/pos', N_('Point of sale'), 'pos')] : []),
         ...(erp && has('products') && (finance || own('ops')) ? [page('stock', '/app/inventory', N_('Stock'), 'stock')] : []),
         ...(erp && finance ? [page('accounting', '/app/accounting', N_('Accounting'), 'accounting')] : []),
+        ...(erp && (admin || Boolean(role?.payroll)) ? [page('payroll', '/app/payroll', N_('Payroll'), 'payroll')] : []),
       ]
       return own('ops') || pages.length ? [...modules('ops'), ...(crmScope ? [] : inbox), ...pages, ...(erp ? approvals : []), ...workReports] : []
     }
@@ -108,7 +109,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
 export const areasFor = (schema: AppSchema, user: User, ws?: Pick<Workspace, 'whatsapp'>) => AREAS.filter((a) => areaItems(schema, user, a, ws).length > 0)
 
 const PAGE_AREA: Record<string, AreaId> = {
-  inventory: 'ops', accounting: 'ops', pos: 'ops', inbox: 'crm',
+  inventory: 'ops', accounting: 'ops', pos: 'ops', inbox: 'crm', payroll: 'ops',
   plan: 'plan', budgets: 'plan', sales: 'plan',
   doctor: 'setup', migrate: 'setup', team: 'setup', access: 'setup', billing: 'setup', audit: 'setup', connections: 'setup',
 }
