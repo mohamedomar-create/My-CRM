@@ -181,6 +181,7 @@ export default function Statements() {
           {sectionTable(cf.investing, was?.investing, false)}
           {sectionTable(cf.financing, was?.financing, false)}
           {line(tr('Net change in cash'), cf.net, was?.net)}
+          {(cf.fx !== 0 || (was && was.fx !== 0)) && line(tr('Effect of exchange rates on money held in other currencies'), cf.fx, was?.fx, false)}
           {line(tr('Cash and bank at the end'), cf.closing, was?.closing)}
         </table>
         {!cf.agrees && <div className="error-box">{tr('The movements don’t add up to the closing cash. Contact support.')}</div>}

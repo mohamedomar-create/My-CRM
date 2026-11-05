@@ -901,6 +901,12 @@ export function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { samp
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
   if (dr !== cr) throw new EngineError(`Internal check failed: journal ${entry.ref} does not balance (${dr} ≠ ${cr})`)
+  // No entry takes more dollars (or euros …) out of an account than it holds, whatever screen it comes from.
+  for (const code of new Set(lines.filter((l) => typeof (l as { fx?: number }).fx === 'number').map((l) => l.account))) {
+    const out = round2(lines.filter((l) => l.account === code).reduce((t, l) => t + Number((l as { fx?: number }).fx ?? 0), 0))
+    const have = fxBalance(ctx.ws, code)
+    if (out < 0 && round2(have + out) < 0) { const a = findAccount(ctx.ws, code)!; throw new EngineError(`${a.name} holds only ${have} ${a.currency}`) }
+  }
   ctx.ws.data.journal.unshift(tag(ctx, { ...entry, lines, id: uid('j') }, from))
 }
 
@@ -2294,6 +2300,18 @@ export function booksHealth(ws: Workspace, schema: AppSchema, month: string): He
   const stock = products ? round2(list(ws, products.id).reduce((s, p) => s + stockValue(ws, p), 0)) : 0
   const inv = accountBalance(ws, '1300')
   checks.push({ id: 'stock', ok: stock === inv, blocking: true, title: 'Stock matches the inventory account', detail: stock === inv ? `Both ${money(inv, cur)}` : `Stock list ${money(stock, cur)}, account 1300 ${money(inv, cur)}` })
+  // Each product's quantity is the sum of its movements: a movement lost or changed outside a document shows here.
+  const drift = products ? list(ws, products.id).filter((p) => p.values.track_stock && round4(Number(p.values.stock ?? 0)) !== round4(onHand(ws, p.id))) : []
+  checks.push({ id: 'stockMoves', ok: drift.length === 0, blocking: true, title: 'Stock quantities match their movements', detail: drift.length ? `Products whose quantity differs from their movements: ${drift.slice(0, 5).map((p) => String(p.values.name ?? p.id)).join(', ')}. Contact support before closing.` : 'Every product’s quantity is the sum of its movements.' })
+  // A bank statement once agreed stays agreed: the movements it cleared still add up to its balance.
+  const broken = (ws.books?.reconciliations ?? []).reduce<{ prev: Record<string, number>; bad: string[] }>((acc, r) => {
+    const amounts = new Map(bankLines(ws, r.account).map((l) => [l.entry, l.amount]))
+    const reached = round2((acc.prev[r.account] ?? 0) + r.entries.reduce((t, e) => t + (amounts.get(e) ?? 0), 0))
+    if (reached !== round2(r.balance) || r.entries.some((e) => !amounts.has(e))) acc.bad.push(`${r.account} ${r.date}`)
+    acc.prev[r.account] = r.balance
+    return acc
+  }, { prev: {}, bad: [] }).bad
+  checks.push({ id: 'statements', ok: broken.length === 0, blocking: true, title: 'Agreed bank statements still agree', detail: broken.length ? `Movements on an agreed statement were changed: ${broken.join(', ')}. Contact support before closing.` : 'Every agreed statement still adds up.' })
   const owed = (role: 'invoices' | 'purchases') => {
     const m = moduleByRole(schema, role)
     return m ? round2(list(ws, m.id).filter((r) => r.status === 'posted' || r.status === 'partial').reduce((s, r) => s + baseBalance(r), 0)) : 0

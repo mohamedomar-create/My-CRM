@@ -5298,4 +5298,11 @@ export const AR: Record<string, string> = {
   'Nothing is owed or held in another currency at the end of {a}': 'لا توجد مبالغ مستحقة أو محتفظ بها بعملة أخرى في نهاية {a}',
   'What the line is': 'نوع السطر',
   'Rate: 1 {c} = {rate} {home}.': 'السعر: 1 {c} = {rate} {home}.',
+  'Effect of exchange rates on money held in other currencies': 'أثر تغير أسعار الصرف على النقدية بالعملات الأخرى',
+  'Stock quantities match their movements': 'كميات المخزون تطابق حركاتها',
+  'Agreed bank statements still agree': 'كشوف البنك المطابقة ما زالت متطابقة',
+  'Products whose quantity differs from their movements: {a}. Contact support before closing.': 'أصناف تختلف كميتها عن حركاتها: {a}. تواصل مع الدعم قبل الإقفال.',
+  'Every product’s quantity is the sum of its movements.': 'كمية كل صنف هي مجموع حركاته.',
+  'Movements on an agreed statement were changed: {a}. Contact support before closing.': 'تغيّرت حركات في كشف تمت مطابقته: {a}. تواصل مع الدعم قبل الإقفال.',
+  'Every agreed statement still adds up.': 'كل كشف تمت مطابقته ما زال متوازنًا.',
 }

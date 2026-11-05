@@ -175,14 +175,21 @@ function flowOf(ws: Workspace, code: string): Flow {
  */
 export function cashFlow(ws: Workspace, from: string, to: string) {
   const money = new Set(chartOf(ws).filter((a) => a.type === 'asset' && moneyKind(a)).map((a) => a.code))
+  const foreign = new Set(chartOf(ws).filter((a) => a.currency && money.has(a.code)).map((a) => a.code))
   const flows = new Map<Flow, number>()
   let opening = 0
   let closing = 0
+  // a month-end restatement of dollars held moves no money: shown on its own line, as IAS 7 asks
+  let fx = 0
   for (const j of ws.data.journal) {
     const m = round2(j.lines.filter((l) => money.has(l.account)).reduce((s, l) => s + l.debit - l.credit, 0))
     if (j.date <= to) closing += m
     if (j.date < from) opening += m
     if (!inPeriod(j, from, to) || m === 0) continue
+    if (j.lines.some((l) => foreign.has(l.account) && l.fx === 0)) {
+      fx = round2(fx + m)
+      continue
+    }
     // The earlier periods' starting point and their hand-over to the opening balances (H6) are balances, not flows.
     if (isHistoryBalance(j)) {
       flows.set('opening', round2((flows.get('opening') ?? 0) + m))
@@ -202,7 +209,7 @@ export function cashFlow(ws: Workspace, from: string, to: string) {
   const investing = group(N_('Investing activities'), ['investing'])
   const financing = group(N_('Financing activities'), ['loans', 'owners', 'opening'])
   const net = round2(operating.total + investing.total + financing.total)
-  return { from, to, opening: round2(opening), operating, investing, financing, net, closing: round2(closing), agrees: round2(opening + net) === round2(closing) }
+  return { from, to, opening: round2(opening), operating, investing, financing, net, fx, closing: round2(closing), agrees: round2(opening + net + fx) === round2(closing) }
 }
 
 /* ---------------- general ledger ---------------- */
