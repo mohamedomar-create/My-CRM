@@ -12,7 +12,7 @@ import { TargetsCard } from './Targets'
 import { OwnerCockpit, PeriodBar } from './Cockpit'
 import { AskBox } from './Ask'
 import { MyPipeline, ReorderList, SetupChecklist, TodayStrip } from './Home'
-import { homeKind, mineFilter } from '../lib/today'
+import { homeKind, mineFilter, summarizeActivity } from '../lib/today'
 import { useOpenList, usePeriod } from './usePeriod'
 import { moduleById, moduleByRole } from '../lib/schema'
 import { dateLocale, useLang } from '../lib/i18n'
@@ -115,8 +115,8 @@ export default function Dashboard() {
         <div className="card s2">
           <h2>{tr('Recent activity')}</h2>
           <ul className="timeline">
-            {ws.data.activity.filter((a) => !a.module || can({ schema, user }, a.module, 'view')).slice(0, 8).map((a) => (
-              <li key={a.id}><b>{actorName(a.user)}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>
+            {summarizeActivity(ws.data.activity.filter((a) => !a.module || can({ schema, user }, a.module, 'view')), 8).map((a) => (
+              <li key={a.id}><b>{actorName(a.user)}</b> {a.record ? <Link to={`/app/r/${a.record}`}>{msg(a.text)}</Link> : msg(a.text)}{a.count > 1 && <span className="muted"> · {tr('{n} records', { n: a.count })}</span>}<br /><span className="tiny muted">{new Date(a.at).toLocaleString(dateLocale())}</span></li>
             ))}
           </ul>
         </div>

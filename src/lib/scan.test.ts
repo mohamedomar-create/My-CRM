@@ -70,4 +70,16 @@ describe('what to buy next', () => {
     expect(reorderPlan(ws, schema, '2026-11-04')).toEqual([])
     expect(() => orderSuggested(ctx, { supplier: C.id, lines: [{ product: rice.id, qty: 1 }] })).toThrow(/Choose the supplier/)
   })
+  it('suggests sample products too, and orders them as sample data (removed with the samples)', () => {
+    const { ws, schema, ctx, mod } = setup()
+    const sctx: Ctx = { ...ctx, sample: true }
+    const S = createRecord(sctx, mod('suppliers'), { name: 'Sample Supplier' })
+    const tea = createRecord(sctx, mod('products'), { name: 'Sample Tea', sku: 'STEA', price: 50, vat_rate: 14, track_stock: true, reorder_level: 10, reorder_qty: 24 })
+    const plan = reorderPlan(ws, schema, '2026-11-04')
+    expect(plan.map((r) => r.product)).toEqual([tea.id])
+    // ordered from a normal session: still sample, so a real record never points at a sample one
+    const out = orderSuggested(ctx, { supplier: S.id, lines: plan.map((x) => ({ product: x.product, qty: x.qty, price: 40 })) })
+    expect(ws.data.records[mod('purchases')].find((r) => r.id === out.id)?.sample).toBe(true)
+    expect(onOrder(ws, schema, tea.id)).toBe(24)
+  })
 })

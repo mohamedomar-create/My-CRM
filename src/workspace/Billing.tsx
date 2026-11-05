@@ -3,9 +3,9 @@
 // for Paymob's own confirmation to reach the server; nothing is credited from the return address itself.
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CreditCard, Users, Zap } from 'lucide-react'
+import { CreditCard, Mail, MessageCircle, Phone, Users, Zap } from 'lucide-react'
 import { PlanCards } from '../components/PlanCards'
-import { addSeatsPrice, egp, PLANS, planFits, planForScope, priceFor, upgradePrice, VAT_RATE, planName, type BillingStatus, type Cycle, type Plan, type PlanId } from '../lib/billing'
+import { addSeatsPrice, egp, ONLINE_PAYMENTS, PLANS, SALES_CONTACT, planFits, planForScope, priceFor, upgradePrice, VAT_RATE, planName, type BillingStatus, type Cycle, type Plan, type PlanId } from '../lib/billing'
 import { chooseFreePlan, listPayments, loadPlans, refreshBilling, setTestBilling, startCheckout, useStore, type BillingPayment } from '../lib/store'
 import { getLang, N_, tr } from '../lib/i18n'
 import { showToast, useApp } from './useApp'
@@ -159,6 +159,7 @@ function PayButton({ plan, cycle, seats, vatRate, b, workspace, plans, fits }: {
     : extra
       ? tr('Add {n} seats for {days} days: {amount}', { n: seats - b.seats, days: extra.days, amount: egp(total) })
       : running ? tr('Renew for {amount}', { amount: egp(total) }) : tr('Pay {amount}', { amount: egp(total) })
+  if (!ONLINE_PAYMENTS) return <ContactToPay plan={plan} cycle={cycle} seats={running && same ? Math.max(seats, b.seats) : seats} total={total} fits={fits} />
   async function pay() {
     setBusy(true)
     try {
@@ -204,6 +205,29 @@ function TestStates({ workspace }: { workspace: string }) {
         {TEST_STATES.map(([id, label]) => <button key={id} type="button" className="secondary small" disabled={Boolean(busy)} onClick={() => void go(id)}>{busy === id ? tr('Please wait…') : tr(label)}</button>)}
       </div>
       <p className="tiny muted" style={{ margin: 0 }}>{tr('To try the system as several people with one inbox, invite yourself as name+sales@hotmail.com (Outlook and Gmail deliver it to you), open the invitation link in a private window and choose a password.')}</p>
+    </div>
+  )
+}
+
+/** While paying online is off: the price, and how to ask Nasq360 for the plan (it is turned on once the payment arrives). */
+function ContactToPay({ plan, cycle, seats, total, fits }: { plan: Plan; cycle: Cycle; seats: number; total: number; fits: boolean }) {
+  const { ws } = useApp()
+  const ar = getLang() === 'ar'
+  const company = ws.answers?.companyName || ws.published?.company.name || ws.id
+  const what = tr('{plan} for {n} people, {cycle}: {amount} (VAT included)', { plan: planName(plan.id as PlanId, ar ? 'ar' : 'en'), n: seats, cycle: cycle === 'year' ? tr('1 year') : tr('1 month'), amount: egp(total) })
+  const message = tr('Hello Nasq360, we would like to subscribe {company} to {what}.', { company, what })
+  const digits = (v: string) => v.replace(/[^\d]/g, '')
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <b className="small">{what}</b>
+      <span className="tiny muted">{tr('Contact us to subscribe: we turn the plan on as soon as the payment arrives. Paying online is coming soon.')}</span>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {SALES_CONTACT.whatsapp && <a className="btn small" href={`https://wa.me/${digits(SALES_CONTACT.whatsapp)}?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer"><MessageCircle size={14} aria-hidden /> {tr('WhatsApp')}</a>}
+        {SALES_CONTACT.email && <a className={`btn small ${SALES_CONTACT.whatsapp ? 'secondary' : ''}`} href={`mailto:${SALES_CONTACT.email}?subject=${encodeURIComponent(tr('Nasq360 subscription: {company}', { company }))}&body=${encodeURIComponent(message)}`}><Mail size={14} aria-hidden /> {tr('E-mail us')}</a>}
+        {SALES_CONTACT.phone && <a className="btn small secondary" href={`tel:${SALES_CONTACT.phone.replace(/\s+/g, '')}`} dir="ltr"><Phone size={14} aria-hidden /> {SALES_CONTACT.phone}</a>}
+      </div>
+      {SALES_CONTACT.email && <span className="tiny muted" dir="ltr">{SALES_CONTACT.email}</span>}
+      {!fits && <span className="tiny" style={{ color: 'var(--warning-text, var(--text-2))' }}>{tr('This plan doesn’t cover every part your system uses.')}</span>}
     </div>
   )
 }

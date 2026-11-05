@@ -7,8 +7,7 @@ import { tr } from '../lib/i18n'
 
 export function BillingBanner({ admin }: { admin: boolean }) {
   const b = useStore((s) => s.billing)
-  // the launch period: nothing to pay, nothing to say (a company being deleted still says so below)
-  if (!b || (b.state === 'launch' && b.reason !== 'deleting')) return null
+  if (!b) return null
   const go = admin ? <Link to="/app/billing" className="btn small">{tr('Choose a plan')}</Link> : null
   if (b.reason === 'deleting') {
     const date = b.delete_after ? new Date(b.delete_after).toLocaleDateString() : ''

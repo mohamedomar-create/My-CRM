@@ -189,7 +189,7 @@ export default function Team() {
           <label className="field">{tr('Role')}
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>{schema.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
           </label>
-          {billing && billing.state !== 'launch' && <p className="small" style={{ margin: 0 }}>{tr('Seats: {used} of {limit} in use or invited.', { used: billing.members + billing.invites, limit: billing.seat_limit })} {full && <Link to="/app/billing">{tr('Add seats')}</Link>}</p>}
+          {billing && <p className="small" style={{ margin: 0 }}>{tr('Seats: {used} of {limit} in use or invited.', { used: billing.members + billing.invites, limit: billing.seat_limit })} {full && <Link to="/app/billing">{tr('Add seats')}</Link>}</p>}
           <button disabled={full}><UserPlus size={16} /> {tr('Invite')}</button>
           <p className="tiny muted">{tr('You get a private link to send them. They sign in or create a login with this e-mail, then accept. Roles control what each person can see and do.')}</p>
         </form>

@@ -282,7 +282,7 @@ function Board({ mod, rows, ws, schema, onMove }: { mod: ModuleDef; rows: Rec[];
           const hidden = all.length - items.length
           const sum = amountField ? items.reduce((t, r) => t + Number(r.values[amountField.key] ?? 0), 0) : 0
           return (
-            <Column key={s.id} id={s.id}>
+            <Column key={s.id} id={s.id} closed={s.type !== 'open'}>
               <div className="kcol-head"><span className="dot" style={{ background: s.color }} />{s.name} <span className="pill gray tiny">{items.length}</span><span className="sum">{amountField ? money(sum, schema.company.currency).replace('.00', '') : `${s.probability}%`}</span></div>
               {items.slice(0, BOARD_CARDS).map((r) => <Card key={r.id} rec={r} color={s.color} mod={mod} ws={ws} schema={schema} amountField={amountField} />)}
               {items.length > BOARD_CARDS && <div className="tiny muted" style={{ padding: 8, textAlign: 'center' }}>{tr('+{n} more. Search or use the table to find them.', { n: (items.length - BOARD_CARDS).toLocaleString('en-US') })}</div>}
@@ -295,9 +295,9 @@ function Board({ mod, rows, ws, schema, onMove }: { mod: ModuleDef; rows: Rec[];
   )
 }
 
-function Column({ id, children }: { id: string; children: React.ReactNode }) {
+function Column({ id, closed, children }: { id: string; closed: boolean; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id })
-  return <div ref={setNodeRef} className={`kcol ${isOver ? 'over' : ''}`}>{children}</div>
+  return <div ref={setNodeRef} className={`kcol${closed ? ' closed' : ''}${isOver ? ' over' : ''}`}>{children}</div>
 }
 
 function Card({ rec, color, mod, ws, schema, amountField }: { rec: Rec; color: string; mod: ModuleDef; ws: Workspace; schema: AppSchema; amountField?: FieldDef }) {

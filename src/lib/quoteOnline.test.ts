@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
-import { createRecord, quoteToInvoice, setQuoteStatus, type Ctx } from './engine'
+import { createRecord, quoteToInvoice, setLines, setQuoteStatus, updateRecord, type Ctx } from './engine'
 import { moduleByRole, uid } from './schema'
 import { reviseQuote, shareQuote } from './quoteOnline'
 import { handleQuote, type QuoteDeps } from './quoteServer'
@@ -98,5 +98,22 @@ describe('the share command runs the same in the browser and on the server', () 
     const other = structuredClone(ws)
     other.data.records[q.module].find((r) => r.id === q.id)!.values.share_token = undefined
     expect(() => applyCommand(other, { userId: admin.id, isAdmin: true }, { name: 'quote.share', args: { id: q.id, secret: 'XYZ' } })).toThrow(/not valid/)
+  })
+  it('a sent quotation is the customer’s copy: locked except its “Valid until”, changed through Revise', () => {
+    const { ctx, q } = setup()
+    setQuoteStatus(ctx, q, 'sent')
+    expect(() => updateRecord(ctx, q, { notes: 'cheaper now' })).toThrow(/was sent, so it can’t be changed. Press Revise/)
+    expect(() => setLines(ctx, q, [])).toThrow(/Press Revise/)
+    updateRecord(ctx, q, { valid_until: '2027-01-31' })
+    expect(q.values.valid_until).toBe('2027-01-31')
+    setQuoteStatus(ctx, q, 'accepted')
+    expect(() => updateRecord(ctx, q, { valid_until: '2027-02-28', notes: 'x' })).toThrow(/customer accepted this quotation/)
+    // a declined one can't move its date, but can be revised: back to draft, editable again
+    setQuoteStatus(ctx, q, 'declined')
+    expect(() => updateRecord(ctx, q, { valid_until: '2027-03-31' })).toThrow(/Press Revise/)
+    reviseQuote(ctx, q.id)
+    expect(q.status).toBe('draft')
+    setLines(ctx, q, [{ id: uid('l'), description: 'Installation', qty: 1, price: 450, discount: 0, vat: 14 }])
+    expect(q.values.total).toBe(513)
   })
 })

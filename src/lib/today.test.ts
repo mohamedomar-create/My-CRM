@@ -5,7 +5,7 @@ import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
 import { createRecord, list, matches, postDocument, type Ctx } from './engine'
 import { moduleByRole, uid } from './schema'
-import { homeKind, mineFilter, todayStrip } from './today'
+import { homeKind, mineFilter, summarizeActivity, todayStrip } from './today'
 
 const mona: User = { id: 'u_admin', name: 'Mona', email: 'mona@co.eg', roleId: 'role_admin' }
 const karim: User = { id: 'u_karim', name: 'Karim', email: 'k@co.eg', roleId: 'role_rep' }
@@ -54,5 +54,26 @@ describe('homes and the Today strip', () => {
     // "Only mine" on a report: by the module's owner (or assignee).
     expect(mineFilter(schema, mod('tasks'), karim)).toEqual({ field: 'assignee', op: 'eq', value: karim.id })
     expect(mineFilter(schema, mod('products'), karim)).toBeUndefined()
+  })
+  it('recent activity shows one line per automation run, not one per record', () => {
+    const at = '2026-11-04T08:00:00Z'
+    const a = (id: string, user: string, text: string, record?: string) => ({ id, at, user, text, record })
+    const items = [
+      a('1', 'Mona', 'created invoice “INV-1”', 'r1'),
+      ...[2, 3, 4].flatMap((n) => [a(`r${n}`, 'Automation', 'ran “Overdue reminder”', `r${n}`), a(`c${n}`, 'Automation', 'changed Status: Open → Overdue', `r${n}`)]),
+      a('5', 'Mona', 'posted INV-0', 'r0'),
+      a('6', 'Automation', 'ran “Welcome task”', 'r9'),
+      a('7', 'Automation', 'changed Owner: — → Mona', 'r9'),
+    ]
+    const out = summarizeActivity(items, 8)
+    expect(out.map((x) => [x.text, x.count, x.record])).toEqual([
+      ['created invoice “INV-1”', 1, 'r1'],
+      ['ran “Overdue reminder”', 3, undefined],
+      ['posted INV-0', 1, 'r0'],
+      // one record: the details stay
+      ['ran “Welcome task”', 1, 'r9'],
+      ['changed Owner: — → Mona', 1, 'r9'],
+    ])
+    expect(summarizeActivity(items, 2)).toHaveLength(2)
   })
 })

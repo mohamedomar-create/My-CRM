@@ -447,11 +447,24 @@ export function createRecord(ctx: Ctx, moduleId: string, values: Record<string, 
   return rec
 }
 
+/** Why a quotation that left draft can't be changed, and what to do instead. */
+export function quoteLocked(status: string) {
+  if (status === 'accepted') return 'The customer accepted this quotation, so it can’t be changed. Make a new quotation for a different offer.'
+  if (status === 'ordered') return 'This quotation is a confirmed order and can’t be changed.'
+  return 'This quotation was sent, so it can’t be changed. Press Revise to change it and send it again.'
+}
+
 export function updateRecord(ctx: Ctx, rec: Rec, values: Record<string, unknown>, opts: { silent?: boolean; quiet?: boolean } = {}) {
   const mod = moduleById(ctx.schema, rec.module)!
   if (!opts.silent) need(ctx, rec.module, 'edit')
   if (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') throw new EngineError('Posted documents can’t be changed. Void it and create a new one.')
   if (mod.role === 'quotes' && rec.status === 'invoiced') throw new EngineError('This quotation was turned into an invoice and can’t be changed.')
+  // the customer has this version: a change starts a new revision (the old one is kept), so both sides agree on what was offered
+  // (only “Valid until” can still move, so an offer the customer is still deciding on doesn't simply expire)
+  if (mod.role === 'quotes' && rec.status && rec.status !== 'draft') {
+    const changed = Object.keys(values).filter((k) => JSON.stringify(values[k] ?? null) !== JSON.stringify(rec.values[k] ?? null))
+    if (!(rec.status === 'sent' || rec.status === 'accepted') || changed.some((k) => k !== 'valid_until')) throw new EngineError(quoteLocked(rec.status))
+  }
   if (mod.role === 'products' && 'track_stock' in values && Boolean(values.track_stock) !== Boolean(rec.values.track_stock) && ctx.ws.data.stock.some((m) => m.product === rec.id)) {
     throw new EngineError('“Track stock” can’t be changed once this product has stock movements. Create a new product instead.')
   }
@@ -853,7 +866,7 @@ function applyTotals(rec: Rec) {
 
 export function setLines(ctx: Ctx, rec: Rec, lines: Line[]) {
   need(ctx, rec.module, 'edit')
-  if (rec.status !== 'draft' && rec.status !== 'sent') throw new EngineError('Only drafts can be changed')
+  if (rec.status !== 'draft') throw new EngineError(moduleById(ctx.schema, rec.module)?.role === 'quotes' ? quoteLocked(rec.status ?? '') : 'Only drafts can be changed')
   checkLines(lines)
   // Lines are saved as the person set them: a cost center cleared stays cleared.
   lineCostCenters(ctx, lines, true)
