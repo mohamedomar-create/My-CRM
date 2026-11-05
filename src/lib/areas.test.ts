@@ -7,6 +7,7 @@ import { emptyData, type User } from './types'
 import { moduleByRole, type AppSchema } from './schema'
 import { areaItems, areaOfPath, areasFor, moduleAreas } from './areas'
 import { changeScope } from './scope'
+import { CHARGING } from './billing'
 
 const both = generateSchema(templateById('distribution'), { ...emptyAnswers('Co'), taxId: '1' })
 const admin: User = { id: 'u_a', name: 'A', email: 'a@x.eg', roleId: 'role_admin' }
@@ -26,7 +27,8 @@ describe('the four areas', () => {
     // quotations lead to invoices, so both areas have them
     expect(ops).toContain('quotes')
     expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales', 'reports'])
-    expect(keys(both, admin, 'setup')).toEqual(['session', 'doctor', 'migrate', 'team', 'access', 'customise', 'connections', 'billing', 'audit'])
+    // the Billing page only once charging starts (the launch period has it out of sight)
+    expect(keys(both, admin, 'setup')).toEqual(['session', 'doctor', 'migrate', 'team', 'access', 'customise', 'connections', ...(CHARGING ? ['billing'] : []), 'audit'])
   })
 
   it('a salesperson works in Customer relations: being allowed to look at invoices does not open Operations', () => {

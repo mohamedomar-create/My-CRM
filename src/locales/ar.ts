@@ -5696,4 +5696,5 @@ export const AR: Record<string, string> = {
   'Dashboard ({n})': 'لوحة المتابعة ({n})',
   'closed the task “{a}”: {b} was answered': 'أغلق المهمة «{a}»: تم الرد على {b}',
   'the quotation': 'عرض السعر',
+  'Bring your data in, your team, the audit trail and how the system works.': 'إدخال بياناتك، فريقك، سجل التدقيق، وطريقة عمل النظام.',
 }

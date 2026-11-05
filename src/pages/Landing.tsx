@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { N_, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
+import { CHARGING } from '../lib/billing'
 import { getTheme, setTheme } from '../lib/theme'
 import { AnalyticsWall, CountUpInView, HeroScene, LangCompare, PhoneShowcase, ProductTour } from './LandingVisuals'
 import { LandingLook } from './landingLook'
@@ -77,7 +78,7 @@ export default function Landing() {
           <a href="#features" className="lp-link">{tr('Features')}</a>
           <a href="#tour" className="lp-link">{tr('The real system')}</a>
           <a href="#dashboards" className="lp-link">{tr('Dashboards')}</a>
-          <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>
+          {CHARGING && <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>}
         </div>
         <div className="lp-nav-end">
           <button type="button" className="lp-link lp-look" onClick={flipLook} aria-label={look === 'light' ? tr('Dark') : tr('Light')} title={look === 'light' ? tr('Dark') : tr('Light')}>
@@ -232,7 +233,7 @@ export default function Landing() {
           <p>{tr('Register, answer a few questions, and get a working CRM + ERP you can reshape by dragging and dropping.')}</p>
           <div className="lp-ctas center">
             <Link to="/register" className="lp-btn primary lg">{t('start')} <ArrowRight size={18} className="flip" /></Link>
-            <Link to="/pricing" className="lp-btn glass lg">{tr('See the prices')}</Link>
+            {CHARGING ? <Link to="/pricing" className="lp-btn glass lg">{tr('See the prices')}</Link> : <a href="#how" className="lp-btn glass lg">{tr('See how it works')}</a>}
           </div>
         </div>
       </section>
@@ -246,7 +247,7 @@ export default function Landing() {
         <div>
           <h4>{tr('Product')}</h4>
           <a href="#features">{tr('Features')}</a>
-          <Link to="/pricing">{tr('Pricing')}</Link>
+          {CHARGING && <Link to="/pricing">{tr('Pricing')}</Link>}
           <Link to="/security">{tr('Security')}</Link>
         </div>
         <div>

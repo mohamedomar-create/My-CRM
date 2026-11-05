@@ -28,7 +28,8 @@ export interface Plan {
 export interface BillingStatus {
   plan: PlanId
   /** trial: the free trial; free: the Free plan; active: paid; past_due: paid period over, in the grace days; read_only: nothing can be changed */
-  state: 'trial' | 'free' | 'active' | 'past_due' | 'read_only'
+  /** launch: nothing is charged yet (billing_settings.charging is off): everything, no limits */
+  state: 'launch' | 'trial' | 'free' | 'active' | 'past_due' | 'read_only'
   /** why it is read-only */
   reason?: 'trial_ended' | 'unpaid' | 'deleting'
   /** the owner asked to delete the company: it is erased on this date unless restored */
@@ -55,6 +56,12 @@ export const PLANS: Plan[] = [
   { id: 'growth', name: 'CRM + ERP', name_ar: 'إدارة العملاء + تخطيط الموارد', price_month: 400, price_year: 4000, max_users: null, features: ['crm', 'books', 'stock', 'eta'], sort: 4 },
   { id: 'pro', name: 'Pro', name_ar: 'الاحترافي', price_month: 650, price_year: 6500, max_users: null, features: ['crm', 'books', 'stock', 'eta', 'ai', 'whatsapp', 'approvals_multi'], sort: 5 },
 ]
+/**
+ * The launch period: Nasq360 is free while it spreads, so prices, plans and the Billing page are out of sight. The
+ * database decides what is locked (billing_settings.charging); this hides the screens about paying. Turn both on
+ * together when charging starts (see migration 20261120000000_launch_free.sql).
+ */
+export const CHARGING = false
 export const VAT_RATE = 14
 export const TRIAL_DAYS = 14
 
