@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, BarChart3, CheckCircle2, Kanban, LayoutDashboard, Rocket, Settings, Shield, ShieldAlert, X, Zap, Layers } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { useDraft } from './useDraft'
 import { healthScore, type Issue, type Tab } from '../lib/validate'
-import { run } from '../lib/store'
+import { builderStatus, currentWorkspace, run, useStore } from '../lib/store'
+import { BuilderLocked } from '../workspace/Customise'
 import ModulesTab from './ModulesTab'
 import PipelinesTab from './PipelinesTab'
 import ReportsTab from './ReportsTab'
@@ -30,7 +31,26 @@ export interface Focus {
   itemId?: string
 }
 
+/**
+ * The system designer. Before a company's first version is published it is open (that is the setup); after, it opens
+ * only while Nasq360 has opened it for the company (or for Nasq360's own team). The server refuses the changes anyway.
+ */
 export default function Builder() {
+  const ws = useStore((s) => currentWorkspace(s))
+  const staff = useStore((s) => s.staff)
+  const live = Boolean(ws?.published)
+  const id = ws?.id
+  const [open, setOpen] = useState<boolean | null>(live && !staff ? null : true)
+  useEffect(() => {
+    if (!live || staff || !id) return
+    builderStatus(id).then((st) => setOpen(st.open), () => setOpen(false))
+  }, [live, staff, id])
+  if (open === null) return <div className="page muted">{tr('Checking…')}</div>
+  if (!open) return <BuilderLocked />
+  return <Designer />
+}
+
+function Designer() {
   const nav = useNavigate()
   const { ws, schema, issues } = useDraft()
   const [params] = useSearchParams()

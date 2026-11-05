@@ -4,6 +4,7 @@
 // by the server, not by whichever browser happens to send the data.
 import { applyStatement, forgetRule, type StatementPosting } from './bankFeed'
 import { agree, reopenDecision, setCompany } from './setupSession'
+import { saveAppearance } from './appearance'
 import { billTime, logTime, removeTime, saveProject, setProjectStatus } from './projects'
 import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
@@ -21,7 +22,7 @@ import { closeCounter, counterReturn, openCounter, saveCounter, sell, type Count
 import { approveRecurring, postDue, resumeRecurring, saveRecurring, spreadOverMonths, stopRecurring, stopSpread, type Every } from './recurring'
 import { removeSheet, saveSheet, type SheetReportDef } from './sheets'
 import type { Answers } from './recommend'
-import type { AppSchema, Permission } from './schema'
+import type { AppSchema, Permission, ReportDef } from './schema'
 import { moduleById, recordIds, replayIds } from './schema'
 import type { BudgetLine, Line, User, Workspace } from './types'
 import { approveBudget, budgetDigest, createBudget, deleteBudget, rejectBudget, reviseBudget, setBudgetLines, submitBudget } from './budget'
@@ -88,6 +89,7 @@ export interface CommandArgs {
   'project.bill': { id: string; upTo?: string }
   'time.log': { project: string; date: string; hours: number; note?: string; user?: string }
   'time.remove': { id: string }
+  'appearance.save': { reports?: ReportDef[]; modules?: { id: string; color?: string; icon?: string }[] }
   'setup.agree': { id: string; who: string; note?: string }
   'setup.reopen': { id: string }
   'setup.company': { taxId?: string; vatRate?: number; fiscalYearStart?: number; allowNegativeStock?: boolean }
@@ -301,6 +303,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'project.bill': { run: (ws, u, a) => ({ id: billTime(ctx(ws, u), String(a.id ?? ''), a.upTo ? String(a.upTo) : undefined).id }) },
   'time.log': { run: (ws, u, a) => ({ id: logTime(ctx(ws, u), a) }) },
   'time.remove': { run: (ws, u, a) => removeTime(ctx(ws, u), String(a.id ?? '')) },
+  'appearance.save': { admin: true, run: (ws, u, a) => saveAppearance(ctx(ws, u), a) },
   'setup.agree': { admin: true, run: (ws, u, a) => agree(ctx(ws, u), { id: String(a.id ?? ''), who: String(a.who ?? ''), note: a.note === undefined ? undefined : String(a.note) }) },
   'setup.reopen': { admin: true, run: (ws, u, a) => reopenDecision(ctx(ws, u), String(a.id ?? '')) },
   'setup.company': { admin: true, run: (ws, u, a) => setCompany(ctx(ws, u), a) },

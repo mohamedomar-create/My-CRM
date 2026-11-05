@@ -45,7 +45,7 @@ export default function Dashboard() {
         </div>
         <div className="row">
           {(role?.admin || visibleSheets(schema, user).length > 0) && <Link to="/app/reports" className="btn secondary"><FileSpreadsheet size={16} /> {tr('Excel reports')}</Link>}
-          {role?.admin && <Link to="/builder" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
+          {role?.admin && <Link to="/app/customise" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
         </div>
       </div>
 

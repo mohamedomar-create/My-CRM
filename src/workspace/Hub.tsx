@@ -33,6 +33,7 @@ const PAGE_TEXT: Record<string, string> = {
   payroll: N_('Salaries each month, approved, posted and sent to the bank in its own file'),
   projects: N_('Hours logged, billed in one click, and each project’s profit from the books'),
   session: N_('Settle every setup decision with your team, and print the minutes'),
+  customise: N_('The dashboard, reports and the look; the backup; changes to the system itself on request'),
   connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
 }
 
@@ -221,7 +222,7 @@ export function AreaHome() {
   }
   if (a === 'setup') {
     flows = [
-      { title: tr('Getting set up'), steps: pick('migrate', 'team', 'access', 'builder'), note: tr('Bring your data in first, invite the team, then choose what each role can see and do; change lists and fields at any time.') },
+      { title: tr('Getting set up'), steps: pick('session', 'migrate', 'team', 'access'), note: tr('Settle the decisions with your team, bring your data in, invite the team, then choose what each role can see and do. The dashboard and the look are yours to change; lists and fields are changed on request (Customise).') },
       { title: tr('Running the account'), steps: pick('billing', 'audit'), arrows: false },
     ]
   }

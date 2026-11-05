@@ -1297,3 +1297,7 @@ pre.code { white-space: pre-wrap; word-break: break-all; background: var(--surfa
 .wa-msg.out { align-self: flex-end; background: color-mix(in srgb, var(--whatsapp) 14%, var(--surface)); }
 .wa-body { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); }
 @media (max-width: 800px) { .inbox-grid { grid-template-columns: 1fr; } }
+
+/* the dashboard designer inside the app (Customise): as tall as its content, not the builder's full screen */
+.customise-reports .reports-tab, .customise-reports .two { height: auto; overflow: visible; }
+.customise-reports { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }

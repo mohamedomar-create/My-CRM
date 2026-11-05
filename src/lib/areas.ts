@@ -99,7 +99,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
         ...(admin || finance ? [page('migrate', '/app/migrate', N_('Bring your data in'), 'migrate')] : []),
         ...(admin ? [page('team', '/app/team', N_('Team'), 'team')] : []),
         ...(admin ? [page('access', '/app/access', N_('Access rights'), 'access')] : []),
-        ...(admin ? [page('builder', '/builder', N_('Customise system'), 'builder')] : []),
+        ...(admin ? [page('customise', '/app/customise', N_('Customise'), 'customise')] : []),
         ...(admin ? [page('connections', '/app/connections', N_('Connections'), 'connections')] : []),
         ...(admin ? [page('billing', '/app/billing', N_('Billing'), 'billing')] : []),
         ...(admin ? [page('audit', '/app/audit', N_('Audit trail'), 'audit')] : []),

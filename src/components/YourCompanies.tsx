@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, RotateCcw, Trash2, Zap } from 'lucide-react'
 import { cancelCompanyDeletion, companyDeletionDate, createCompany, eraseCompanyNow, requestCompanyDeletion, switchWorkspace, useStore, type Company } from '../lib/store'
 import { getLang, msg, tr } from '../lib/i18n'
+import { StaffRequests } from './StaffRequests'
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -20,11 +21,12 @@ export function YourCompanies() {
   return (
     <div className="card stack" id="companies" style={{ marginTop: 16 }}>
       <h2 style={{ margin: 0 }}><Building2 size={18} aria-hidden /> {tr('Your companies')}</h2>
-      <p className="small muted" style={{ margin: 0 }}>{tr('Every company you belong to. The owner of a company can delete it here: for 30 days it is read-only for everyone and can be kept, then it is erased with all its data. Download a backup first (Customise system → Company).')}</p>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Every company you belong to. The owner of a company can delete it here: for 30 days it is read-only for everyone and can be kept, then it is erased with all its data. Download a backup first (Customise → Company & data).')}</p>
       <ul className="companies">
         {companies.map((c) => <Row key={c.id} c={c} current={c.id === current} until={dates[c.id] ?? null} changed={() => void load()} />)}
       </ul>
       <NewCompany />
+      <StaffRequests />
     </div>
   )
 }
