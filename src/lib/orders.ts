@@ -7,6 +7,7 @@
 import type { Line, Rec, Workspace } from './types'
 import { moduleById, moduleByRole, uid, type AppSchema } from './schema'
 import {
+  closeFollowUps, dealFollowsQuote,
   can, createRecord, deliveredQty, EngineError, findRecord, heldForOrders, ISO_DATE, journal, linkRecords, log, needFinance, nextNumber, noRealPostingOverSamples,
   noteLots, nowISO, unitLines, onHand, onHandAt, productRec, warehouseFor, warehouseName, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, type Ctx,
 } from './engine'
@@ -75,6 +76,8 @@ export function confirmOrder(ctx: Ctx, id: string) {
   // Not enough on hand is allowed (it is a back order), but the person is told.
   const short = (o.lines ?? []).filter((l) => tracked(ctx, l)).filter((l) => round4(onHand(ctx.ws, l.product!) - heldForOrders(ctx.ws, ctx.schema, l.product!, o.id)) < l.qty)
   log(ctx, `confirmed sales order ${o.values.order_no}`, o)
+  dealFollowsQuote(ctx, o, 'won')
+  closeFollowUps(ctx, o)
   return { number: String(o.values.order_no), short: short.map((l) => l.description) }
 }
 

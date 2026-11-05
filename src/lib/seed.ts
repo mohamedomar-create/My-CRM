@@ -49,7 +49,8 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
         if (k === 'subject') return pick(['Device not starting', 'Routine maintenance', 'Pressure drop', 'Training request', 'Spare part needed'])
         if (k === 'company') return COMPANIES[(i + 5) % COMPANIES.length]
         if (k.includes('tax')) return `${int(100, 999)}-${int(100, 999)}-${int(100, 999)}`
-        return `${f.label} ${i + 1}`
+        // a text the sample can't know is left empty, unless the list needs it ("Brand 3", "Job title 12" look fake)
+        return f.required ? `${f.label} ${i + 1}` : undefined
       case 'longtext':
         return pick(['Customer asked for a call next week.', 'Prefers delivery to the main branch.', 'Decision expected after budget approval.', ''])
       case 'number':
@@ -180,6 +181,16 @@ export function seedSampleData(ws: Workspace, schema: AppSchema, admin: User, pr
       } catch {
         /* not enough stock for this sample: keep as a draft */
       }
+    }
+  }
+
+  // a deal is named after the customer it is with (not another company picked at random)
+  const dealsMod = moduleByRole(schema, 'deals')
+  if (dealsMod && accounts) {
+    for (const d of list(ws, dealsMod.id)) {
+      const acc = list(ws, accounts.id).find((a) => a.id === d.values.account)
+      const kind = String(d.values.title ?? '').split(' – ')[0]
+      if (acc && kind) d.values = { ...d.values, title: `${kind} – ${String(acc.values.name)}` }
     }
   }
 

@@ -109,7 +109,7 @@ function ChartsTab({ focus, setFocus }: { focus: Focus; setFocus: (f: Focus) => 
   return (
     <div className="two">
       <div className="pane side">
-        <div className="row between"><h3 style={{ margin: 0 }}>Dashboard ({schema.reports.length})</h3><button className="ghost icon" onClick={addReport} aria-label={tr('New report')}><Plus size={16} /></button></div>
+        <div className="row between"><h3 style={{ margin: 0 }}>{tr('Dashboard ({n})', { n: schema.reports.length })}</h3><button className="ghost icon" onClick={addReport} aria-label={tr('New report')}><Plus size={16} /></button></div>
         <p className="tiny muted">{tr('Order here is the order on the dashboard.')}</p>
         {schema.reports.map((r, i) => (
           <div key={r.id} className={`mod-item ${r.id === report?.id ? 'on' : ''}`} onClick={() => setFocus({ itemId: r.id })} role="button">

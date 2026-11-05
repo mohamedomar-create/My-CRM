@@ -94,7 +94,7 @@ export function Chart({ type, result, color, prefix = '', height = 220, onPick, 
       </div>
     )
   }
-  if (!rows.length || rows.every((r) => !r.value)) return <div className="chart-empty">{tr('No data yet — records will appear here as your team works.')}</div>
+  if (!rows.length || rows.every((r) => !r.value)) return <div className="chart-empty">{tr('Nothing to show for this period yet: records will appear here as your team works.')}</div>
 
   if (type === 'table') {
     return (

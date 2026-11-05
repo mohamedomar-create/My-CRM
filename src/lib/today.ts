@@ -71,12 +71,15 @@ export function todayStrip(ws: Workspace, schema: AppSchema, user: User, today: 
     }
     const bills = moduleByRole(schema, 'purchases')
     if (bills) {
-      const soon: Filter[] = [{ field: 'balance', op: 'gt', value: '0' }, { field: 'due_date', op: 'lt', value: day(today, 8) }]
+      // overdue bills apart from the ones falling due this week (a bill months late isn't "due within 7 days")
+      const lateBills: Filter[] = [{ field: 'balance', op: 'gt', value: '0' }, { field: 'due_date', op: 'lt', value: today }]
+      push({ id: 'bills-late', label: N_('Overdue bills: {n}'), n: count(bills.id, lateBills), tone: 'red', module: bills.id, filters: lateBills })
+      const soon: Filter[] = [{ field: 'balance', op: 'gt', value: '0' }, { field: 'due_date', op: 'gt', value: day(today, -1) }, { field: 'due_date', op: 'lt', value: day(today, 8) }]
       push({ id: 'bills-soon', label: N_('Bills due within 7 days: {n}'), n: count(bills.id, soon), tone: 'amber', module: bills.id, filters: soon })
     }
     // Bank movements not yet agreed with a statement.
     const unreconciled = allMoneyAccounts(ws).filter((a) => moneyKind(a) === 'bank').reduce((s, a) => s + reconciliationState(ws, a.code).uncleared.length, 0)
-    push({ id: 'bank', label: N_('Bank movements to reconcile: {n}'), n: unreconciled, tone: 'blue', path: '/app/accounting' })
+    push({ id: 'bank', label: N_('Bank movements to reconcile: {n}'), n: unreconciled, tone: 'blue', path: '/app/accounting?tab=bank' })
   }
 
   // Deals of mine that have gone quiet.

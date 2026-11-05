@@ -105,7 +105,7 @@ export default function Dashboard() {
               return (
                 <div key={t.id} className="row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                   <button className="ghost icon" aria-label={tr('Mark done')} onClick={() => act('record.update', { id: t.id, values: { done: true } }, tr('Task done'))}><CheckCircle2 size={18} /></button>
-                  <Link to={`/app/r/${t.id}`} className="grow" style={{ color: 'var(--text)' }}>{String(t.values.title)}<br /><span className="tiny muted">{String(t.values.related ?? '')}</span></Link>
+                  <Link to={`/app/r/${t.id}`} className="grow" style={{ color: 'var(--text)' }}>{msg(String(t.values.title))}<br /><span className="tiny muted">{String(t.values.related ?? '')}</span></Link>
                   <span className={`pill ${overdue ? 'red' : 'gray'}`}><Clock size={12} /> {String(t.values.due_date)}</span>
                 </div>
               )

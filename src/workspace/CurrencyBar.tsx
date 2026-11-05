@@ -18,6 +18,8 @@ export function CurrencyBar({ rec }: { rec: Rec }) {
   const [rate, setRate] = useState(String(rec.values.rate ?? lastRates(ws)[cur || 'USD']?.rate ?? ''))
   if (!cur && !draft) return null
   if (!draft || rec.values.from_order || rec.values.from_po) {
+    // made from an order: the currency is the order's; nothing to say when it is the company's own
+    if (!cur) return null
     return (
       <div className="info row" style={{ marginBottom: 14, gap: 8 }}>
         <Coins size={16} /> {tr('In {a} at {b} {c} each.', { a: cur, b: String(rec.values.rate), c: own })}

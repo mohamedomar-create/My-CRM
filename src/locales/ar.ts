@@ -5688,4 +5688,12 @@ export const AR: Record<string, string> = {
   'added a photo': 'أضاف صورة',
   'changed the photo': 'غيّر الصورة',
   'removed the photo': 'أزال الصورة',
+  'matched the existing customer “{a}” by name': 'طابق العميل الموجود «{a}» بالاسم',
+  'Overdue bills: {n}': 'فواتير موردين متأخرة: {n}',
+  'Save & mark sent': 'احفظ وعلّم كمُرسل',
+  'Nothing to show for this period yet: records will appear here as your team works.': 'لا شيء لعرضه في هذه الفترة بعد: ستظهر السجلات هنا مع عمل فريقك.',
+  'Next: check it against the supplier’s bill, then press Post. Posting records the cost in the books; the goods are already in stock from the goods received note. After that it can’t be edited, only debited or voided.': 'التالي: راجعها مع فاتورة المورد ثم اضغط ترحيل. الترحيل يسجّل التكلفة في الحسابات؛ والبضاعة دخلت المخزون بالفعل بإذن الاستلام. بعد ذلك لا يمكن تعديلها، فقط إشعار مدين أو إلغاء.',
+  'Dashboard ({n})': 'لوحة المتابعة ({n})',
+  'closed the task “{a}”: {b} was answered': 'أغلق المهمة «{a}»: تم الرد على {b}',
+  'the quotation': 'عرض السعر',
 }
