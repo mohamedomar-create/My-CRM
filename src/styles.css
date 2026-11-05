@@ -1749,3 +1749,15 @@ a.card:hover, .card.clickable:hover, .kpi.clickable:hover, .area-step:hover { tr
 .empty-state.compact .empty-ic { width: 44px; height: 44px; border-radius: 14px; }
 .empty-title { font-size: 1.08rem; color: var(--text); }
 .empty-text { margin: 0; max-width: 460px; color: var(--muted); font-size: 0.9rem; }
+
+/* ---------- product photos ---------- */
+.photo-thumb { display: inline-grid; place-items: center; flex-shrink: 0; overflow: hidden; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-drop { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; display: grid; place-items: center; background: var(--surface-2); border: 2px dashed var(--border); transition: border-color .2s, background .2s; }
+.photo-drop.has { border-style: solid; border-width: 1px; }
+.photo-drop.over { border-color: var(--primary); background: var(--primary-50); }
+.photo-drop img { width: 100%; height: 100%; object-fit: contain; background: var(--surface); }
+.photo-empty { display: grid; justify-items: center; gap: 8px; padding: 16px; text-align: center; color: var(--muted); }
+.photo-busy { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--surface) 80%, transparent); font-weight: 600; font-size: var(--fs-sm); }
+.pos-product.with-photo { align-items: center; text-align: center; }
+.pos-product.with-photo .photo-thumb { margin-bottom: 4px; }

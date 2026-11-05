@@ -32,7 +32,7 @@ import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
 import {
-  EngineError, list, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
+  EngineError, list, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, setProductImage, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
   addAccount, updateAccount, manualJournal, setJvApproval, approveJournal, rejectJournal, transferMoney, transferStock, setUnits, saveWarehouse, reverseJournal, openingBalance, setGoLive, openingTrialBalance, openingEarlierPeriods, addCostCenter, updateCostCenter, setUserCostCenter, openingDocuments, openingCheques, openingMoney, openingStock, openingWht, clearOpeningStep, goLive, reopenOpening, adjustStock, countStock, creditNote, refundCredit, reversePayment, closeMonth, closeYear, reopenBooks, settleVat, setEInvoiceNumber, moneyVoucher, depositCheque, clearCheque, bounceCheque, recordAdvance, applyCredit, unuseCredit, reconcileBank,
   type Ctx, type Adjustment, type CreditLine, type VoucherLine,
@@ -56,6 +56,7 @@ export interface CommandArgs {
   'record.update': { id: string; values?: Record<string, unknown>; lines?: Line[] }
   'record.saveAndPost': { id: string; values?: Record<string, unknown>; lines?: Line[]; warehouse?: string }
   'record.delete': { id: string }
+  'product.image': { id: string; path: string | null }
   'record.moveStage': { id: string; stage: string }
   'lead.convert': { id: string }
   'quote.setStatus': { id: string; status: 'sent' | 'accepted' | 'declined' }
@@ -285,6 +286,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
     },
   },
   'record.delete': { run: (ws, u, a) => deleteRecord(ctx(ws, u), rec(ws, a.id)) },
+  'product.image': { run: (ws, u, a) => setProductImage(ctx(ws, u), rec(ws, a.id), a.path === null || a.path === undefined || a.path === '' ? null : String(a.path)) },
   'record.moveStage': { run: (ws, u, a) => moveStage(ctx(ws, u), rec(ws, a.id), a.stage) },
   'lead.convert': { run: (ws, u, a) => ({ id: convertLead(ctx(ws, u), rec(ws, a.id)).id }) },
   'quote.setStatus': { run: (ws, u, a) => setQuoteStatus(ctx(ws, u), rec(ws, a.id), a.status) },

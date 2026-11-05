@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ClipboardList, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ClipboardList, ImagePlus, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
@@ -44,6 +44,7 @@ import { PartyHistory } from './PartyHistory'
 import { GroupCard } from './GroupCard'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
+import { ProductPhotoCard } from './ProductPhoto'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -308,6 +309,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
         </div>
         <div className="stack">
+          {mod.role === 'products' && rec && <ProductPhotoCard rec={rec} />}
+          {mod.role === 'products' && !rec && <div className="card small muted row" style={{ gap: 6 }}><ImagePlus size={15} /> {tr('Save the product first, then add its photo.')}</div>}
           {related.length > 0 && (
             <div className="card">
               <h2>{tr('Linked records')}</h2>

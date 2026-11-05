@@ -685,6 +685,25 @@ set role authenticated;
 select pg_temp.blocked('the server''s check isn''t for the app', $q$select public.builder_open_for('ws_test123456', 'owner@test.dev')$q$);
 reset role;
 
+-- Product photos: in Storage, under the company's folder, small WebP or JPEG only; only the company's people.
+select pg_temp.check('the photos bucket is private and takes only small pictures', (select not public and file_size_limit <= 307200 and allowed_mime_types = array['image/webp', 'image/jpeg'] from storage.buckets where id = 'product-images'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('a member adds a photo under the company''s folder', $q$insert into storage.objects (bucket_id, name) values ('product-images', 'ws_test123456/p_1-abc.webp')$q$);
+select pg_temp.blocked('a member adds a photo under another company''s folder', $q$insert into storage.objects (bucket_id, name) values ('product-images', 'ws_other00001/p_1-abc.webp')$q$);
+select pg_temp.blocked('a file that isn''t a picture', $q$insert into storage.objects (bucket_id, name) values ('product-images', 'ws_test123456/p_1-abc.exe')$q$);
+select pg_temp.blocked('a path that climbs out of the folder', $q$insert into storage.objects (bucket_id, name) values ('product-images', 'ws_test123456/../ws_other00001/x.webp')$q$);
+select pg_temp.check('the member sees the company''s photo', (select count(*) = 1 from storage.objects where bucket_id = 'product-images'));
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.check('a stranger sees none of them', (select count(*) = 0 from storage.objects where bucket_id = 'product-images'));
+select pg_temp.blocked('a stranger adds one to the company''s folder', $q$insert into storage.objects (bucket_id, name) values ('product-images', 'ws_test123456/p_2-abc.webp')$q$);
+delete from storage.objects where bucket_id = 'product-images';
+reset role;
+select pg_temp.check('a stranger can''t remove one', (select count(*) = 1 from storage.objects where bucket_id = 'product-images'));
+set role anon;
+select pg_temp.check('nobody signed out sees them', (select count(*) = 0 from storage.objects where bucket_id = 'product-images'));
+reset role;
+
 -- The product is Nasq360: no message from the database says the old name.
 select pg_temp.check('no database message names the old product name', not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private') and p.prosrc like '%Bonyan%'));

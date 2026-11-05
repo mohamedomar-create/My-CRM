@@ -481,6 +481,21 @@ export function referencesTo(ws: Workspace, schema: AppSchema, rec: Rec): string
   return out
 }
 
+/** A product's photo is a file in Storage under the company's folder; the product keeps only its path (or none). */
+export function setProductImage(ctx: Ctx, rec: Rec, path: string | null) {
+  const mod = moduleById(ctx.schema, rec.module)
+  if (mod?.role !== 'products') throw new EngineError('Only products have a photo')
+  need(ctx, rec.module, 'edit')
+  if (path !== null) {
+    if (typeof path !== 'string' || !path.startsWith(`${ctx.ws.id}/`) || !/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.(webp|jpg)$/.test(path)) throw new EngineError('That photo isn’t one of this company’s files')
+  }
+  const had = Boolean(rec.image)
+  if (path) rec.image = path
+  else delete rec.image
+  rec.updatedAt = nowISO()
+  log(ctx, path ? (had ? 'changed the photo' : 'added a photo') : 'removed the photo', rec)
+}
+
 export function deleteRecord(ctx: Ctx, rec: Rec) {
   need(ctx, rec.module, 'delete')
   const mod = moduleById(ctx.schema, rec.module)!

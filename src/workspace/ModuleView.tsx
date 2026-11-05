@@ -16,6 +16,7 @@ import { moduleById } from '../lib/schema'
 import type { Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { dateLocale, N_, tr } from '../lib/i18n'
+import { PhotoThumb } from './ProductPhoto'
 
 const STATUS_PILL: Record<string, string> = { draft: 'gray', posted: '', partial: 'amber', paid: 'green', void: 'red', sent: '', accepted: 'green', declined: 'red', invoiced: 'green', ordered: 'amber' }
 
@@ -188,7 +189,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             <tbody>
               {rows.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') nav(`/app/r/${r.id}`) }} aria-label={recordTitle(ws, schema, r)}>
-                  <td><b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b></td>
+                  <td>{mod.role === 'products' ? <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}><PhotoThumb path={r.image} size={34} /><b>{recordTitle(ws, schema, r)}</b></span> : <b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b>}</td>
                   {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill tint" style={{ ['--c' as string]: s.color }}>{s.name}</span> : null })()}</td>}
                   {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{statusLabel(r.status)}</span></td>}
                   {scored && <td><ScorePill n={score(ws, schema, r)} /></td>}
