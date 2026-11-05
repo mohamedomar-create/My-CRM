@@ -91,6 +91,11 @@ Deno.serve(async (req) => {
           if (error) console.error('billing check failed', error.message)
           return error ? null : ((data as BillingStatus | null) ?? null)
         },
+        builder: async (workspace, email) => {
+          const { data, error } = await db.rpc('builder_open_for', { p_id: workspace, p_email: email })
+          if (error) throw new HttpError(503, 'Couldn’t check whether customising is open. Try again in a moment.')
+          return Boolean(data)
+        },
         audit: async (rows) => {
           const { error } = await db.from('audit_events').insert(rows)
           if (error) console.error('audit insert failed', error.message)

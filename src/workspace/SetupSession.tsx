@@ -156,7 +156,7 @@ function Change({ id }: { id: string }) {
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label className="field" style={{ width: 260 }}>{tr('Journal vouchers above this need a second person')}<input inputMode="decimal" value={jv} onChange={(e) => setJv(e.target.value)} placeholder={tr('Empty: none')} /></label>
           <button className="secondary" onClick={() => act('journal.setApproval', { over: jv.trim() === '' ? null : Number(jv) }, tr('Saved'))}>{tr('Save')}</button>
-          {link('/builder', 'Invoice and purchase approvals')}
+          {link('/app/customise?tab=system', 'Invoice and purchase approvals')}
         </div>
       )
     case 'payroll':

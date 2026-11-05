@@ -654,6 +654,37 @@ select pg_temp.blocked('a stranger connects their own number', $q$select public.
 select pg_temp.check('a stranger counts no unread messages', public.whatsapp_unread('ws_test123456') = 0);
 reset role;
 
+-- Customising the system: closed once live, asked for by an admin, opened only by Nasq360's own team, for a time.
+insert into private.platform_staff (email) values ('inventor@test.dev') on conflict do nothing;
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.check('customising is closed for a company''s admin', not (public.builder_status('ws_test123456') ->> 'open')::boolean);
+select pg_temp.blocked('an empty request is refused', $q$select public.builder_request('ws_test123456', 'x')$q$);
+select pg_temp.allowed('the admin asks for it, saying why', $q$select public.builder_request('ws_test123456', 'Add a field for the car plate on deliveries')$q$);
+select pg_temp.check('the request is open', public.builder_status('ws_test123456') -> 'request' ->> 'status' = 'open');
+select pg_temp.blocked('the admin opens it themselves', $q$select public.staff_builder_grant('ws_test123456', 30, 'self')$q$);
+select pg_temp.blocked('the admin reads every company''s requests', $q$select public.staff_builder_requests()$q$);
+select pg_temp.blocked('the admin writes the access table directly', $q$insert into public.builder_access (workspace_id, granted_by) values ('ws_test123456', 'owner@test.dev')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"inventor@test.dev","role":"authenticated"}', false);
+select pg_temp.check('an inventor sees the request', (select r -> 0 ->> 'workspace_id' = 'ws_test123456' and r -> 0 ->> 'company' is not null and r -> 0 ->> 'status' = 'open' from (select public.staff_builder_requests() r) x));
+select pg_temp.allowed('an inventor opens it for 14 days', $q$select public.staff_builder_grant('ws_test123456', 14, 'For the delivery fields')$q$);
+select pg_temp.blocked('more than a year is refused', $q$select public.staff_builder_grant('ws_test123456', 400, '')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.check('the admin now has it, until a date, with the request approved', (select (s ->> 'open')::boolean and s ->> 'until' is not null and s -> 'request' ->> 'status' = 'approved' from (select public.builder_status('ws_test123456') s) x));
+reset role;
+select pg_temp.check('the server sees it open', public.builder_open_for('ws_test123456', 'owner@test.dev'));
+update public.builder_access set until = now() - interval '1 minute' where workspace_id = 'ws_test123456';
+select pg_temp.check('once the time is up it is closed again', not public.builder_open_for('ws_test123456', 'owner@test.dev'));
+select pg_temp.check('an inventor is never closed out', public.builder_open_for('ws_test123456', 'inventor@test.dev'));
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d","email":"inventor@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('an inventor opens it until taken back, then takes it back', $q$select public.staff_builder_grant('ws_test123456', null, ''), public.staff_builder_revoke('ws_test123456')$q$);
+reset role;
+select pg_temp.check('taken back: closed', not public.builder_open_for('ws_test123456', 'owner@test.dev'));
+set role authenticated;
+select pg_temp.blocked('the server''s check isn''t for the app', $q$select public.builder_open_for('ws_test123456', 'owner@test.dev')$q$);
+reset role;
+
 -- The product is Nasq360: no message from the database says the old name.
 select pg_temp.check('no database message names the old product name', not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private') and p.prosrc like '%Bonyan%'));

@@ -27,6 +27,7 @@ const Inbox = lazy(loadScreen(() => import('./workspace/Inbox')))
 const Payroll = lazy(loadScreen(() => import('./workspace/Payroll')))
 const SetupSession = lazy(loadScreen(() => import('./workspace/SetupSession')))
 const Projects = lazy(loadScreen(() => import('./workspace/Projects')))
+const Customise = lazy(loadScreen(() => import('./workspace/Customise')))
 const Team = lazy(loadScreen(() => import('./workspace/Team')))
 const Approvals = lazy(loadScreen(() => import('./workspace/Approvals')))
 const Migrate = lazy(loadScreen(() => import('./workspace/Migrate')))
@@ -200,6 +201,7 @@ export default function App() {
         <Route path="payroll" element={<NeedsErp><Payroll /></NeedsErp>} />
         <Route path="setup-session" element={<SetupSession />} />
         <Route path="projects" element={<NeedsErp><Projects /></NeedsErp>} />
+        <Route path="customise" element={<Customise />} />
         <Route path="group" element={<NeedsErp><Group /></NeedsErp>} />
         <Route path="team" element={<Team />} />
         <Route path="access" element={<Access />} />

@@ -1,4 +1,5 @@
 import { visibleSheets } from '../lib/sheets'
+import { EmptyState } from '../components/EmptyState'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
@@ -45,7 +46,7 @@ export default function Dashboard() {
         </div>
         <div className="row">
           {(role?.admin || visibleSheets(schema, user).length > 0) && <Link to="/app/reports" className="btn secondary"><FileSpreadsheet size={16} /> {tr('Excel reports')}</Link>}
-          {role?.admin && <Link to="/builder" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
+          {role?.admin && <Link to="/app/customise" className="btn secondary"><Wand2 size={16} /> {tr('Customise dashboard')}</Link>}
         </div>
       </div>
 
@@ -72,10 +73,7 @@ export default function Dashboard() {
       {erp && <TargetsCard />}
 
       {reports.length === 0 && (
-        <div className="card empty">
-          <div className="big-ic" style={{ background: 'var(--area-tint)' }}><Sparkles size={30} /></div>
-          <b>{tr('No reports for your role yet.')}</b>
-        </div>
+        <EmptyState icon={<Sparkles size={28} />} title={tr('No reports for your role yet.')} text={tr('An admin adds charts for each role in Customise → Dashboard & reports.')} />
       )}
       <div className="dash">
         {reports.map((base) => {

@@ -82,18 +82,25 @@ export default function SettingsTab() {
         </table>
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2><Download size={18} /> {tr('Backup')}</h2>
-        <p className="muted small">{tr('Download everything in this workspace (setup, records, invoices, stock and books) as one file you keep. Nasq360 also keeps earlier versions on the server for 90 days.')}</p>
-        <button className="secondary" onClick={downloadBackup}><Download size={14} /> {tr('Download full backup')}</button>
-      </div>
+      <BackupCard />
       <DeleteCompany />
     </div>
   )
 }
 
+/** The whole company as one file the owner keeps. */
+export function BackupCard() {
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <h2><Download size={18} /> {tr('Backup')}</h2>
+      <p className="muted small">{tr('Download everything in this workspace (setup, records, invoices, stock and books) as one file you keep. Nasq360 also keeps earlier versions on the server for 90 days.')}</p>
+      <button className="secondary" onClick={downloadBackup}><Download size={14} /> {tr('Download full backup')}</button>
+    </div>
+  )
+}
+
 /** The owner deletes the company: read-only for 30 days (and can be restored), then erased with everything in it. */
-function DeleteCompany() {
+export function DeleteCompany() {
   const { ws } = useDraft()
   const isOwner = useStore((s) => Boolean(s.companies.find((c) => c.id === ws.id)?.is_owner))
   const b = useStore((s) => s.billing)

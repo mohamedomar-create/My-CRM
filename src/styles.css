@@ -1297,3 +1297,29 @@ pre.code { white-space: pre-wrap; word-break: break-all; background: var(--surfa
 .wa-msg.out { align-self: flex-end; background: color-mix(in srgb, var(--whatsapp) 14%, var(--surface)); }
 .wa-body { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-sm); }
 @media (max-width: 800px) { .inbox-grid { grid-template-columns: 1fr; } }
+
+/* the dashboard designer inside the app (Customise): as tall as its content, not the builder's full screen */
+.customise-reports .reports-tab, .customise-reports .two { height: auto; overflow: visible; }
+.customise-reports { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+
+/* ---------- motion: quiet, quick, and off for anyone who asks for less (prefers-reduced-motion, above) ---------- */
+@keyframes page-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.86) } to { opacity: 1; transform: none } }
+.main .page { animation: page-in .24s cubic-bezier(.2, .7, .2, 1) both; }
+/* the dashboard's cards arrive one after another, the first few only */
+.dash > * { animation: rise .32s cubic-bezier(.2, .7, .2, 1) both; }
+.dash > :nth-child(2) { animation-delay: 30ms } .dash > :nth-child(3) { animation-delay: 60ms } .dash > :nth-child(4) { animation-delay: 90ms }
+.dash > :nth-child(5) { animation-delay: 120ms } .dash > :nth-child(6) { animation-delay: 150ms } .dash > :nth-child(n+7) { animation-delay: 180ms }
+/* what can be clicked as a whole lifts a little under the pointer */
+a.card, .card.clickable, .kpi.clickable, .area-step { transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+a.card:hover, .card.clickable:hover, .kpi.clickable:hover, .area-step:hover { transform: translateY(-2px); box-shadow: 0 1px 0 var(--highlight) inset, var(--shadow-lg); }
+.seg button { transition: background .15s, color .15s, box-shadow .15s; }
+.pill { transition: background .15s, color .15s; }
+
+/* ---------- empty states ---------- */
+.empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 44px 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: radial-gradient(420px 180px at 50% 0%, color-mix(in srgb, var(--a, var(--primary)) 9%, transparent), transparent 70%), var(--surface); }
+.empty-state.compact { padding: 22px 16px; gap: 6px; }
+.empty-ic { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; color: #fff; margin-bottom: 6px; box-shadow: 0 14px 30px -14px color-mix(in srgb, var(--a, var(--primary)) 80%, transparent), 0 1px 0 rgb(255 255 255 / 0.2) inset; animation: pop-in .35s cubic-bezier(.2, .9, .3, 1.2) both; }
+.empty-state.compact .empty-ic { width: 44px; height: 44px; border-radius: 14px; }
+.empty-title { font-size: 1.08rem; color: var(--text); }
+.empty-text { margin: 0; max-width: 460px; color: var(--muted); font-size: 0.9rem; }

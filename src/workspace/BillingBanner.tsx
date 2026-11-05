@@ -15,7 +15,7 @@ export function BillingBanner({ admin }: { admin: boolean }) {
       <div className="error-box row" role="status" style={{ gap: 8, marginBottom: 12 }}>
         <Lock size={16} aria-hidden />
         <span className="grow small"><b>{tr('This company will be erased on {date}.', { date })}</b> {tr('The owner asked to delete it, so it is read-only. Download what you need; the owner can still keep it.')}</span>
-        {admin && <Link to="/builder?tab=company" className="btn small">{tr('Keep the company')}</Link>}
+        {admin && <Link to="/app/customise?tab=company" className="btn small">{tr('Keep the company')}</Link>}
       </div>
     )
   }

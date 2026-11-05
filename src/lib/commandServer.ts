@@ -30,6 +30,10 @@ export interface AuditRow {
 }
 
 /** What the server core needs from the outside world. */
+/** The changes to the system's design itself: made in the builder, closed in a live company until Nasq360 opens it. */
+export const DESIGN = new Set<string>(['setup.saveDraft', 'setup.publish', 'setup.restoreVersion', 'setup.chooseTemplate'])
+export const BUILDER_CLOSED = 'Customising the system is closed for this company. Ask Nasq360 to open it (Setup → Customise system).'
+
 export interface ServerDeps {
   /** the signed-in person, from their verified login token ("aal2" once they passed the two-factor step) */
   user: { id: string; email: string; aal?: string }
@@ -51,6 +55,11 @@ export interface ServerDeps {
   recentCommands?: () => Promise<number>
   /** the company's subscription now (read-only after the trial or when unpaid; the Free plan has no books) */
   billing?: (workspace: string) => Promise<BillingStatus | null>
+  /**
+   * Whether this person may change the system's design (the builder) in a live company: Nasq360's own team always,
+   * others while Nasq360 has opened it for the company. Asked only when such a change is sent.
+   */
+  builder?: (workspace: string, email: string) => Promise<boolean>
   /** waits between tries after someone saved first (a stand-in in tests) */
   wait?: (ms: number) => Promise<void>
   /**
@@ -162,6 +171,7 @@ async function attempts(
     const actor = { userId: profile.id, isAdmin: member.isAdmin }
 
     let doc = loaded.doc
+    let builderOpen: boolean | undefined
     const results: CommandResult[] = []
     const audit: AuditRow[] = []
     // Every id already in the workspace, collected once (not once per id: that made a big save take minutes).
@@ -186,6 +196,11 @@ async function attempts(
         // The subscription decides first: read-only after the trial or when unpaid, no books on the Free plan.
         const unpaid = billingProblem(billing, doc, c.name, c.args)
         if (unpaid) throw new Error(unpaid)
+        // Changing how a live company works (its lists, fields, pipelines, rules, roles) is opened by Nasq360 on request.
+        if (DESIGN.has(c.name) && doc.published && deps.builder) {
+          builderOpen ??= await deps.builder(req.workspace, email)
+          if (!builderOpen) throw new Error(BUILDER_CLOSED)
+        }
         const out = applyCommand(doc, actor, { name: c.name, args: c.args } as Command, ids)
         doc = out.ws
         // What this command made (and any ids it was given) is in the workspace now; nothing else can be new.
