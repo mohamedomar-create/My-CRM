@@ -6,6 +6,7 @@ import type { AppSchema, ModuleDef, ModuleRole } from './schema'
 import type { User, Workspace } from './types'
 import { can, canPost } from './engine'
 import { schemaScope } from './scope'
+import { CHARGING } from './billing'
 
 export type AreaId = 'ops' | 'crm' | 'plan' | 'setup'
 export const AREAS: AreaId[] = ['ops', 'crm', 'plan', 'setup']
@@ -15,7 +16,7 @@ export const AREA_INFO: Record<AreaId, { name: string; text: string; color: stri
   ops: { name: N_('Operations'), text: N_('Invoices, purchases, stock and the books: what is sold, bought, paid and owed.'), color: '#0b6e70' },
   crm: { name: N_('Customer relations'), text: N_('Leads, customers, deals and quotations: from the first contact to the order.'), color: '#6250d6' },
   plan: { name: N_('Planning'), text: N_('The business plan, budgets and sales targets: where the company is heading.'), color: '#c2620a' },
-  setup: { name: N_('Setup'), text: N_('Bring your data in, your team, billing, the audit trail and how the system works.'), color: '#4a4a45' },
+  setup: { name: N_('Setup'), text: CHARGING ? N_('Bring your data in, your team, billing, the audit trail and how the system works.') : N_('Bring your data in, your team, the audit trail and how the system works.'), color: '#4a4a45' },
 }
 
 const CRM_ONLY: ModuleRole[] = ['leads', 'contacts', 'deals', 'tickets']
@@ -101,7 +102,7 @@ export function areaItems(schema: AppSchema, user: User, area: AreaId, ws?: Pick
         ...(admin ? [page('access', '/app/access', N_('Access rights'), 'access')] : []),
         ...(admin ? [page('customise', '/app/customise', N_('Customise'), 'customise')] : []),
         ...(admin ? [page('connections', '/app/connections', N_('Connections'), 'connections')] : []),
-        ...(admin ? [page('billing', '/app/billing', N_('Billing'), 'billing')] : []),
+        ...(admin && CHARGING ? [page('billing', '/app/billing', N_('Billing'), 'billing')] : []),
         ...(admin ? [page('audit', '/app/audit', N_('Audit trail'), 'audit')] : []),
       ]
   }

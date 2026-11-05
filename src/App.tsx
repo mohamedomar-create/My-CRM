@@ -46,6 +46,7 @@ import Legal from './pages/Legal'
 import { tr } from './lib/i18n'
 import { loadScreen } from './lib/update'
 import { NeedsErp } from './workspace/NeedsErp'
+import { CHARGING } from './lib/billing'
 
 /** Sends each person to the right step of the journey: register → onboarding → builder → app. */
 function Guard({ need, children }: { need: 'session' | 'draft' | 'published' | 'admin'; children: React.ReactNode }) {
@@ -178,7 +179,7 @@ export default function App() {
       <Route path="/forgot" element={<Password mode="forgot" />} />
       <Route path="/reset" element={<Password mode="reset" />} />
       <Route path="/security" element={<Security />} />
-      <Route path="/pricing" element={<Pricing />} />
+      <Route path="/pricing" element={CHARGING ? <Pricing /> : <Navigate to="/" replace />} />
       <Route path="/privacy" element={<Legal doc="privacy" />} />
       <Route path="/terms" element={<Legal doc="terms" />} />
       <Route path="/dpa" element={<Legal doc="dpa" />} />
@@ -212,7 +213,7 @@ export default function App() {
         <Route path="migrate" element={<Migrate />} />
         <Route path="sales" element={<NeedsErp><SalesAnalysis /></NeedsErp>} />
         <Route path="plan" element={<NeedsErp><Plan /></NeedsErp>} />
-        <Route path="billing" element={<Billing />} />
+        <Route path="billing" element={CHARGING ? <Billing /> : <Navigate to="/app" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
