@@ -45,6 +45,7 @@ import { GroupCard } from './GroupCard'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
 import { ProductPhotoCard } from './ProductPhoto'
+import { PRODUCT_PHOTOS } from '../lib/config'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -322,8 +323,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
         </div>
         <div className="stack">
-          {mod.role === 'products' && rec && <ProductPhotoCard rec={rec} />}
-          {mod.role === 'products' && !rec && <div className="card small muted row" style={{ gap: 6 }}><ImagePlus size={15} /> {tr('Save the product first, then add its photo.')}</div>}
+          {PRODUCT_PHOTOS && mod.role === 'products' && rec && <ProductPhotoCard rec={rec} />}
+          {PRODUCT_PHOTOS && mod.role === 'products' && !rec && <div className="card small muted row" style={{ gap: 6 }}><ImagePlus size={15} /> {tr('Save the product first, then add its photo.')}</div>}
           {related.length > 0 && (
             <div className="card">
               <h2>{tr('Linked records')}</h2>
