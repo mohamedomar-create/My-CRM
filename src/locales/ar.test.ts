@@ -25,6 +25,7 @@ const DONE = [
   'src/components/YourCompanies.tsx',
   'src/main.tsx',
   'src/pages/Landing.tsx',
+  'src/pages/LandingVisuals.tsx',
   'src/pages/Legal.tsx',
   'src/pages/Pricing.tsx',
   'src/workspace/Billing.tsx',

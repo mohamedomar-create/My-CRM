@@ -4,13 +4,14 @@
 import { useEffect, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, BarChart3, Bell, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, Search, ShieldCheck,
-  Smartphone, Sparkles, Users, Workflow, Zap,
+  ArrowRight, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, ShieldCheck,
+  Smartphone, Sparkles, Workflow, Zap,
 } from 'lucide-react'
 import { TEMPLATES } from '../lib/templates'
 import { Icon } from '../components/Icon'
 import { msg, N_, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
+import { AnalyticsWall, CountUpInView, HeroScene, LangCompare, PhoneShowcase, ProductTour } from './LandingVisuals'
 
 const BEST = [
   [N_('Custom modules & relations'), 'Attio, Airtable'],
@@ -71,7 +72,8 @@ export default function Landing() {
         <Link to="/welcome" className="lp-brand"><Logo /></Link>
         <div className="lp-nav-links">
           <a href="#features" className="lp-link">{tr('Features')}</a>
-          <a href="#how" className="lp-link">{tr('How it works')}</a>
+          <a href="#tour" className="lp-link">{tr('The real system')}</a>
+          <a href="#dashboards" className="lp-link">{tr('Dashboards')}</a>
           <a href="#industries" className="lp-link">{tr('Industries')}</a>
           <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>
         </div>
@@ -103,14 +105,19 @@ export default function Landing() {
 
       <div className="lp-stage">
         <div className="lp-stage-glow" aria-hidden />
-        <AppPreview />
+        <HeroScene />
       </div>
 
       <section className="lp-stats" aria-label={tr('Nasq360 in numbers')}>
-        <Stat n={String(TEMPLATES.length)} label={tr('ready industry systems')} />
-        <Stat n="2" label={tr('languages, Arabic right-to-left')} />
-        <Stat n="100%" label={tr('of entries balanced, always')} />
-        <Stat n="0" label={tr('lines of code to write')} />
+        <Stat n={TEMPLATES.length} label={tr('ready industry systems')} />
+        <Stat n={2} label={tr('languages, Arabic right-to-left')} />
+        <Stat n={100} suffix="%" label={tr('of entries balanced, always')} />
+        <Stat n={13} label={tr('weeks of cash forecast, built for you')} />
+      </section>
+
+      <section className="lp-sec" id="tour">
+        <SecHead eyebrow={tr('The real system')} title={tr('See it before you sign up')} sub={tr('These are real Nasq360 screens, running a sample trading company. Nothing here is a mock-up.')} />
+        <ProductTour />
       </section>
 
       <section className="lp-sec" id="features">
@@ -144,6 +151,20 @@ export default function Landing() {
             <div className="lp-mini lp-phone" aria-hidden><span /><span /><span /><b><Coins size={14} /> {'EGP 2,450'}</b></div>
           </article>
         </div>
+      </section>
+
+      <section className="lp-sec" id="dashboards">
+        <SecHead eyebrow={tr('Dashboards')} title={tr('Dashboards that think ahead')} sub={tr('Your numbers arrive already explained: where cash will be in 13 weeks, which deals will close, and whether the books add up.')} />
+        <AnalyticsWall />
+      </section>
+
+      <section className="lp-sec">
+        <SecHead eyebrow={tr('Arabic first')} title={tr('Truly bilingual, never an afterthought')} sub={tr('Every screen mirrors right to left, with Arabic documents and reports. Drag the line to compare.')} />
+        <LangCompare />
+      </section>
+
+      <section className="lp-sec">
+        <PhoneShowcase />
       </section>
 
       <section className="lp-sec tight" aria-label={tr('The best ideas from the world’s top systems, in one builder')}>
@@ -251,8 +272,8 @@ function SecHead({ eyebrow, title, sub }: { eyebrow: string; title: string; sub:
   )
 }
 
-function Stat({ n, label }: { n: string; label: string }) {
-  return <div className="lp-stat lp-reveal"><b dir="ltr">{n}</b><span>{label}</span></div>
+function Stat({ n, suffix, label }: { n: number; suffix?: string; label: string }) {
+  return <div className="lp-stat lp-reveal"><b><CountUpInView to={n} suffix={suffix} /></b><span>{label}</span></div>
 }
 
 function Marquee({ items, reverse }: { items: string[][]; reverse?: boolean }) {
@@ -265,70 +286,6 @@ function Marquee({ items, reverse }: { items: string[][]; reverse?: boolean }) {
   return (
     <div className="lp-marquee">
       <div className={`lp-marquee-track${reverse ? ' reverse' : ''}`}>{row(false)}{row(true)}</div>
-    </div>
-  )
-}
-
-/** The app itself, as a glass window: menu, figures, a chart and the pipeline. */
-function AppPreview() {
-  const { tr } = useLang()
-  const cols = [
-    { name: tr('Proposal'), c: 'var(--lp-teal)', items: [tr('Nile Valley – RO plant'), tr('Delta Foods – upgrade')] },
-    { name: tr('Negotiation'), c: 'var(--lp-gold)', items: [tr('Cairo Care – ICU kit')] },
-    { name: tr('Won'), c: 'var(--lp-mint)', items: [tr('Red Sea Resorts – AMC'), tr('Sinai Cement – pumps')] },
-  ]
-  const kpis = [
-    { l: tr('Sales this month'), v: 'EGP 1.28M', d: '+18%' },
-    { l: tr('Cash in the bank'), v: 'EGP 640K', d: '+6%' },
-    { l: tr('To collect'), v: 'EGP 312K', d: '−4%' },
-  ]
-  return (
-    <div className="lp-window" aria-hidden>
-      <div className="lp-window-bar">
-        <span className="lp-dots"><i /><i /><i /></span>
-        <span className="lp-search"><Search size={12} /> {tr('Search or jump to…')} <kbd>{'Ctrl K'}</kbd></span>
-        <span className="lp-bar-end"><Bell size={13} /><span className="lp-avatar">M</span></span>
-      </div>
-      <div className="lp-window-body">
-        <aside className="lp-side">
-          <span className="on"><BarChart3 size={13} /> {tr('Dashboard')}</span>
-          <span><Users size={13} /> {tr('Customers')}</span>
-          <span><Workflow size={13} /> {tr('Projects')}</span>
-          <span><FileText size={13} /> {tr('Invoices')}</span>
-          <span><Boxes size={13} /> {tr('Stock')}</span>
-          <span><Calculator size={13} /> {tr('Accounting')}</span>
-        </aside>
-        <div className="lp-main">
-          <div className="lp-kpis">
-            {kpis.map((k) => (
-              <div className="lp-kpi" key={k.l}><small>{k.l}</small><b dir="ltr">{k.v}</b><em dir="ltr" className={k.d.startsWith('+') ? 'up' : 'down'}>{k.d}</em></div>
-            ))}
-          </div>
-          <div className="lp-chart">
-            <div className="row between"><b>{tr('Projects pipeline')}</b><span className="lp-pill" dir="ltr">{'EGP 4.2M'}</span></div>
-            <svg viewBox="0 0 300 80" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="lpArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--lp-teal)" stopOpacity=".55" /><stop offset="1" stopColor="var(--lp-teal)" stopOpacity="0" /></linearGradient>
-                <linearGradient id="lpLine" x1="0" x2="1"><stop offset="0" stopColor="var(--lp-teal)" /><stop offset="1" stopColor="var(--lp-gold)" /></linearGradient>
-              </defs>
-              {[18, 30, 24, 40, 34, 52, 46, 60].map((h, i) => <rect key={i} x={8 + i * 37} y={80 - h} width="14" height={h} rx="3" className="lp-bar" />)}
-              <path d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10 L300 80 L0 80Z" fill="url(#lpArea)" />
-              <path className="lp-line" d="M0 60 L40 52 L80 56 L120 38 L160 42 L200 24 L240 30 L300 10" fill="none" stroke="url(#lpLine)" strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div className="lp-cols">
-            {cols.map((c) => (
-              <div className="lp-col" key={c.name}>
-                <b>{c.name}</b>
-                {c.items.map((i) => <div key={i} className="lp-card" style={{ ['--c' as string]: c.c }}>{i}</div>)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="lp-float f1"><CheckCircle2 size={16} /> {tr('Health check: 100%')}</div>
-      <div className="lp-float f2"><Zap size={16} /> {tr('Task created: call new lead')}</div>
-      <div className="lp-float f3"><Calculator size={16} /> {tr('Invoice posted · books balanced')}</div>
     </div>
   )
 }
