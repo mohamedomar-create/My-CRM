@@ -1,17 +1,19 @@
-// The front door: what Nasq360 is, shown rather than told. Dark glass over a slow aurora, the app itself in the hero,
-// what it does in a bento grid, the five steps, the industries, the guardrails, and one clear way in. Always dark (in
-// either theme), right-to-left in Arabic, and still for anyone who asks for less motion.
+// The front door: what Nasq360 is, shown rather than told. Glass over a slow aurora, the app itself in the hero, real
+// screens, live charts, the five steps, the industries, the guardrails, and one clear way in. White by default with dark
+// one click away (the choice is remembered, as in the app), right-to-left in Arabic, and still for anyone who asks for less motion.
 import { useEffect, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, ShieldCheck,
-  Smartphone, Sparkles, Workflow, Zap,
+  ArrowRight, Boxes, Calculator, CheckCircle2, Coins, FileText, Globe, Languages, LayoutDashboard, Lock, Moon, ShieldCheck,
+  Smartphone, Sparkles, Sun, Workflow, Zap,
 } from 'lucide-react'
 import { TEMPLATES } from '../lib/templates'
 import { Icon } from '../components/Icon'
 import { msg, N_, useLang } from '../lib/i18n'
 import { Logo } from '../components/Logo'
+import { getTheme, setTheme } from '../lib/theme'
 import { AnalyticsWall, CountUpInView, HeroScene, LangCompare, PhoneShowcase, ProductTour } from './LandingVisuals'
+import { LandingLook } from './landingLook'
 
 const BEST = [
   [N_('Custom modules & relations'), 'Attio, Airtable'],
@@ -52,6 +54,8 @@ export default function Landing() {
   const { t, tr, lang, setLang } = useLang()
   const [year] = useState(() => new Date().getFullYear())
   const [scrolled, setScrolled] = useState(false)
+  const [look, setLook] = useState<'light' | 'dark'>(() => (getTheme() === 'dark' ? 'dark' : 'light'))
+  const flipLook = () => { const next = look === 'light' ? 'dark' : 'light'; setTheme(next); setLook(next) }
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 12)
     on()
@@ -64,7 +68,8 @@ export default function Landing() {
     </button>
   )
   return (
-    <div className="lp">
+    <LandingLook.Provider value={look}>
+    <div className={`lp${look === 'light' ? ' light' : ''}`}>
       <div className="lp-aurora" aria-hidden><i /><i /><i /></div>
       <div className="lp-gridlines" aria-hidden />
 
@@ -78,6 +83,9 @@ export default function Landing() {
           <Link to="/pricing" className="lp-link">{tr('Pricing')}</Link>
         </div>
         <div className="lp-nav-end">
+          <button type="button" className="lp-link lp-look" onClick={flipLook} aria-label={look === 'light' ? tr('Dark') : tr('Light')} title={look === 'light' ? tr('Dark') : tr('Light')}>
+            {look === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
           {otherLang}
           <Link to="/signin" className="lp-link">{t('signin')}</Link>
           <Link to="/register" className="lp-btn primary sm lp-nav-start">{t('start')}</Link>
@@ -259,6 +267,7 @@ export default function Landing() {
         <p className="lp-copy">© {year} Nasq360</p>
       </footer>
     </div>
+    </LandingLook.Provider>
   )
 }
 

@@ -1,9 +1,16 @@
 // The landing page's moving pictures: a glass dashboard that counts up and draws itself, the real app in a phone,
 // a tour of real screens, live-looking charts, English beside Arabic, and the phone app. Everything here shows a
 // feature the system really has; the figures are a sample trading company. Charts read left to right in both languages.
-import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { BellRing, Boxes, Calculator, CheckCircle2, MessageCircle, ScanLine, Send, Smartphone, Sparkles, WifiOff, Wallet } from 'lucide-react'
 import { N_, useLang } from '../lib/i18n'
+import { LandingLook } from './landingLook'
+
+const useShot = () => {
+  const { lang } = useLang()
+  const look = useContext(LandingLook)
+  return (name: string, l: string = lang) => `/landing/${name}-${l}${look === 'light' ? '-light' : ''}.webp`
+}
 
 const reduced = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -119,7 +126,7 @@ function Donut({ parts, size = 96, thick = 12, children }: { parts: { v: number;
   return (
     <div className="lp-donut2" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(255 255 255 / .07)" strokeWidth={thick} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="lp-track" strokeWidth={thick} />
         {parts.map((p, i) => {
           const len = (p.v / total) * 100
           return <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={p.color} strokeWidth={thick} pathLength={100} strokeDasharray={`${Math.max(0, len - 1.2)} 100`} strokeDashoffset={-starts[i]} className="lp-seg" transform={`rotate(-90 ${size / 2} ${size / 2})`} />
@@ -135,7 +142,7 @@ function Gauge({ value }: { value: number }) {
   return (
     <svg viewBox="0 0 200 110" className="lp-gauge" aria-hidden>
       <defs><linearGradient id={`${id}g`} x1="0" x2="1"><stop offset="0" stopColor="var(--lp-teal)" /><stop offset="1" stopColor="var(--lp-mint)" /></linearGradient></defs>
-      <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="rgb(255 255 255 / .08)" strokeWidth="14" strokeLinecap="round" />
+      <path d="M20 100 A80 80 0 0 1 180 100" fill="none" className="lp-track" strokeWidth="14" strokeLinecap="round" />
       <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke={`url(#${id}g)`} strokeWidth="14" strokeLinecap="round" pathLength={100} strokeDasharray={`${value} 100`} className="lp-gauge-arc" />
     </svg>
   )
@@ -161,7 +168,8 @@ const MONTHS = [62, 71, 66, 84, 79, 96, 92, 108, 104, 121, 117, 134]
 const LAST_YEAR = [55, 58, 61, 63, 66, 70, 72, 75, 79, 82, 86, 90]
 
 export function HeroScene() {
-  const { tr, lang } = useLang()
+  const { tr } = useLang()
+  const shot = useShot()
   const [on, setOn] = useState(false)
   useEffect(() => { const t = setTimeout(() => setOn(true), 500); return () => clearTimeout(t) }, [])
   const tilt = (e: PointerEvent<HTMLDivElement>) => {
@@ -230,7 +238,7 @@ export function HeroScene() {
           </div>
         </div>
         <div className="lp-phone-frame">
-          <img src={`/landing/phone-home-${lang}.webp`} width={585} height={1266} alt="" decoding="async" fetchPriority="high" />
+          <img src={shot('phone-home')} width={585} height={1266} alt="" decoding="async" fetchPriority="high" />
         </div>
         <div className="lp-toast t1"><span className="lp-ti mint"><Wallet size={15} /></span><div><b>{tr('Payment received')}</b><small dir="ltr">{'EGP 33,464.70 · Nile Valley Group'}</small></div></div>
         <div className="lp-toast t2"><span className="lp-ti teal"><MessageCircle size={15} /></span><div><b>{tr('New WhatsApp order')}</b><small>{'Delta Foods'}</small></div></div>
@@ -252,7 +260,8 @@ const TOUR = [
 ] as const
 
 export function ProductTour() {
-  const { tr, lang } = useLang()
+  const { tr } = useLang()
+  const shot = useShot()
   const [i, setI] = useState(0)
   const [paused, setPaused] = useState(false)
   const [ref, seen] = useInView<HTMLDivElement>(0.3)
@@ -277,7 +286,7 @@ export function ProductTour() {
         <div className="lp-browser-bar"><span className="lp-dots"><i /><i /><i /></span><span className="lp-url" dir="ltr">{'nsq360.com/app'}</span></div>
         <div className="lp-browser-view">
           {TOUR.map((s, k) => (
-            <img key={s.id} src={`/landing/${s.id}-${lang}.webp`} width={1800} height={1125} loading="lazy" decoding="async" alt={tr(s.label)} className={k === i ? 'on' : ''} />
+            <img key={s.id} src={shot(s.id)} width={1800} height={1125} loading="lazy" decoding="async" alt={tr(s.label)} className={k === i ? 'on' : ''} />
           ))}
         </div>
       </div>
@@ -334,11 +343,12 @@ export function AnalyticsWall() {
 
 export function LangCompare() {
   const { tr } = useLang()
+  const shot = useShot()
   const [pos, setPos] = useState(50)
   return (
     <div className="lp-compare" style={{ ['--pos' as string]: `${pos}%` } as CSSProperties} dir="ltr">
-      <img src="/landing/stock-ar.webp" width={1800} height={1125} loading="lazy" decoding="async" alt={tr('The stock screen in Arabic')} />
-      <div className="lp-compare-top"><img src="/landing/stock-en.webp" width={1800} height={1125} loading="lazy" decoding="async" alt={tr('The stock screen in English')} /></div>
+      <img src={shot('stock', 'ar')} width={1800} height={1125} loading="lazy" decoding="async" alt={tr('The stock screen in Arabic')} />
+      <div className="lp-compare-top"><img src={shot('stock', 'en')} width={1800} height={1125} loading="lazy" decoding="async" alt={tr('The stock screen in English')} /></div>
       <span className="lp-compare-tag en" lang="en">{'English'}</span>
       <span className="lp-compare-tag ar" lang="ar">العربية</span>
       <span className="lp-compare-line" aria-hidden><i /></span>
@@ -350,13 +360,14 @@ export function LangCompare() {
 /* ---------- the phone app ---------- */
 
 export function PhoneShowcase() {
-  const { tr, lang } = useLang()
+  const { tr } = useLang()
+  const shot = useShot()
   const [ref, seen] = useInView<HTMLDivElement>(0.25)
   return (
     <div ref={ref} className={`lp-phones-wrap${seen ? ' is-in' : ''}`}>
       <div className="lp-phones" aria-hidden>
-        <div className="lp-phone-frame back"><img src={`/landing/phone-deals-${lang}.webp`} width={585} height={1266} loading="lazy" decoding="async" alt="" /></div>
-        <div className="lp-phone-frame front"><img src={`/landing/phone-home-${lang}.webp`} width={585} height={1266} loading="lazy" decoding="async" alt="" /></div>
+        <div className="lp-phone-frame back"><img src={shot('phone-deals')} width={585} height={1266} loading="lazy" decoding="async" alt="" /></div>
+        <div className="lp-phone-frame front"><img src={shot('phone-home')} width={585} height={1266} loading="lazy" decoding="async" alt="" /></div>
       </div>
       <div className="lp-phones-text">
         <span className="lp-eyebrow">{tr('On the phone')}</span>
