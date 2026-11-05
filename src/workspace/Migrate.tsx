@@ -74,7 +74,7 @@ export default function Migrate() {
   return (
     <div className="page stack">
       <div className="page-head" style={{ marginBottom: 0 }}>
-        <h1><span className="badge" style={{ background: 'var(--ink)' }}><FileSpreadsheet size={20} /></span>{tr('Bring your data in')}</h1>
+        <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><FileSpreadsheet size={20} /></span>{tr('Bring your data in')}</h1>
       </div>
 
       <div className="card stack">

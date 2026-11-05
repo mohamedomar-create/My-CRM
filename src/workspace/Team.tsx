@@ -127,7 +127,7 @@ export default function Team() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1><span className="badge" style={{ background: 'var(--ink)' }}><Users size={20} /></span>{tr('Team')}</h1>
+        <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Users size={20} /></span>{tr('Team')}</h1>
         <Link to="/app/access" className="btn secondary"><KeyRound size={16} /> {tr('Access rights')}</Link>
       </div>
       <div className="record-grid">

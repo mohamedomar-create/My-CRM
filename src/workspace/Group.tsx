@@ -32,7 +32,7 @@ export default function Group() {
   const name = (id: string) => group.find((c) => c.id === id)?.name ?? id
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Building2 size={20} /></span>{tr('Your group')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Building2 size={20} /></span>{tr('Your group')}</h1></div>
       <div className="row" style={{ gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <label className="field" style={{ width: 160 }}>{tr('From')}<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="field" style={{ width: 160 }}>{tr('To')}<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>

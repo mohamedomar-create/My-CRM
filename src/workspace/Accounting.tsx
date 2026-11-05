@@ -50,7 +50,7 @@ export default function Accounting() {
   const vatDue = round2(bal('2200') - bal('1400') + bal('2210'))
   return (
     <div className="page">
-      <div className="page-head no-print"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Calculator size={20} /></span>{tr('Accounting')}</h1></div>
+      <div className="page-head no-print"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Calculator size={20} /></span>{tr('Accounting')}</h1></div>
       <div className="dash no-print" style={{ marginBottom: 14 }}>
         <div className="card"><h2>{tr('Revenue this year')}</h2><div className="kpi-value">{money(revenue, cur)}</div></div>
         <div className="card"><h2>{tr('Gross profit this year')}</h2><div className="kpi-value" style={{ color: revenue - cogs >= 0 ? 'var(--success)' : 'var(--danger)' }}>{money(revenue - cogs, cur)}</div><div className="kpi-sub">{tr('{n}% margin', { n: revenue ? Math.round(((revenue - cogs) / revenue) * 100) : 0 })}</div></div>

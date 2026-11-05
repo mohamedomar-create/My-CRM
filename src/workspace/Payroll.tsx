@@ -21,7 +21,7 @@ export default function Payroll() {
   if (!canPayroll({ schema, user })) return <div className="page"><div className="card">{tr('Only the owner, admins and people with the payroll right can see payroll.')}</div></div>
   return (
     <div className="page stack">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Wallet size={20} /></span>{tr('Payroll')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Wallet size={20} /></span>{tr('Payroll')}</h1></div>
       <div className="tabs-inline" role="tablist">
         {([['month', tr('This month')], ['people', tr('Employees')], ['bank', tr('Bank file layout')], ['history', tr('Past months')]] as [Tab, string][]).map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
       </div>

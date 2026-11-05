@@ -41,7 +41,7 @@ export function QuoteSharePanel({ rec }: { rec: Rec }) {
       {accepted && (
         <div className="ok-box stack" style={{ gap: 6 }}>
           <span>{tr('Accepted and signed online by {a} on {b}.', { a: accepted.name, b: new Date(accepted.at).toLocaleString() })} {customer && <span className="muted small">({recordTitle(ws, schema, customer)})</span>}</span>
-          <img src={accepted.signature} alt={tr('Signature of {a}', { a: accepted.name })} style={{ maxWidth: 260, background: 'white', borderRadius: 6, border: '1px solid var(--line)' }} />
+          <img src={accepted.signature} alt={tr('Signature of {a}', { a: accepted.name })} style={{ maxWidth: 260, background: 'white', borderRadius: 6, border: '1px solid var(--border)' }} />
         </div>
       )}
       {declined && <div className="error-box">{tr('Declined online by {a}: {b}', { a: declined.name, b: declined.reason })}</div>}

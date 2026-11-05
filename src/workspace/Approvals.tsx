@@ -41,7 +41,7 @@ export default function Approvals() {
 
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><ClipboardCheck size={20} /></span>{tr('Approvals')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><ClipboardCheck size={20} /></span>{tr('Approvals')}</h1></div>
       <h2>{tr('Waiting for you ({n})', { n: mine.length })}</h2>
       {mine.length === 0 ? <p className="muted small">{tr('Nothing to approve. 🎉')}</p> : mine.map((a) => row(a, true))}
       <h2 style={{ marginTop: 22 }}>{tr('Your requests')}</h2>

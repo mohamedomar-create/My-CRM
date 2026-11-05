@@ -46,7 +46,7 @@ export default function Doctor() {
     <div className="page doctor">
       <div className="page-head">
         <div>
-          <h1><span className="badge" style={{ background: 'var(--ink)' }}><Stethoscope size={20} /></span>{tr('Company check-up')}</h1>
+          <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Stethoscope size={20} /></span>{tr('Company check-up')}</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>{tr('What is wrong or about to go wrong in your data, your books and your setup, most urgent first, with where to fix it.')}</p>
         </div>
         <button className="secondary" onClick={() => { setRun((n) => n + 1); setPlan({}) }}><RefreshCw size={16} /> {tr('Check again')}</button>

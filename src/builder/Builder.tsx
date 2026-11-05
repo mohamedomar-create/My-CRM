@@ -109,7 +109,7 @@ export default function Builder() {
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {issues.length === 0 && (
                 <div className="empty">
-                  <div className="big-ic" style={{ background: 'var(--ink)' }}><CheckCircle2 size={34} /></div>
+                  <div className="big-ic" style={{ background: 'var(--area-tint)' }}><CheckCircle2 size={34} /></div>
                   <b>{tr('All {m} modules, {r} reports and {w} automations pass every check.', { m: schema.modules.length, r: schema.reports.length, w: schema.workflows.length })}</b>
                   <p className="small">{tr('Data links, formulas, pipelines, stock and accounting rules are consistent.')}</p>
                 </div>

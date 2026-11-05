@@ -34,7 +34,7 @@ function SignaturePad({ onChange }: { onChange: (png: string) => void }) {
   const clear = () => { const c = ref.current!; c.getContext('2d')!.clearRect(0, 0, c.width, c.height); drawn.current = false; onChange('') }
   return (
     <div className="stack" style={{ gap: 4 }}>
-      <canvas ref={ref} width={600} height={180} aria-label={tr('Signature')} style={{ width: '100%', height: 140, border: '1px dashed var(--line)', borderRadius: 8, background: 'white', touchAction: 'none' }} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end} />
+      <canvas ref={ref} width={600} height={180} aria-label={tr('Signature')} style={{ width: '100%', height: 140, border: '1px dashed var(--surface-3)', borderRadius: 8, background: 'white', touchAction: 'none' }} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end} />
       <button type="button" className="ghost small" onClick={clear} style={{ alignSelf: 'flex-start' }}>{tr('Clear the signature')}</button>
     </div>
   )
@@ -74,7 +74,7 @@ export default function QuoteOnline() {
           <div className="small">{tr('For')}: <b>{q.customer}</b></div>
           <div className="stack" style={{ gap: 0 }}>
             {q.lines.map((l, i) => (
-              <div key={i} className="row between" style={{ gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+              <div key={i} className="row between" style={{ gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                 <span><b>{l.description}</b><br /><span className="small muted">{l.qty}{l.unit ? ` ${l.unit}` : ''} × {money(l.price, cur)}{l.discount ? ` − ${l.discount}%` : ''}</span></span>
                 <span className="num">{money(l.net, cur)}</span>
               </div>

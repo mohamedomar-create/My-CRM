@@ -11,7 +11,7 @@ export default function BudgetsPage() {
   if (!canPost({ schema, user })) return <div className="page"><p className="muted">{tr('Only Admin and finance roles can prepare budgets')}</p></div>
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><PiggyBank size={20} /></span>{tr('Budgets')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><PiggyBank size={20} /></span>{tr('Budgets')}</h1></div>
       <Budgets />
     </div>
   )

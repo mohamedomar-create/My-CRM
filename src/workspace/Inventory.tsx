@@ -22,7 +22,7 @@ export default function Inventory() {
   const moves = ws.data.stock.slice(0, 40)
   return (
     <div className="page">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><Boxes size={20} /></span>{tr('Stock')}</h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Boxes size={20} /></span>{tr('Stock')}</h1></div>
       <div className="dash" style={{ marginBottom: 14 }}>
         {costs && <div className="card"><h2>{tr('Stock value (at average cost)')}</h2><div className="kpi-value">{money(value, cur)}</div></div>}
         <div className="card"><h2>{tr('Tracked items')}</h2><div className="kpi-value">{items.length}</div></div>
