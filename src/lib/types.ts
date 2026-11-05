@@ -56,6 +56,8 @@ export interface Rec {
     /** the records made from this one */
     made?: string[]
   }
+  /** a product's photo: its path in Storage (a small WebP the browser made); the picture itself is never in the record */
+  image?: string
   /** created by "Try with sample data"; removed in one click before going live */
   sample?: boolean
   /** what the company's old system knew this record as (Phase H) */

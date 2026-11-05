@@ -19,7 +19,8 @@ export default function Inventory() {
   const cur = schema.company.currency
   const value = round2(items.reduce((s, p) => s + stockValue(ws, p), 0))
   const low = items.filter((p) => p.values.reorder_level !== undefined && onHand(ws, p.id) <= Number(p.values.reorder_level))
-  const moves = ws.data.stock.slice(0, 40)
+  // newest first by date (the list itself is in the order things were entered, which mixes old documents brought in later)
+  const moves = [...ws.data.stock].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40)
   return (
     <div className="page">
       <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Boxes size={20} /></span>{tr('Stock')}</h1></div>

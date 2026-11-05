@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ClipboardList, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ClipboardList, ImagePlus, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
@@ -44,6 +44,8 @@ import { PartyHistory } from './PartyHistory'
 import { GroupCard } from './GroupCard'
 import { CostCenterSelect } from './CostCenters'
 import { overBudgetWarnings } from '../lib/budget'
+import { ProductPhotoCard } from './ProductPhoto'
+import { PRODUCT_PHOTOS } from '../lib/config'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -66,7 +68,11 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
     const start = defaultValues({ schema, user, ws }, mod)
     const pf = parentField(mod)
     const under = params.get('under')
-    return pf && under && findRecord(ws, under)?.module === mod.id ? { ...start, [pf.key]: under } : start
+    if (pf && under && findRecord(ws, under)?.module === mod.id) return { ...start, [pf.key]: under }
+    // "New invoice" from a customer, "New purchase order" from a supplier: the first field pointing at it is filled
+    const forRec = findRecord(ws, params.get('for') ?? undefined)
+    const link = forRec && mod.fields.find((f) => f.type === 'relation' && f.target === forRec.module && f.target !== mod.id)
+    return link && forRec ? { ...start, [link.key]: forRec.id } : start
   })
   const [lines, setLinesState] = useState<Line[]>(() => rec?.lines ?? [])
   // What the form started from. Only fields that differ from it are saved, so a colleague's change to another field is never undone.
@@ -135,6 +141,14 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
   const defaultWh = useDefaultWarehouse()
   const [pickedWh, setPostWh] = useState('')
   const postWh = pickedWh || String(rec?.values.warehouse ?? '') || defaultWh
+  /** Saves unsaved changes first (when there are any), so a next step never waits on a separate Save. */
+  function savedFirst() {
+    if (!dirty || !rec) return true
+    const ok = act('record.update', { id: rec.id, ...edits() })
+    if (ok) settle()
+    return Boolean(ok)
+  }
+
   function saveAndPost() {
     const ok = act('record.saveAndPost', { id: rec!.id, ...edits(), ...(usesWarehouses(ws) ? { warehouse: postWh } : {}) }, tr('Saved and posted. Stock and accounts are updated.'))
     if (ok) settle()
@@ -168,30 +182,31 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         <h1>
           <button className="ghost icon" onClick={() => nav(`/app/m/${mod.id}`)} aria-label={tr('Back')}><ArrowLeft size={18} /></button>
           <span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>
-          {isNew ? tr('New {what}', { what: mod.singular.toLowerCase() }) : recordTitle(ws, schema, rec)}
+          {isNew ? tr('New {what}', { what: mod.singular.toLowerCase() }) : msg(recordTitle(ws, schema, rec))}
           {rec && (mod.scoring?.length ?? 0) > 0 && <span className="pill amber" title={tr('Score from the scoring rules')}><Flame size={13} /> {score(ws, schema, rec)}</span>}
           {rec && rotting(schema, rec).rotting && <span className="pill red" title={tr('No progress for a while')}><Clock size={13} /> {tr('idle {n} days', { n: rotting(schema, rec).days })}</span>}
           {standing && <span className={`pill ${standing.left < 0 ? 'red' : standing.left < standing.limit * 0.1 ? 'amber' : 'green'}`} title={tr('Owed {owed}, cheques not yet cleared {cheques}, limit {limit}', { owed: money(standing.owed, schema.company.currency), cheques: money(standing.cheques, schema.company.currency), limit: money(standing.limit, schema.company.currency) })}>{standing.left < 0 ? tr('{amount} over the credit limit', { amount: money(-standing.left, schema.company.currency) }) : tr('{amount} of credit left', { amount: money(standing.left, schema.company.currency) })}</span>}
           {rec?.status && !flow && <span className={`pill ${rec.status === 'paid' ? 'green' : rec.status === 'void' ? 'red' : rec.status === 'partial' ? 'amber' : rec.status === 'draft' ? 'gray' : ''}`}>{statusLabel(rec.status)}</span>}
         </h1>
         <div className="row">
+          {rec && (mod.role === 'accounts' || mod.role === 'suppliers') && <NextFor rec={rec} role={mod.role} />}
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
             <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, tr('Lead converted: customer, contact and deal created')); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> {tr('Convert to customer')}</button>
           )}
           {mod.role === 'deals' && rec && moduleByRole(schema, 'quotes') && can({ schema, user }, moduleByRole(schema, 'quotes')!.id, 'create') && (
-            <button className="secondary" disabled={dirty} title={dirty ? tr('Save first') : undefined} onClick={() => { const q = act<{ id: string }>('deal.toQuote', { id: rec.id }, tr('Quotation draft created for the deal')); if (q) nav(`/app/r/${q.id}`) }}><FileText size={15} /> {tr('Make a quotation')}</button>
+            <button className="secondary" onClick={() => { if (!savedFirst()) return; const q = act<{ id: string }>('deal.toQuote', { id: rec.id }, tr('Quotation draft created for the deal')); if (q) nav(`/app/r/${q.id}`) }}><FileText size={15} /> {tr('Make a quotation')}</button>
           )}
           {mod.role === 'quotes' && rec && rec.status !== 'invoiced' && (
             <>
-              {rec.status === 'draft' && <button disabled={dirty || !rec.lines?.length} title={dirty ? tr('Save first') : undefined} onClick={() => act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered'))}><Send size={15} /> {tr('Mark sent')}</button>}
+              {rec.status === 'draft' && <button disabled={!(dirty ? lines : rec.lines ?? []).length} title={(dirty ? lines : rec.lines ?? []).length ? undefined : tr('Add at least one line before sending')} onClick={() => { if (savedFirst()) act('quote.setStatus', { id: rec.id, status: 'sent' }, tr('Marked as sent and numbered')) }}><Send size={15} /> {dirty ? tr('Save & mark sent') : tr('Mark sent')}</button>}
               {rec.status === 'sent' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'accepted' }, tr('The customer accepted the quotation'))}><CheckCircle2 size={15} /> {tr('Mark accepted')}</button>}
-              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" disabled={dirty} onClick={() => { const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
-              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="secondary" disabled={dirty} title={tr('For goods delivered before the invoice: they are held for this customer, then sent on delivery notes')} onClick={() => act('order.confirm', { id: rec.id }, tr('Confirmed as a sales order: the goods are held'))}><Truck size={15} /> {tr('Confirm as order')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="success" onClick={() => { if (!savedFirst()) return; const inv = act<{ id: string }>('quote.toInvoice', { id: rec.id }, tr('Invoice draft created from the quotation')); if (inv) nav(`/app/r/${inv.id}`) }}><FileCheck2 size={15} /> {tr('Create invoice')}</button>}
+              {(rec.status === 'sent' || rec.status === 'accepted') && moduleByRole(schema, 'invoices') && <button className="secondary" title={tr('For goods delivered before the invoice: they are held for this customer, then sent on delivery notes')} onClick={() => savedFirst() && act('order.confirm', { id: rec.id }, tr('Confirmed as a sales order: the goods are held'))}><Truck size={15} /> {tr('Confirm as order')}</button>}
               {rec.status !== 'declined' && rec.status !== 'draft' && rec.status !== 'ordered' && <button className="secondary" onClick={() => act('quote.setStatus', { id: rec.id, status: 'declined' }, tr('Marked as declined'))}><X size={15} /> {tr('Declined')}</button>}
             </>
           )}
           {mod.role === 'purchases' && rec && rec.status === 'draft' && !rec.values.from_po && !rec.values.credit_for && (rec.lines ?? []).some((l) => l.product) && can({ schema, user }, mod.id, 'edit') && (
-            <button className="secondary" disabled={dirty} title={tr('Order the goods first; receive them when they arrive, then bill what came')} onClick={() => act('po.send', { id: rec.id }, tr('Sent as a purchase order'))}><ClipboardList size={15} /> {tr('Send as purchase order')}</button>
+            <button className="secondary" title={tr('Order the goods first; receive them when they arrive, then bill what came')} onClick={() => savedFirst() && act('po.send', { id: rec.id }, tr('Sent as a purchase order'))}><ClipboardList size={15} /> {tr('Send as purchase order')}</button>
           )}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (rec.lines ?? []).some((l) => l.product) && <WarehouseSelect value={postWh} onChange={setPostWh} label={mod.role === 'invoices' ? tr('From') : tr('Into')} />}
           {mod.lines && rec && rec.status === 'draft' && mod.role !== 'quotes' && canPost({ schema, user }) && (
@@ -308,6 +323,8 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           )}
         </div>
         <div className="stack">
+          {PRODUCT_PHOTOS && mod.role === 'products' && rec && <ProductPhotoCard rec={rec} />}
+          {PRODUCT_PHOTOS && mod.role === 'products' && !rec && <div className="card small muted row" style={{ gap: 6 }}><ImagePlus size={15} /> {tr('Save the product first, then add its photo.')}</div>}
           {related.length > 0 && (
             <div className="card">
               <h2>{tr('Linked records')}</h2>
@@ -483,7 +500,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
       )}
       <div style={{ overflowX: 'auto' }}>
         <table className="lines">
-          <thead><tr><th style={{ minWidth: 200 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Disc. amount')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
+          <thead><tr><th style={{ minWidth: 180 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Disc. amount')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
           <tbody>
             {lines.length === 0 && <tr><td colSpan={withCc ? 10 : 9} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
             {lines.map((l, i) => {
@@ -862,5 +879,26 @@ function Trail({ rec }: { rec: Rec }) {
         {paid.length > 0 && <div><span className="tiny muted">{tr('Payments')}</span>{paid.map((p) => <span key={p.id} className="trail-item"><Banknote size={13} /> {p.ref} · {money(p.amount, schema.company.currency)} · {p.date}</span>)}</div>}
       </div>
     </div>
+  )
+}
+
+/** From a customer or a supplier, the documents one usually makes next, already filled with them. */
+function NextFor({ rec, role }: { rec: Rec; role: 'accounts' | 'suppliers' }) {
+  const { schema, user } = useApp()
+  const make = (r: 'quotes' | 'invoices' | 'deals' | 'purchases') => {
+    const m = moduleByRole(schema, r)
+    return m && can({ schema, user }, m.id, 'create') ? m : undefined
+  }
+  const items = role === 'accounts'
+    ? [{ m: make('quotes'), icon: <FileText size={15} /> }, { m: make('invoices'), icon: <FileCheck2 size={15} /> }, { m: make('deals'), icon: <Plus size={15} /> }]
+    : [{ m: make('purchases'), icon: <ClipboardList size={15} /> }]
+  const shown = items.filter((x) => x.m)
+  if (!shown.length) return null
+  return (
+    <>
+      {shown.map(({ m, icon }, i) => (
+        <Link key={m!.id} className={`btn ${i === 0 ? '' : 'secondary'}`} to={`/app/new/${m!.id}?for=${rec.id}`}>{icon} {tr('New {what}', { what: m!.singular.toLowerCase() })}</Link>
+      ))}
+    </>
   )
 }

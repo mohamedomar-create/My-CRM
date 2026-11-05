@@ -61,7 +61,9 @@ export function docFlow({ role, rec, canPost, today, money }: Opts): Flow | null
             steps: states(labels, 0),
             next: sale
               ? N_('Next: check it, then press Post. Posting gives it its number, records the sale in the books and takes the goods out of stock. After that it can’t be edited, only credited or voided.')
-              : N_('Next: check it against the supplier’s bill, then press Post. Posting records the cost in the books and adds the goods to stock. After that it can’t be edited, only debited or voided.'),
+              : rec?.values.from_po
+                ? N_('Next: check it against the supplier’s bill, then press Post. Posting records the cost in the books; the goods are already in stock from the goods received note. After that it can’t be edited, only debited or voided.')
+                : N_('Next: check it against the supplier’s bill, then press Post. Posting records the cost in the books and adds the goods to stock. After that it can’t be edited, only debited or voided.'),
             tone: 'info',
           }
         : { steps: states(labels, 0), next: N_('Next: someone who can post (finance or an admin) checks it and posts it.'), tone: 'info' }

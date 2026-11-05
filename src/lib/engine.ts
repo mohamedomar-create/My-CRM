@@ -481,6 +481,21 @@ export function referencesTo(ws: Workspace, schema: AppSchema, rec: Rec): string
   return out
 }
 
+/** A product's photo is a file in Storage under the company's folder; the product keeps only its path (or none). */
+export function setProductImage(ctx: Ctx, rec: Rec, path: string | null) {
+  const mod = moduleById(ctx.schema, rec.module)
+  if (mod?.role !== 'products') throw new EngineError('Only products have a photo')
+  need(ctx, rec.module, 'edit')
+  if (path !== null) {
+    if (typeof path !== 'string' || !path.startsWith(`${ctx.ws.id}/`) || !/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.(webp|jpg)$/.test(path)) throw new EngineError('That photo isn’t one of this company’s files')
+  }
+  const had = Boolean(rec.image)
+  if (path) rec.image = path
+  else delete rec.image
+  rec.updatedAt = nowISO()
+  log(ctx, path ? (had ? 'changed the photo' : 'added a photo') : 'removed the photo', rec)
+}
+
 export function deleteRecord(ctx: Ctx, rec: Rec) {
   need(ctx, rec.module, 'delete')
   const mod = moduleById(ctx.schema, rec.module)!
@@ -517,7 +532,9 @@ export function moveStage(ctx: Ctx, rec: Rec, stageId: string) {
   runWorkflows(ctx, rec, 'stage_changed')
 }
 
-export function convertLead(ctx: Ctx, lead: Rec) {
+export function convertLead(ctxIn: Ctx, lead: Rec) {
+  // what is made from a sample lead is sample too, so “Remove sample data” takes it all and nothing real is tangled with it
+  const ctx: Ctx = { ...ctxIn, sample: ctxIn.sample || lead.sample }
   const leadsMod = moduleById(ctx.schema, lead.module)!
   const accounts = moduleByRole(ctx.schema, 'accounts')
   const contacts = moduleByRole(ctx.schema, 'contacts')
@@ -529,11 +546,16 @@ export function convertLead(ctx: Ctx, lead: Rec) {
   // A phone already known (a customer's, or a contact's) means the customer already exists: no second one is made.
   const known = samePhone(lead.values.phone)
   const knownContact = contacts && known ? list(ctx.ws, contacts.id).find((c) => known(c.values.phone)) : undefined
-  const existing = known
+  const byPhone = known
     ? list(ctx.ws, accounts.id).find((a) => known(a.values.phone)) ?? (knownContact?.values.account ? list(ctx.ws, accounts.id).find((a) => a.id === knownContact.values.account) : undefined)
     : undefined
+  // …and so does a customer already called by the lead's company name ("Delta Foods" and "delta foods." are one)
+  const company = sameName(lead.values.company)
+  const byName = !byPhone && company ? list(ctx.ws, accounts.id).find((a) => company(recordTitle(ctx.ws, ctx.schema, a))) : undefined
+  const existing = byPhone ?? byName
   const account = existing ?? createRecord(ctx, accounts.id, pick(accounts, { name, phone: lead.values.phone, email: lead.values.email, owner: lead.values.owner }))
   const contact = contacts && !knownContact ? createRecord(ctx, contacts.id, pick(contacts, { name: lead.values.name, account: account.id, phone: lead.values.phone, email: lead.values.email })) : knownContact
+  // the lead's budget, or a placeholder the deal's rules accept until its quotation sets the real amount
   const amount = Number(lead.values.budget ?? 0) || 1
   const deal = createRecord(ctx, deals.id, pick(deals, { title: `${recordTitle(ctx.ws, ctx.schema, account) || name} – new opportunity`, account: account.id, amount, close_date: addDays(todayISO(), 30), owner: lead.values.owner }))
   if (won) {
@@ -544,8 +566,17 @@ export function convertLead(ctx: Ctx, lead: Rec) {
   if (!existing) linkRecords(lead, account, false)
   if (contact && !knownContact) linkRecords(lead, contact, false)
   log(ctx, `converted lead “${lead.values.name}”`, lead)
-  if (existing) log(ctx, `matched the existing customer “${recordTitle(ctx.ws, ctx.schema, existing)}” by phone`, lead)
+  if (byPhone) log(ctx, `matched the existing customer “${recordTitle(ctx.ws, ctx.schema, byPhone)}” by phone`, lead)
+  if (byName) log(ctx, `matched the existing customer “${recordTitle(ctx.ws, ctx.schema, byName)}” by name`, lead)
   return deal
+}
+
+/** A test for "the same company name": case, spaces, punctuation and Arabic letter forms ignored. */
+export function sameName(name: unknown): ((other: unknown) => boolean) | undefined {
+  const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[^\p{L}\p{N}]+/gu, '')
+  const mine = norm(name)
+  if (mine.length < 3) return undefined
+  return (other) => norm(other) === mine
 }
 
 /** A test for "the same phone number": digits only, the last 9 compared (so +20 10…, 010… and 10… agree). */
@@ -1672,6 +1703,48 @@ export function setQuoteStatus(ctx: Ctx, quote: Rec, status: 'sent' | 'accepted'
   quote.status = status
   quote.updatedAt = nowISO()
   log(ctx, `marked ${mod.singular} ${quote.number ?? ''} ${status}`, quote)
+  if (status === 'sent' || status === 'accepted') dealFollowsQuote(ctx, quote, status === 'sent' ? 'sent' : 'won')
+  if (status === 'accepted') closeFollowUps(ctx, quote)
+}
+
+/**
+ * The deal a quotation was made from follows it: sent moves it to the proposal stage (when the pipeline has one and the
+ * deal is behind it), accepted, confirmed or invoiced wins it; its amount becomes the quotation's (before VAT). A stage
+ * gate or approval that stops the move leaves the deal where it is; the quotation still goes ahead.
+ */
+export function dealFollowsQuote(ctx: Ctx, quote: Rec, step: 'sent' | 'won') {
+  const deal = quote.links?.from ? findRecord(ctx.ws, quote.links.from) : undefined
+  const mod = deal ? moduleById(ctx.schema, deal.module) : undefined
+  if (!deal || mod?.role !== 'deals' || !mod.stages) return
+  const stages = mod.stages
+  const at = stages.findIndex((x) => x.id === deal.stage)
+  if (at >= 0 && stages[at].type !== 'open') return
+  const amount = Number(quote.values.subtotal ?? 0)
+  if (amount > 0 && Number(deal.values.amount ?? 0) !== amount) {
+    deal.values = { ...deal.values, amount }
+    deal.updatedAt = nowISO()
+  }
+  const target = step === 'won'
+    ? stages.find((x) => x.type === 'won')
+    : stages.find((x) => x.type === 'open' && /proposal|quot|offer|عرض/i.test(x.name))
+  if (!target || (step === 'sent' && stages.indexOf(target) <= at)) return
+  try {
+    moveStage(ctx, deal, target.id)
+  } catch {
+    /* a gate or an approval keeps the deal where it is; the quotation still goes ahead */
+  }
+}
+
+/** Tasks made to follow a quotation up are done once the customer has answered (accepted, ordered or invoiced). */
+export function closeFollowUps(ctx: Ctx, rec: Rec) {
+  const tasks = moduleByRole(ctx.schema, 'tasks')
+  if (!tasks) return
+  for (const t of list(ctx.ws, tasks.id)) {
+    if (t.links?.from !== rec.id || t.values.done) continue
+    t.values = { ...t.values, done: true }
+    t.updatedAt = nowISO()
+    log(ctx, `closed the task “${String(t.values.title ?? '')}”: ${rec.number ?? 'the quotation'} was answered`, t)
+  }
 }
 
 export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
@@ -1688,6 +1761,8 @@ export function quoteToInvoice(ctx: Ctx, quote: Rec): Rec {
   quote.status = 'invoiced'
   quote.links = { ...quote.links, source: inv.id }
   linkRecords(quote, inv)
+  dealFollowsQuote(ctx, quote, 'won')
+  closeFollowUps(ctx, quote)
   return inv
 }
 
@@ -3117,7 +3192,10 @@ export function execute(ctx: Ctx, w: WorkflowDef, rec: Rec) {
       if (a.type === 'create_task' && tasks) {
         const owner = rec.values.owner ?? rec.values.assignee ?? ctx.user.id
         // Logged as the automation's doing, not as whoever happened to be signed in when it ran.
-        createRecord({ ...ctx, user: { ...ctx.user, name: 'Automation' } }, tasks.id, { title: fill(ctx, mod, rec, a.title), due_date: addDays(ctx.today ?? todayISO(), a.dueInDays), assignee: owner, done: false, related: recordTitle(ctx.ws, ctx.schema, rec), priority: a.dueInDays === 0 ? 'high' : 'normal' }, { silent: true })
+        const task = createRecord({ ...ctx, user: { ...ctx.user, name: 'Automation' } }, tasks.id, { title: fill(ctx, mod, rec, a.title), due_date: addDays(ctx.today ?? todayISO(), a.dueInDays), assignee: owner, done: false, related: recordTitle(ctx.ws, ctx.schema, rec), priority: a.dueInDays === 0 ? 'high' : 'normal' }, { silent: true })
+        // the task knows the record it is about (closed for you once that record no longer needs it); it isn't one
+        // of the documents made from that record, so the record's own chain stays documents only
+        task.links = { ...task.links, from: rec.id }
       } else if (a.type === 'set_field') {
         const f = fieldByKey(mod, a.field)
         const locked = (mod.lines && rec.status !== 'draft' && mod.role !== 'quotes') || (mod.role === 'quotes' && rec.status === 'invoiced')

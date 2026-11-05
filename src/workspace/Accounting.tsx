@@ -119,10 +119,11 @@ export default function Accounting() {
       {tab === 'journal' && (
         <div className="stack">
           <PendingJournals />
-          {ws.data.journal.slice(0, 60).map((j) => (
+          {[...ws.data.journal].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map((j) => (
             <div className="card" key={j.id} style={{ padding: 12 }}>
               <div className="row between"><b className="mono">{j.ref}{j.adjusting && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{tr('adjusting')}</span>}</b><span className="muted small row" style={{ gap: 6 }}>{j.date} · {msg(j.memo)} {j.doc && <Link to={`/app/r/${j.doc}`}>{tr('open')}</Link>} {j.manual && !j.reverses && <ReverseButton id={j.id} reversed={reversed.has(j.id)} />}</span></div>
               <table className="lines" style={{ marginTop: 6 }}>
+                <thead><tr><th>{tr('Account')}</th><th className="num">{tr('Debit')}</th><th className="num">{tr('Credit')}</th></tr></thead>
                 <tbody>{j.lines.map((l, i) => <tr key={i}><td style={{ paddingInlineStart: l.credit ? 30 : 6 }}>{l.account} {name(l.account)}{l.note && <span className="muted tiny"> · {l.note}</span>}{l.cc && <span className="pill tiny" style={{ marginInlineStart: 6 }}>{l.cc}</span>}</td><td className="num">{l.debit ? money(l.debit, cur) : ''}</td><td className="num">{l.credit ? money(l.credit, cur) : ''}</td></tr>)}</tbody>
               </table>
             </div>

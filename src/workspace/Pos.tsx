@@ -15,6 +15,8 @@ import { canSell, countersOf, expectedCash, openSession, posOf, receiptNumber, s
 import { WarehouseSelect } from './Warehouses'
 import { ScanButton } from './Scanner'
 import { findByCode } from '../lib/scan'
+import { PhotoThumb } from './ProductPhoto'
+import { PRODUCT_PHOTOS } from '../lib/config'
 
 const COUNTER_KEY = 'nasq360.counter'
 interface CartLine { product: string; name: string; price: number; vat: number; qty: number; discount: number }
@@ -175,7 +177,8 @@ function Till({ session, onClosed }: { session: PosSession; onClosed: (id: strin
           {shown.map((p) => {
             const s = stock(p)
             return (
-              <button key={p.id} className="pos-product" onClick={() => add(p)} disabled={s !== undefined && s <= 0 && !schema.company.allowNegativeStock}>
+              <button key={p.id} className={`pos-product${PRODUCT_PHOTOS && p.image ? ' with-photo' : ''}`} onClick={() => add(p)} disabled={s !== undefined && s <= 0 && !schema.company.allowNegativeStock}>
+                {PRODUCT_PHOTOS && p.image && <PhotoThumb path={p.image} size={56} />}
                 <b>{String(p.values.name)}</b>
                 <span>{cur(Number(p.values.price ?? 0))}</span>
                 {s !== undefined && <span className="tiny muted">{tr('{n} in stock', { n: s })}</span>}

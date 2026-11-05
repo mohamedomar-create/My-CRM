@@ -91,14 +91,12 @@ export const tr = (en: string, vars?: Vars) => translate(lang, en, vars)
 let patterns: { re: RegExp; keys: string[]; ar: string; literal: number }[] | undefined
 const escape = (s: string) => s.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
 
-const known = (v: string) => AR[v] ?? AR[v.charAt(0).toUpperCase() + v.slice(1)] ?? v
+const known = (v: string): string => AR[v] ?? AR[v.charAt(0).toUpperCase() + v.slice(1)] ?? (v.includes(' · ') ? v.split(' · ').map(known).join(' · ') : v)
 
 /** Translates a whole message that may contain values, such as an error from the server. */
 export function translateMessage(l: Lang, msg: string): string {
   if (l !== 'ar' || !msg) return msg
   if (AR[msg]) return AR[msg]
-  // Several checks that failed together come joined with " · ": each is translated on its own.
-  if (msg.includes(' · ')) return msg.split(' · ').map((part) => translateMessage(l, part)).join(' · ')
   patterns ??= Object.entries(AR).filter(([en]) => /\{\w+\}/.test(en)).map(([en, ar]) => {
     const keys: string[] = []
     const re = new RegExp('^' + en.split(/(\{\w+\})/).map((part) => {
@@ -109,11 +107,24 @@ export function translateMessage(l: Lang, msg: string): string {
     return { re, keys, ar, literal: en.replace(/\{\w+\}/g, '').length }
   }).sort((a, b) => b.literal - a.literal) // the most specific first: "imported {a} activities and notes" before "imported {a} {b}"
 
-  for (const p of patterns) {
-    const m = p.re.exec(msg)
-    // Values that are themselves known texts ("Invoice", "you keep stock", "imported 3 customers") are translated too.
-    if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, known(m[i + 1])])))
+  const byPattern = (text: string) => {
+    for (const p of patterns!) {
+      const m = p.re.exec(text)
+      // Values that are themselves known texts ("Invoice", "you keep stock", "imported 3 customers") are translated too.
+      if (m) return fill(p.ar, Object.fromEntries(p.keys.map((k, i) => [k, known(m[i + 1])])))
+    }
+    return null
   }
+  // Several checks that failed together come joined with " · ": each is translated on its own. When a part can't be,
+  // the " · " was inside one message (a record titled "Draft · Cairo Care"), so the whole is matched as one.
+  if (msg.includes(' · ')) {
+    const parts = msg.split(' · ')
+    const done = parts.map((part) => translateMessage(l, part))
+    if (done.every((d, i) => d !== parts[i])) return done.join(' · ')
+    return byPattern(msg) ?? done.join(' · ')
+  }
+  const hit = byPattern(msg)
+  if (hit !== null) return hit
   return msg
 }
 

@@ -16,7 +16,8 @@ export function usePeriod() {
   const { schema } = useApp()
   const [params, setParams] = useSearchParams()
   const today = todayISO()
-  const preset = (PRESETS.some((p) => p.id === params.get('p')) ? params.get('p') : 'month') as PeriodPreset
+  // the last 12 months by default: a month just begun would show empty charts and a −100% beside every figure
+  const preset = (PRESETS.some((p) => p.id === params.get('p')) ? params.get('p') : 'last12') as PeriodPreset
   const compare = (['none', 'previous', 'last_year'].includes(params.get('c') ?? '') ? params.get('c') : 'previous') as Compare
   const valid = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined)
   const custom = { from: valid(params.get('from')) ?? `${today.slice(0, 7)}-01`, to: valid(params.get('to')) ?? today }

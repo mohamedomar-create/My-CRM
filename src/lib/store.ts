@@ -1140,3 +1140,64 @@ export async function restoreAsNewCompany(backup: Workspace, name: string) {
   await flush()
   if (state.sync === 'error') throw new Error('The backup couldn’t be saved. The new company is empty; delete it and try again.')
 }
+
+/* ---------------- product photos (Storage; the product keeps only the path) ---------------- */
+
+const PHOTOS = 'product-images'
+
+/** Makes the picture small in the browser, then uploads it under the company's folder. Returns its path. */
+export async function uploadProductPhoto(wsId: string, productId: string, file: Blob) {
+  const { toSmallPhoto } = await import('./images')
+  const small = await toSmallPhoto(file)
+  const path = `${wsId}/${productId.replace(/[^A-Za-z0-9_-]/g, '')}-${Math.random().toString(36).slice(2, 10)}.${small.ext}`
+  const { error } = await supabase.storage.from(PHOTOS).upload(path, small.blob, { contentType: small.blob.type, cacheControl: '31536000', upsert: false })
+  if (error) throw new Error(friendly(error.message))
+  return { path, bytes: small.blob.size, width: small.width, height: small.height }
+}
+
+/** Removes a photo file that is no longer used (best effort: a leftover file is only space). */
+export async function removeProductPhotoFile(path: string | undefined) {
+  if (!path) return
+  try {
+    await supabase.storage.from(PHOTOS).remove([path])
+  } catch {
+    /* kept; harmless */
+  }
+}
+
+// Signed links last an hour; asked for together (one request for a whole list of products) and kept until then.
+const photoLinks = new Map<string, { url: string; until: number }>()
+let photoQueue: { path: string; resolve: (url: string | null) => void }[] = []
+let photoTimer: ReturnType<typeof setTimeout> | null = null
+
+async function flushPhotos() {
+  const batch = photoQueue
+  photoQueue = []
+  photoTimer = null
+  const paths = [...new Set(batch.map((b) => b.path))]
+  const got: Record<string, string> = {}
+  try {
+    const { data } = await supabase.storage.from(PHOTOS).createSignedUrls(paths, 3600)
+    for (const d of data ?? []) if (d.signedUrl && d.path) got[d.path] = d.signedUrl
+  } catch {
+    /* offline: no picture, the placeholder shows */
+  }
+  for (const [p, url] of Object.entries(got)) photoLinks.set(p, { url, until: Date.now() + 55 * 60_000 })
+  for (const b of batch) b.resolve(got[b.path] ?? null)
+}
+
+/** A link to show a product's photo (null when it can't be had, e.g. offline). */
+export function productPhotoUrl(path: string): Promise<string | null> {
+  const hit = photoLinks.get(path)
+  if (hit && hit.until > Date.now()) return Promise.resolve(hit.url)
+  return new Promise((resolve) => {
+    photoQueue.push({ path, resolve })
+    photoTimer ??= setTimeout(() => void flushPhotos(), 30)
+  })
+}
+
+/** The link already at hand, if any (so a list doesn't flicker when it comes back into view). */
+export const productPhotoUrlNow = (path: string) => {
+  const hit = photoLinks.get(path)
+  return hit && hit.until > Date.now() ? hit.url : null
+}

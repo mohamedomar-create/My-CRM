@@ -1028,10 +1028,14 @@ table.data tfoot td { font-weight: 800; background: var(--surface-2); border-top
 .lines th { text-align: start; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 6px; border-bottom: 1px solid var(--border); }
 .lines td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .lines input, .lines select { padding: 7px 8px; }
+/* document lines fit the card: numbers and the tax code take only the room they need, so Net and remove stay in view */
+.lines td { padding-inline: 4px; }
+.lines input[type='number'] { width: 100% !important; min-width: 56px; max-width: 96px; }
+.lines select { max-width: 132px; }
 .totals { margin-inline-start: auto; width: min(320px, 100%); display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin-top: 14px; font-variant-numeric: tabular-nums; }
 .totals .grand { font-size: 1.2rem; font-weight: 800; border-top: 2px solid var(--text); padding-top: 6px; }
 .timeline { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
-.timeline li { padding: 8px 0 8px 16px; border-inline-start: 2px solid var(--border); position: relative; }
+.timeline li { padding-block: 8px; padding-inline: 16px 0; border-inline-start: 2px solid var(--border); position: relative; }
 .timeline li::before { content: ''; position: absolute; inset-inline-start: -6px; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
 .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
 .empty .big-ic { width: 70px; height: 70px; border-radius: 20px; display: grid; place-items: center; margin: 0 auto 14px; color: #fff; }
@@ -1749,3 +1753,22 @@ a.card:hover, .card.clickable:hover, .kpi.clickable:hover, .area-step:hover { tr
 .empty-state.compact .empty-ic { width: 44px; height: 44px; border-radius: 14px; }
 .empty-title { font-size: 1.08rem; color: var(--text); }
 .empty-text { margin: 0; max-width: 460px; color: var(--muted); font-size: 0.9rem; }
+
+/* ---------- product photos ---------- */
+.photo-thumb { display: inline-grid; place-items: center; flex-shrink: 0; overflow: hidden; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-drop { position: relative; aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; display: grid; place-items: center; background: var(--surface-2); border: 2px dashed var(--border); transition: border-color .2s, background .2s; }
+.photo-drop.has { border-style: solid; border-width: 1px; }
+.photo-drop.over { border-color: var(--primary); background: var(--primary-50); }
+.photo-drop img { width: 100%; height: 100%; object-fit: contain; background: var(--surface); }
+.photo-empty { display: grid; justify-items: center; gap: 8px; padding: 16px; text-align: center; color: var(--muted); }
+.photo-busy { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--surface) 80%, transparent); font-weight: 600; font-size: var(--fs-sm); }
+.pos-product.with-photo { align-items: center; text-align: center; }
+.pos-product.with-photo .photo-thumb { margin-bottom: 4px; }
+/* on a phone the steps take the whole width and shrink their links; only the step reached shows its name */
+@media (max-width: 760px) {
+  .docflow { grid-template-columns: minmax(0, 1fr); }
+  .docflow-steps { flex-wrap: nowrap; }
+  .docflow-steps li + li::before { width: 14px; margin-inline: 4px; }
+  .docflow-steps li:not(.cur) > :not(.docflow-dot) { display: none; }
+}

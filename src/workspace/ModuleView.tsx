@@ -15,7 +15,9 @@ import type { FieldDef, ModuleDef } from '../lib/schema'
 import { moduleById } from '../lib/schema'
 import type { Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
-import { dateLocale, N_, tr } from '../lib/i18n'
+import { dateLocale, msg, N_, tr } from '../lib/i18n'
+import { PhotoThumb } from './ProductPhoto'
+import { PRODUCT_PHOTOS } from '../lib/config'
 
 const STATUS_PILL: Record<string, string> = { draft: 'gray', posted: '', partial: 'amber', paid: 'green', void: 'red', sent: '', accepted: 'green', declined: 'red', invoiced: 'green', ordered: 'amber' }
 
@@ -56,6 +58,11 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
   const secret = costs ? [] : costKeys(schema)
   const hidden = (key: string) => secret.includes(key)
   const cols = mod.fields.filter((f) => f.inList && !hidden(f.key)).slice(0, 7)
+  // documents are titled by their number, so the one they're for (customer or supplier) stays a column, right after it
+  const titleF = mod.fields.find((f) => f.key === mod.titleField)
+  const listCols = mod.lines ? (titleF && !hidden(titleF.key) ? [titleF, ...cols.filter((c) => c.key !== titleF.key)] : cols) : cols.filter((c) => c.key !== mod.titleField)
+  // adding up prices (or any amount of a list that isn't money in or out) means nothing
+  const totals = mod.role !== 'products' && listCols.some((c) => c.type === 'currency')
   const all = list(ws, mod.id)
   // Layers: a list whose records are under one another (customers under groups), or a list linked to one (their
   // invoices, deals, contacts) can show one group: the record chosen and everything under it.
@@ -126,11 +133,11 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
       <div className="page-head">
         <h1><span className="badge" style={{ background: mod.color }}><Icon name={mod.icon} size={20} /></span>{mod.name} <span className="pill gray">{all.length}</span></h1>
         <div className="row">
-          <div className="seg">
+          {(mod.stages || dateField) && <div className="seg">
             {mod.stages && <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}><Kanban size={15} /> {tr('Board')}</button>}
             <button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}><Table2 size={15} /> {tr('Table')}</button>
             {dateField && <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}><CalendarDays size={15} /> {tr('Calendar')}</button>}
-          </div>
+          </div>}
           {can({ schema, user }, mod.id, 'create') && !mod.lines && <button className="secondary" onClick={() => setImporting(true)}><Upload size={15} /> {tr('Import')}</button>}
           <button className="secondary" onClick={exportCsv}><Download size={15} /> {tr('Export')}</button>
           {can({ schema, user }, mod.id, 'create') && <button onClick={() => nav(`/app/new/${mod.id}`)}><Plus size={16} /> {tr('New {what}', { what: mod.singular.toLowerCase() })}</button>}
@@ -180,7 +187,7 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
                 {mod.stages && <th>{tr('Stage')}</th>}
                 {mod.lines && <th>{tr('Status')}</th>}
                 {scored && <th onClick={() => setSort({ key: '__score', dir: sort.key === '__score' && sort.dir === -1 ? 1 : -1 })}>{tr('Score')}{sort.key === '__score' ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>}
-                {cols.filter((c) => c.key !== mod.titleField).map((c) => (
+                {listCols.map((c) => (
                   <th key={c.id} className={isNum(c) ? 'num' : ''} onClick={() => setSort({ key: c.key, dir: sort.key === c.key && sort.dir === 1 ? -1 : 1 })}>{c.label}{sort.key === c.key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>
                 ))}
               </tr>
@@ -188,22 +195,22 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
             <tbody>
               {rows.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => nav(`/app/r/${r.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') nav(`/app/r/${r.id}`) }} aria-label={recordTitle(ws, schema, r)}>
-                  <td><b>{mod.lines ? (r.number ?? tr('Draft')) : recordTitle(ws, schema, r)}</b></td>
+                  <td>{PRODUCT_PHOTOS && mod.role === 'products' ? <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}><PhotoThumb path={r.image} size={34} /><b>{recordTitle(ws, schema, r)}</b></span> : <b>{mod.lines ? (r.number ?? tr('Draft')) : msg(recordTitle(ws, schema, r))}</b>}</td>
                   {mod.stages && <td>{(() => { const s = mod.stages.find((x) => x.id === r.stage); return s ? <span className="pill tint" style={{ ['--c' as string]: s.color }}>{s.name}</span> : null })()}</td>}
                   {mod.lines && <td><span className={`pill ${STATUS_PILL[r.status ?? 'draft']}`}>{statusLabel(r.status)}</span></td>}
                   {scored && <td><ScorePill n={score(ws, schema, r)} /></td>}
-                  {cols.filter((c) => c.key !== mod.titleField).map((c) => <td key={c.id} className={isNum(c) ? 'num' : ''}><Cell field={c} rec={r} ws={ws} schema={schema} /></td>)}
+                  {listCols.map((c) => <td key={c.id} className={isNum(c) ? 'num' : ''}>{mod.role === 'products' && c.key === 'stock' && !r.values.track_stock ? <span className="muted">—</span> : <Cell field={c} rec={r} ws={ws} schema={schema} />}</td>)}
                 </tr>
               ))}
             </tbody>
-            {cols.some((c) => c.type === 'currency') && (
+            {totals && (
               <tfoot>
                 <tr>
                   <td>{tr('Total ({n})', { n: rows.length })}</td>
                   {mod.stages && <td />}
                   {scored && <td />}
                   {mod.lines && <td />}
-                  {cols.filter((c) => c.key !== mod.titleField).map((c) => <td key={c.id} className="num">{c.type === 'currency' ? money(rows.filter((r) => r.status !== 'void').reduce((s, r) => s + Number(fieldValue(ws, schema, r, c) ?? 0), 0), schema.company.currency) : ''}</td>)}
+                  {listCols.map((c) => <td key={c.id} className="num">{c.type === 'currency' ? money(rows.filter((r) => r.status !== 'void').reduce((s, r) => s + Number(fieldValue(ws, schema, r, c) ?? 0), 0), schema.company.currency) : ''}</td>)}
                 </tr>
               </tfoot>
             )}
