@@ -150,4 +150,30 @@ describe('webhooks', () => {
     expect(store[0]).toMatchObject({ ok: true, attempts: 2, nextAt: null })
     expect([1, 2, 3, 7, 8].map(retryAfter)).toEqual([60, 300, 1800, 86400, null])
   })
+
+  it('a shop sending the same order or payment twice (a retry) gets the first one back, never a duplicate', async () => {
+    const w = world()
+    await w.addKey(K('e'), { id: 'key_shopify', email: admin.email, uid: 'uid-admin', name: 'Shopify', scope: 'write' })
+    const order = { external_id: 'shopify-#1042', values: { customer: w.C.id, date: '2026-11-04' }, lines: [{ product: w.rice.id, description: 'Rice 5kg', qty: 2, price: 200, vat: 14 }], post: true }
+    const first = await w.call(K('e'), 'POST', '/v1/invoices', order)
+    expect(first.status).toBe(201)
+    const made = first.body as { id: string; number: string; external_id: string }
+    expect(made.external_id).toBe('shopify-#1042')
+    const again = await w.call(K('e'), 'POST', '/v1/invoices', order)
+    expect(again.status).toBe(200)
+    expect(again.body).toMatchObject({ id: made.id, number: made.number, replayed: true })
+    const invoices = moduleByRole(w.schema, 'invoices')!.id
+    expect(w.doc.data.records[invoices].filter((r) => r.legacy?.id === 'shopify-#1042')).toHaveLength(1)
+    // found by the shop's own number
+    const found = await w.call(K('e'), 'GET', '/v1/invoices', undefined, { external_id: 'shopify-#1042' })
+    expect((found.body as { data: { id: string }[] }).data.map((r) => r.id)).toEqual([made.id])
+    // the payment, retried: recorded once
+    const pay = { amount: 200, method: 'card', external_id: 'paymob-77' }
+    expect((await w.call(K('e'), 'POST', `/v1/invoices/${made.id}/payments`, pay)).status).toBe(200)
+    const twice = await w.call(K('e'), 'POST', `/v1/invoices/${made.id}/payments`, pay)
+    expect(twice.body).toMatchObject({ replayed: true, values: { paid: 200 } })
+    expect(w.doc.data.payments.filter((p) => p.external === 'paymob-77')).toHaveLength(1)
+    // too long an id is refused plainly
+    expect((await w.call(K('e'), 'POST', '/v1/invoices', { ...order, external_id: 'x'.repeat(121) })).status).toBe(400)
+  })
 })

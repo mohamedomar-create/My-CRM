@@ -1,5 +1,6 @@
 // Phase 4.2d (UX-12, UX-09): the parts of each person's home that fit their role. The Today strip (on every home),
 // the setup checklist (the owner, until it is done), "my pipeline" for sales, and the reorder list for the warehouse.
+import { progress } from '../lib/setupSession'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CheckCircle2, Circle, ClipboardList, Handshake, PackageSearch, X } from 'lucide-react'
@@ -41,8 +42,10 @@ export function SetupChecklist() {
   const count = (role: Parameters<typeof moduleByRole>[1]) => { const m = moduleByRole(schema, role); return m ? list(ws, m.id).filter((r) => !r.sample).length : 0 }
   const invoices = moduleByRole(schema, 'invoices')
   const posted = invoices ? list(ws, invoices.id).some((r) => !r.sample && r.status && r.status !== 'draft') : false
+  const session = progress(ws, schema)
   const steps = [
-    { done: Boolean(schema.company.taxId?.trim()), label: tr('Add your tax registration number (it prints on invoices)'), to: '/builder' },
+    { done: session.agreed === session.total, label: tr('Settle the setup with your team, one decision at a time ({a} of {n} agreed)', { a: session.agreed, n: session.total }), to: '/app/setup-session' },
+    { done: Boolean(schema.company.taxId?.trim()), label: tr('Add your tax registration number (it prints on invoices)'), to: '/app/setup-session' },
     { done: ws.users.filter((u) => !u.demo && !u.former).length > 1, label: tr('Invite a colleague'), to: '/app/team' },
     { done: count('accounts') > 0, label: tr('Add your first customer (or bring them in from Excel)'), to: moduleByRole(schema, 'accounts') ? `/app/new/${moduleByRole(schema, 'accounts')!.id}` : '/app/migrate' },
     ...(moduleByRole(schema, 'products') ? [{ done: count('products') > 0, label: tr('Add your products or services'), to: `/app/new/${moduleByRole(schema, 'products')!.id}` }] : []),

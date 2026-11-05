@@ -7,6 +7,7 @@
 import type { Line, Rec, Workspace } from './types'
 import { moduleById, moduleByRole, type AppSchema } from './schema'
 import {
+  flip,
   canPost, ccSides, EngineError, findRecord, journal, lineNet, log, nextNumber, nowISO, onHand, productRec, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
 } from './engine'
 import { uid } from './schema'
@@ -219,7 +220,7 @@ export function undoLanded(ctx: Ctx, id: string) {
   }
   const entry = ctx.ws.data.journal.find((j) => j.ref === lc.number && (lc.from ? j.doc === lc.from : !j.doc))
   if (entry) {
-    journal(ctx, { date, ref: `UNDO ${lc.number}`, memo: `Undo landed cost ${lc.number}`, ...(lc.from ? { doc: lc.from } : {}), lines: entry.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, lc)
+    journal(ctx, { date, ref: `UNDO ${lc.number}`, memo: `Undo landed cost ${lc.number}`, ...(lc.from ? { doc: lc.from } : {}), lines: entry.lines.map(flip) }, lc)
   }
   lc.undone = { at: nowISO(), by: ctx.user.name, date }
   log(ctx, `undid landed cost ${lc.number}`, from ?? findRecord(ctx.ws, lc.to[0]))

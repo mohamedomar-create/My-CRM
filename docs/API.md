@@ -68,6 +68,41 @@ curl -X POST "$BASE/invoices/<id>/payments" -H "Authorization: Bearer $KEY" -H "
   -d '{"amount":1368,"method":"card"}'
 ```
 
+### Sending the same thing twice is safe: `external_id`
+
+Connections retry: a shop resends an order when a reply is lost, and a payment gateway sends its notice more than once.
+Give each record or payment the other system's own id, and Nasq360 never makes it twice:
+
+```bash
+curl -X POST "$URL/v1/invoices" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{
+  "external_id": "shopify-#1042",
+  "values": { "customer": "r_…", "date": "2026-11-04" },
+  "lines": [{ "product": "r_…", "description": "Rice 5kg", "qty": 2, "price": 200 }],
+  "post": true }'
+```
+
+- **The first call** makes the record and answers `201`. The record carries `"external_id": "shopify-#1042"`.
+- **Any later call with the same `external_id`** makes nothing. It answers `200` with the record already made, plus
+  `"replayed": true`. This holds even when two calls arrive at the same moment.
+- **Finding it by the shop's number:** `GET /v1/invoices?external_id=shopify-%231042`.
+- **Payments:** `POST /v1/invoices/{id}/payments` with `"external_id": "paymob-77"` is recorded once. A retry answers
+  `200` with `"replayed": true`. If the payment is reversed, the same id can be recorded again.
+
+`external_id` is up to 120 characters. Use any value that is unique in the other system: an order number, a shipment
+number, a transaction id.
+
+### Connecting a shop, a courier or a payment gateway
+
+You don't need a developer for the usual cases. Zapier or Make (or a few lines in the shop) can do it:
+
+| From | When | Call |
+|---|---|---|
+| Shopify / WooCommerce / Salla | a new order | `POST /v1/customers` (with the shop's customer id as `external_id`), then `POST /v1/invoices` with `"post": true` and the order number as `external_id` |
+| Payment gateway (Paymob, Fawry, card) | payment succeeded | `POST /v1/invoices/{id}/payments` with the transaction id as `external_id` |
+| Courier (Bosta, Aramex) | cash collected on delivery | `POST /v1/invoices/{id}/payments` with `"method": "cash"` and the shipment number as `external_id` |
+| Nasq360 → courier | `invoice.posted` webhook | create the shipment from the invoice's lines and the customer's address |
+| Nasq360 → shop | `stock.low` webhook, or `GET /v1/stock` hourly | update the quantities shown in the shop |
+
 ### Errors
 
 | Status | Meaning |

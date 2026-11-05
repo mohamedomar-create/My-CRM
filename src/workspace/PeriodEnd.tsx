@@ -9,7 +9,7 @@ import { list, money, recordTitle, round2, todayISO } from '../lib/engine'
 import { accountLabel, chartOf, moneyAccounts, moneyKind } from '../lib/accounts'
 import { assetsOf, bookValue, chargeUpTo, lastMonth, monthlyCharge, registerTotals } from '../lib/assets'
 import { allowance, DEFAULT_RATES, suggestedAllowance, type Rates } from '../lib/badDebts'
-import { lastRates, openForeign } from '../lib/fx'
+import { lastRates, toRevalue } from '../lib/fx'
 import { closePlan } from '../lib/closePrep'
 import { dueNow } from '../lib/recurring'
 import { monthEnd } from '../lib/engine'
@@ -244,14 +244,13 @@ export function MonthEndTodo({ month }: { month: string }) {
     aside > 0 && { key: 'late', text: tr('Customers are late: set aside {amount} in case some never pay', { amount: money(aside, cur) }), button: tr('Set it aside'), run: () => act('debt.allowance', { date: end, amount: need, note: 'Month-end' }, tr('Set aside'), 'Allowance for doubtful debts') },
   ].filter(Boolean) as { key: string; text: string; button: string; run: () => unknown }[]
   // amounts still owed in another currency: restated at the month's closing rates
-  const foreign = (ws.books?.revaluations ?? []).some((r) => r.month >= month) ? [] : openForeign(ws, schema, end)
-  const codes = [...new Set(foreign.map((r) => String(r.values.currency)))]
+  const { count, codes } = toRevalue(ws, schema, month)
   if (!items.length && !codes.length) return null
   return (
     <div className="note stack" style={{ gap: 8 }}>
       <b>{tr('Before closing')}</b>
       {items.map((i) => <div key={i.key} className="row between" style={{ gap: 10, flexWrap: 'wrap' }}><span className="small">{i.text}</span><button className="small" onClick={i.run}><CheckCircle2 size={13} /> {i.button}</button></div>)}
-      {codes.length > 0 && <Revalue month={month} codes={codes} count={foreign.length} />}
+      {codes.length > 0 && <Revalue month={month} codes={codes} count={count} />}
     </div>
   )
 }
@@ -262,7 +261,7 @@ function Revalue({ month, codes, count }: { month: string; codes: string[]; coun
   const ready = codes.every((c) => Number(rates[c]) > 0)
   return (
     <div className="row between" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
-      <span className="small">{tr('{n} invoices or bills are still owed in another currency: restate them at the closing rate', { n: count })}</span>
+      <span className="small">{tr('{n} amounts are owed, credited or held in another currency: restate them at the closing rate', { n: count })}</span>
       <span className="row" style={{ gap: 6 }}>
         {codes.map((c) => <label key={c} className="row tiny" style={{ gap: 4 }}>1 {c} =<input aria-label={c} inputMode="decimal" value={rates[c] ?? ''} onChange={(e) => setRates({ ...rates, [c]: e.target.value })} style={{ width: 80 }} /></label>)}
         <button className="small" disabled={!ready} onClick={() => act('fx.revalue', { month, rates: Object.fromEntries(codes.map((c) => [c, Number(rates[c])])) }, tr('Revalued at the closing rates'), `Revaluation ${month}`)}><CheckCircle2 size={13} /> {tr('Restate')}</button>
@@ -279,8 +278,7 @@ export function ClosePlan({ month }: { month: string }) {
   const { ws, schema, act } = useApp()
   const plan = closePlan(ws, schema, month, todayISO())
   const steps = plan.steps.filter((s) => !s.id.startsWith('check-'))
-  const foreign = (ws.books?.revaluations ?? []).some((r) => r.month >= month) ? [] : openForeign(ws, schema, monthEnd(month))
-  const codes = [...new Set(foreign.map((r) => String(r.values.currency)))]
+  const { count: fxCount, codes } = toRevalue(ws, schema, month)
   if (!steps.some((s) => s.kind !== 'done')) return null
   const prepare = () => {
     const out = act<{ done: string[]; failed: { step: string; error: string }[] }>('close.prepare', { month }, undefined, `Month-end ${month} prepared`)
@@ -301,7 +299,7 @@ export function ClosePlan({ month }: { month: string }) {
           {s.kind === 'you' && s.link && <Link className="small" to={s.link}>{tr('Open')}</Link>}
         </div>
       ))}
-      {steps.some((s) => s.id === 'fx' && s.kind === 'you') && codes.length > 0 && <Revalue month={month} codes={codes} count={foreign.length} />}
+      {steps.some((s) => s.id === 'fx' && s.kind === 'you') && codes.length > 0 && <Revalue month={month} codes={codes} count={fxCount} />}
       <span className="tiny muted">{tr('Each prepared entry can still be seen in the journal, and undone where the app allows it, until the month is closed.')}</span>
     </div>
   )

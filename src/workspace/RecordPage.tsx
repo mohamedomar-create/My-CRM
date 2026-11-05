@@ -30,7 +30,7 @@ import { moduleById, moduleByRole, uid } from '../lib/schema'
 import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
 import { codeForRate, lineTaxCode, TAX_CODES, WHT_RATES } from '../lib/tax'
-import { moneyAccounts, accountLabel } from '../lib/accounts'
+import { allMoneyAccounts, moneyAccounts, accountLabel } from '../lib/accounts'
 import { dateLocale, getLang, msg, N_, tr } from '../lib/i18n'
 import { Bi } from './printing'
 import { usePrintBoth } from './usePrintBoth'
@@ -349,7 +349,7 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
         </div>
       </div>
       {paying && rec && (isCredit
-        ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method) => { if (act('doc.refund', { id: rec.id, amount, date, method }, tr('Refund registered'))) setPaying(false) }} />
+        ? <PaymentModal rec={rec} currency={schema.company.currency} refund onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.refund', { id: rec.id, amount, date, method, ...(extra.account ? { account: extra.account } : {}), ...(extra.rate ? { rate: extra.rate } : {}) }, tr('Refund registered'))) setPaying(false) }} />
         : <PaymentModal rec={rec} currency={String(rec.values.currency ?? '') || schema.company.currency} onClose={() => setPaying(false)} onPay={(amount, date, method, extra) => { if (act('doc.pay', { id: rec.id, amount, date, method, ...extra }, tr('Payment registered'))) setPaying(false) }} />)}
       {advancing && rec && <AdvanceModal party={rec} onClose={() => setAdvancing(false)} />}
       {crediting && rec && <CreditNoteModal rec={rec} mod={mod} onClose={() => setCrediting(false)} onDone={(id) => { setCrediting(false); nav(`/app/r/${id}`) }} />}
@@ -603,7 +603,8 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
   const base = round2(total ? (amount * Number(rec.values.subtotal ?? total)) / total : amount)
   const withheld = round2((base * wht) / 100)
   const kind = method === 'cash' ? 'cash' : 'bank'
-  const accounts = moneyAccounts(ws, kind)
+  // a document in another currency can also go through an account kept in that currency (USD into the USD account)
+  const accounts = [...moneyAccounts(ws, kind), ...allMoneyAccounts(ws, kind).filter((a) => a.currency && a.currency === rec.values.currency)]
   const [account, setAccount] = useState('')
   const chosen = accounts.some((a) => a.code === account) ? account : accounts[0]?.code
   const [chequeNo, setChequeNo] = useState('')
@@ -618,10 +619,10 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
       <Modal onClose={onClose}>
         <div className="card stack">
           <h2><Banknote size={18} /> {tr(refund ? 'Refund on {doc}' : 'Register payment for {doc}', { doc: rec.number ?? '' })}</h2>
-          <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), currency)}</b></p>
+          <p className="muted small" style={{ margin: 0 }}>{refund ? tr('Credit left') : tr('Balance due')}: <b>{money(Math.abs(Number(rec.values.balance)), foreign ? String(rec.values.currency) : currency)}</b></p>
           <label className="field">{tr('Amount')}<input type="number" step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></label>
           <label className="field">{tr('Date')}<input type="date" max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          {foreign && !refund && <label className="field">{tr('Exchange rate today: 1 {a} =', { a: String(rec.values.currency) })}<input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><span className="tiny muted">{tr('{a} in {b}; a difference to the invoice’s rate is an exchange gain or loss', { a: money(round2(amount * (Number(rate) || 0)), ws.published?.company.currency ?? 'EGP'), b: ws.published?.company.currency ?? 'EGP' })}</span></label>}
+          {foreign && <label className="field">{tr('Exchange rate today: 1 {a} =', { a: String(rec.values.currency) })}<input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><span className="tiny muted">{tr('{a} in {b}; a difference to the invoice’s rate is an exchange gain or loss', { a: money(round2(amount * (Number(rate) || 0)), ws.published?.company.currency ?? 'EGP'), b: ws.published?.company.currency ?? 'EGP' })}</span></label>}
           <div className="seg">{(refund || foreign ? ['bank', 'cash', 'instapay', 'card'] as const : ['bank', 'cash', 'instapay', 'cheque', 'card'] as const).map((m) => <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{methodLabel(m)}</button>)}</div>
           {method === 'cheque' ? (
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -629,8 +630,8 @@ function PaymentModal({ rec, currency, refund, onClose, onPay }: { rec: Rec; cur
               <label className="field" style={{ width: 150 }}>{tr('Bank')}<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder={tr('e.g. NBE')} /></label>
               <label className="field" style={{ width: 160 }}>{tr('Cheque date')}<input type="date" value={chequeDue} onChange={(e) => setChequeDue(e.target.value)} /></label>
             </div>
-          ) : !refund && accounts.length > 1 && (
-            <label className="field">{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}</option>)}</select></label>
+          ) : accounts.length > 1 && (
+            <label className="field">{kind === 'cash' ? tr('Cash box') : tr('Bank account')}<select value={chosen} onChange={(e) => setAccount(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}{a.currency ? ` (${a.currency})` : ''}</option>)}</select></label>
           )}
           {!refund && (
             <label className="field">{sales ? tr('Withholding tax the customer deducted') : tr('Withholding tax to keep back')}

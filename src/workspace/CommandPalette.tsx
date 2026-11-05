@@ -30,7 +30,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       { id: 'p-home', group: tr('Go to'), label: tr('Home'), go: go('/app') },
       { id: 'p-dash', group: tr('Go to'), label: tr('Dashboard'), go: go('/app/dashboard') },
       ...schema.modules.filter((m) => view(m.id)).map((m) => ({ id: `p-${m.id}`, group: tr('Go to'), label: m.name, icon: <Icon name={m.icon} size={15} style={{ color: m.color }} />, go: go(`/app/m/${m.id}`) })),
-      ...(finance && hasErp(schema) ? [{ id: 'p-acc', group: tr('Go to'), label: tr('Accounting'), go: go('/app/accounting') }, { id: 'p-plan', group: tr('Go to'), label: tr('Business plan'), go: go('/app/plan') }] : []),
+      ...(finance && hasErp(schema) ? [{ id: 'p-acc', group: tr('Go to'), label: tr('Accounting'), go: go('/app/accounting') }, { id: 'p-plan', group: tr('Go to'), label: tr('Business plan'), go: go('/app/plan') }, { id: 'p-setup', group: tr('Go to'), label: tr('Setup session'), go: go('/app/setup-session') }] : []),
       ...(role?.admin ? [{ id: 'p-team', group: tr('Go to'), label: tr('Team'), go: go('/app/team') }, { id: 'p-builder', group: tr('Go to'), label: tr('Customise system'), go: go('/builder') }] : []),
     ]
     const create: Item[] = schema.modules.filter((m) => can({ schema, user }, m.id, 'create')).map((m) => ({ id: `n-${m.id}`, group: tr('Create'), label: tr('New {what}', { what: m.singular.toLowerCase() }), icon: <Plus size={15} />, go: go(`/app/new/${m.id}`) }))

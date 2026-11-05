@@ -53,7 +53,7 @@ export default function Access() {
     setSel(id)
   }
   function save() {
-    if (act('access.saveRole', { id: role.id, name: role.name, access: role.access, finance: Boolean(role.finance), costs: Boolean(role.costs), pos: Boolean(role.pos) }, tr('Access rights saved: they apply now to everyone with this role'), `Access rights of ${role.name}`) !== undefined) setDraft(null)
+    if (act('access.saveRole', { id: role.id, name: role.name, access: role.access, finance: Boolean(role.finance), costs: Boolean(role.costs), pos: Boolean(role.pos), payroll: Boolean(role.payroll) }, tr('Access rights saved: they apply now to everyone with this role'), `Access rights of ${role.name}`) !== undefined) setDraft(null)
   }
   function remove() {
     if (!confirm(tr('Remove the role “{name}”?', { name: role.name }))) return
@@ -136,6 +136,10 @@ export default function Access() {
                 <label className="access-switch">
                   <input type="checkbox" checked={Boolean(role.pos || role.finance)} disabled={role.finance} onChange={(e) => edit((r) => { r.pos = e.target.checked || undefined })} />
                   <span><b>{tr('Sell at the counter')}</b><span className="small muted">{tr('Open the point of sale, sell, take returns and count the drawer, without the rest of finance.')}</span></span>
+                </label>
+                <label className="access-switch">
+                  <input type="checkbox" checked={Boolean(role.payroll)} onChange={(e) => edit((r) => { r.payroll = e.target.checked || undefined })} />
+                  <span><b>{tr('Payroll')}</b><span className="small muted">{tr('See salaries and bank details, prepare and approve the payroll, make the bank file. Nobody else sees them.')}</span></span>
                 </label>
               </div>
               {groups.map((g) => (

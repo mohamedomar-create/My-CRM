@@ -7,6 +7,7 @@ import type { Rec, Workspace } from './types'
 import type { AppSchema } from './schema'
 import { moduleByRole, uid } from './schema'
 import {
+  flip,
   can, EngineError, findRecord, ISO_DATE, journal, list, log, logLedger, money, needFinance, nextNumber, noRealPostingOverSamples, nowISO, onHand, onHandAt,
   productRec, putIntoStock, round2, round4, setValuation, stockValue, tag, takeFromStock, todayISO, warehouseFor, type Ctx,
 } from './engine'
@@ -175,7 +176,7 @@ export function cancelProduction(ctx: Ctx, id: string) {
     if (p) setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) - (mv.value ?? 0)))
   }
   const je = ctx.ws.data.journal.find((j) => j.ref === mo.number)
-  if (je) journal(ctx, { date, ref: `UNDO ${mo.number}`, memo: `Production ${mo.number} taken back`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+  if (je) journal(ctx, { date, ref: `UNDO ${mo.number}`, memo: `Production ${mo.number} taken back`, lines: je.lines.map(flip) })
   mo.status = 'cancelled'
   mo.undone = { at: nowISO(), by: ctx.user.name, date }
   log(ctx, `took back production ${mo.number}`, findRecord(ctx.ws, mo.product))

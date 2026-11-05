@@ -5,7 +5,7 @@ import type { AppSchema, Filter } from './schema'
 import { moduleByRole } from './schema'
 import type { User, Workspace } from './types'
 import { can, canApprove, canPost, list, matches, reconciliationState, rotting } from './engine'
-import { moneyAccounts, moneyKind } from './accounts'
+import { allMoneyAccounts, moneyKind } from './accounts'
 import { N_ } from './i18n'
 
 export type HomeKind = 'owner' | 'finance' | 'sales' | 'warehouse' | 'team'
@@ -75,7 +75,7 @@ export function todayStrip(ws: Workspace, schema: AppSchema, user: User, today: 
       push({ id: 'bills-soon', label: N_('Bills due within 7 days: {n}'), n: count(bills.id, soon), tone: 'amber', module: bills.id, filters: soon })
     }
     // Bank movements not yet agreed with a statement.
-    const unreconciled = moneyAccounts(ws).filter((a) => moneyKind(a) === 'bank').reduce((s, a) => s + reconciliationState(ws, a.code).uncleared.length, 0)
+    const unreconciled = allMoneyAccounts(ws).filter((a) => moneyKind(a) === 'bank').reduce((s, a) => s + reconciliationState(ws, a.code).uncleared.length, 0)
     push({ id: 'bank', label: N_('Bank movements to reconcile: {n}'), n: unreconciled, tone: 'blue', path: '/app/accounting' })
   }
 

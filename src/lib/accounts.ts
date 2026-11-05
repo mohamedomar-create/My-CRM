@@ -20,6 +20,8 @@ export interface Account {
   /** a contra account: it reduces the accounts of its type, so its balance sits on the other side (accumulated
    * depreciation and the allowance for doubtful debts against assets, sales returns against revenue) */
   contra?: boolean
+  /** a cash box or bank account kept in another currency (USD, EUR …): every entry on it states that amount too */
+  currency?: string
 }
 
 const sys = (code: string, name: string, nameAr: string, type: AccountType, control = false, contra = false): Account => ({ code, name, nameAr, type, system: true, control, active: true, ...(contra ? { contra } : {}) })
@@ -46,6 +48,9 @@ export const DEFAULT_CHART: Account[] = [
   sys('2200', 'VAT output (payable)', 'ضريبة القيمة المضافة على المبيعات', 'liability'),
   sys('2210', 'VAT due to the Tax Authority', 'ضريبة القيمة المضافة المستحقة لمصلحة الضرائب', 'liability'),
   own('2250', 'Accrued expenses', 'مصروفات مستحقة', 'liability'),
+  sys('2260', 'Salaries payable', 'رواتب مستحقة', 'liability'),
+  sys('2270', 'Social insurance payable', 'تأمينات اجتماعية مستحقة', 'liability'),
+  sys('2280', 'Salary tax payable', 'ضريبة كسب العمل المستحقة', 'liability'),
   own('2300', 'Loans', 'القروض', 'liability'),
   sys('2350', 'Income received in advance', 'إيرادات مقبوضة مقدمًا', 'liability'),
   sys('2400', 'Withholding tax payable', 'ضرائب الخصم والإضافة المستحقة', 'liability'),
@@ -62,6 +67,7 @@ export const DEFAULT_CHART: Account[] = [
   own('5200', 'Rent', 'الإيجار', 'expense'),
   own('5300', 'Salaries & wages', 'الرواتب والأجور', 'expense'),
   sys('5310', 'Production labour and overhead absorbed', 'تكاليف إنتاج محمّلة على المنتجات', 'expense', false, true),
+  sys('5330', 'Social insurance (company share)', 'التأمينات الاجتماعية (حصة الشركة)', 'expense'),
   own('5400', 'Utilities', 'المرافق', 'expense'),
   own('5500', 'Bank charges', 'مصروفات بنكية', 'expense'),
   sys('5510', 'Cash over and short', 'عجز وزيادة النقدية', 'expense'),
@@ -75,8 +81,13 @@ export function moneyKind(a: Account): 'cash' | 'bank' | undefined {
   return a.money ?? (a.code === '1100' ? 'cash' : a.code === '1110' ? 'bank' : undefined)
 }
 
-/** The active cash boxes and bank accounts. */
+/** The active cash boxes and bank accounts in the company's currency (what every screen offers by default). */
 export function moneyAccounts(ws: Pick<Workspace, 'chart'>, kind?: 'cash' | 'bank') {
+  return allMoneyAccounts(ws, kind).filter((a) => !a.currency)
+}
+
+/** Every active cash box and bank account, those in another currency included (totals, transfers, payments in that currency). */
+export function allMoneyAccounts(ws: Pick<Workspace, 'chart'>, kind?: 'cash' | 'bank') {
   return chartOf(ws).filter((a) => a.active && a.type === 'asset' && moneyKind(a) && (!kind || moneyKind(a) === kind))
 }
 

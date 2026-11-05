@@ -80,6 +80,7 @@ async function route(deps: ApiDeps, req: ApiRequest): Promise<ApiReply> {
     let rows = list(ws, mod.id).filter((r) => !r.sample)
     if (q.updated_since) rows = rows.filter((r) => r.updatedAt >= String(q.updated_since))
     if (q.status) rows = rows.filter((r) => r.status === q.status)
+    if (q.external_id) rows = rows.filter((r) => r.legacy?.id === String(q.external_id))
     if (q.q) { const w = String(q.q).toLowerCase(); rows = rows.filter((r) => JSON.stringify(r.values).toLowerCase().includes(w) || (r.number ?? '').toLowerCase().includes(w)) }
     // oldest change first, so a system catching up can page with "after"
     rows = [...rows].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id))
@@ -93,7 +94,10 @@ async function route(deps: ApiDeps, req: ApiRequest): Promise<ApiReply> {
     return ok(publicRecord(schema, r, { costs }))
   }
 
-  const body = (req.body ?? {}) as { values?: Record<string, unknown>; lines?: unknown[]; post?: boolean; amount?: number; date?: string; method?: string; account?: string; warehouse?: string }
+  const body = (req.body ?? {}) as { values?: Record<string, unknown>; lines?: unknown[]; post?: boolean; amount?: number; date?: string; method?: string; account?: string; warehouse?: string; external_id?: unknown }
+  // another system's id (a shop's order or payment number): sending the same one again returns what was already made
+  const external = body.external_id === undefined || body.external_id === null ? '' : String(body.external_id).trim()
+  if (external.length > 120) throw new HttpError(400, 'external_id is at most 120 characters')
   const lines = Array.isArray(body.lines) ? body.lines.map((l, i) => ({ id: `l_api${Date.now().toString(36)}${i}`, discount: 0, vat: schema.company.vatRate ?? 14, ...(l as object) })) : undefined
   const done = async (commands: { name: string; args: unknown; label?: string }[], pick: (doc: Workspace, results: CommandResult[]) => string | undefined, status = 200) => {
     const out = await deps.run(key, commands)
@@ -106,8 +110,14 @@ async function route(deps: ApiDeps, req: ApiRequest): Promise<ApiReply> {
 
   if (method === 'POST' && !id) {
     if (!body.values || typeof body.values !== 'object') throw new HttpError(400, 'Send the record as { "values": { … } }')
-    const out = await deps.run(key, [{ name: 'record.create', args: { module: mod.id, values: body.values, ...(lines ? { lines } : {}) }, label: `new ${mod.singular}` }])
+    const known = (doc: Workspace) => (external ? list(doc, mod.id).find((r) => r.legacy?.id === external) : undefined)
+    const was = known(ws)
+    if (was) return ok({ ...publicRecord(schema, was, { costs }), replayed: true }, 200)
+    const out = await deps.run(key, [{ name: 'record.create', args: { module: mod.id, values: body.values, ...(lines ? { lines } : {}), ...(external ? { externalId: external } : {}) }, label: `new ${mod.singular}` }])
     const first = out.results[0]
+    // two calls with the same external_id at once: the second finds the first's record
+    const twin = !first?.ok && external ? known(await deps.view(key.workspace, key.email)) : undefined
+    if (twin) return ok({ ...publicRecord(schema, twin, { costs }), replayed: true }, 200)
     if (!first?.ok) throw new HttpError(422, first?.error ?? 'Refused')
     const newId = (first.result as { id: string }).id
     // a document can be posted in the same call
@@ -125,7 +135,10 @@ async function route(deps: ApiDeps, req: ApiRequest): Promise<ApiReply> {
     if (!(amount > 0)) throw new HttpError(400, 'Send the amount paid: { "amount": 1140, "method": "bank" }')
     const methodPaid = String(body.method ?? 'bank')
     if (!['cash', 'bank', 'instapay', 'card'].includes(methodPaid)) throw new HttpError(400, 'The method is cash, bank, instapay or card')
-    return done([{ name: 'doc.pay', args: { id, amount, date: body.date ?? todayISO(), method: methodPaid, ...(body.account ? { account: body.account } : {}) }, label: 'payment' }], () => id)
+    // the same payment sent again (its external_id already recorded) changes nothing and returns the document
+    const fresh = external && ws.data.payments.some((p) => p.external === external && !p.reverses && !ws.data.payments.some((x) => x.reverses === p.id))
+    if (fresh) { const r = findRecord(ws, id); if (r) return ok({ ...publicRecord(schema, r, { costs }), replayed: true }, 200) }
+    return done([{ name: 'doc.pay', args: { id, amount, date: body.date ?? todayISO(), method: methodPaid, ...(body.account ? { account: body.account } : {}), ...(external ? { external } : {}) }, label: 'payment' }], () => id)
   }
   if (method === 'DELETE' && id && !sub) {
     if (!findRecord(ws, id)) throw new HttpError(404, 'Not found')

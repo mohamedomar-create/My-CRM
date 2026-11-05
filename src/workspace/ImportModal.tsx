@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, RotateCcw, Upload, X } from 'lucide-react'
 import { useApp } from './useApp'
-import { FORMER, STAGE_AT, importKey, importStatus, parentsFirst, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
+import { FORMER, STAGE_AT, importKey, importStatus, importTotals, parentsFirst, previewImport, recordTitle, findRecord, type ImportOptions, type ImportResult } from '../lib/engine'
 import type { AppSchema, FieldDef, ModuleDef } from '../lib/schema'
 import { uid } from '../lib/schema'
 import { flush } from '../lib/store'
@@ -70,6 +70,9 @@ const listField = (f?: FieldDef) => f && ['select', 'multiselect', 'user'].inclu
 
 type Choice = { value: string; label: string; also: string[] }
 
+/** A file exported from Nasq360 carries each record's id: it updates exactly those records; else the old system's id. */
+const defaultMatch = (m: Record<string, string>) => (Object.values(m).includes('__id') ? '__id' : Object.values(m).includes('__legacy_id') ? '__legacy_id' : '')
+
 export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose: () => void; preset?: { fileName: string; sheet: Sheet } }) {
   const { ws, user, act } = useApp()
   // The saved schema (English names), which the server imports with; mod is the one shown, in the chosen language.
@@ -112,13 +115,15 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
   const [sheet, setSheet] = useState(0)
   const [problem, setProblem] = useState('')
   const [mapping, setMapping] = useState<Record<string, string>>(initial)
-  const [match, setMatch] = useState(Object.values(initial).includes('__legacy_id') ? '__legacy_id' : '')
+  const [match, setMatch] = useState(defaultMatch(initial))
   const [onlyUpdate, setOnlyUpdate] = useState(false)
   const [manual, setManual] = useState<Record<string, Record<string, string>>>({})
   const [preview, setPreview] = useState<ImportResult | null>(null)
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
-  const [result, setResult] = useState<(Pick<ImportResult, 'created' | 'updated' | 'skipped' | 'errors'> & { batch: string; stopped: boolean }) | null>(null)
+  const [result, setResult] = useState<(Pick<ImportResult, 'created' | 'updated' | 'skipped' | 'errors'> & { batch: string; stopped: boolean; undone?: boolean; totals?: Record<string, number> }) | null>(null)
+  // All or nothing (the default): a file with any row in doubt isn't imported at all, so nothing half-arrives.
+  const [strict, setStrict] = useState(true)
 
   // The chosen sheet as a header and rows of named cells (duplicate or empty headers made unique).
   const table = useMemo(() => sheets[sheet]?.rows ?? [], [sheets, sheet])
@@ -136,7 +141,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
   function autoMap(h: string[]) {
     const m = mapFor(h)
     setMapping(m)
-    setMatch(Object.values(m).includes('__legacy_id') ? '__legacy_id' : '')
+    setMatch(defaultMatch(m))
   }
 
   async function load(file: File) {
@@ -213,6 +218,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
 
   // Columns that can find a record already here: the old system id, or a field the file fills.
   const matchable = [
+    ...(Object.values(mapping).includes('__id') ? [{ key: '__id', label: tr('Nasq360 id') }] : []),
     ...(Object.values(mapping).includes('__legacy_id') ? [{ key: '__legacy_id', label: tr('Old system id') }] : []),
     ...fields.filter((f) => ['text', 'email', 'phone', 'number'].includes(f.type) && Object.values(mapping).includes(f.key)).map((f) => ({ key: f.key, label: shown(f) })),
   ]
@@ -229,6 +235,17 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
       }
       setChecking(false)
     }, 20)
+  }
+
+  /** Control totals of the file: each number column added up, to be tied to what is saved. */
+  function fileTotals() {
+    const out: Record<string, number> = {}
+    for (const [col, key] of Object.entries(mapping)) {
+      const f = fields.find((x) => x.key === key)
+      if (!f || (f.type !== 'number' && f.type !== 'currency')) continue
+      out[key] = objects.reduce((t, o) => { const n = Number(String(o[col] ?? '').replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[,\s]/g, '')); return t + (Number.isFinite(n) ? n : 0) }, 0)
+    }
+    return out
   }
 
   async function send() {
@@ -248,11 +265,18 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
       sum.updated += res.updated
       sum.skipped += res.skipped
       sum.errors.push(...res.errors)
+      // all or nothing: a row refused on the way (the data changed since the check) takes back what was saved
+      if (strict && res.errors.length) {
+        if (sum.created + sum.updated > 0) act('import.undo', { batch: batch.id })
+        setResult({ ...sum, stopped: true, undone: true })
+        setProgress(null)
+        return
+      }
       // Each part is saved before the next one is sent, so a big file never becomes one huge change.
       await flush()
       setProgress({ done: p + 1, total })
     }
-    setResult(sum)
+    setResult({ ...sum, ...(sum.errors.length === 0 && !sum.stopped ? { totals: fileTotals() } : {}) })
     setProgress(null)
   }
 
@@ -425,7 +449,8 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 <button className="secondary" onClick={() => { setSheets([]); setPreview(null) }}>{tr('Choose another file')}</button>
                 <button className="secondary" onClick={check} disabled={checking}>{checking ? tr('Checking…') : tr('Check the rows')}</button>
-                <button className="glow" onClick={send} disabled={!preview || preview.created + preview.updated === 0}><Upload size={16} /> {preview ? tr('Import {n} rows', { n: preview.created + preview.updated }) : tr('Check the rows first')}</button>
+                <label className="row small" style={{ gap: 6, flexBasis: '100%' }}><input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} /> {tr('Import only if every row is right (recommended): nothing is saved while any row has a problem')}</label>
+                <button className="glow" onClick={send} disabled={!preview || preview.created + preview.updated === 0 || (strict && preview.errors.length > 0)}><Upload size={16} /> {preview ? tr('Import {n} rows', { n: preview.created + preview.updated }) : tr('Check the rows first')}</button>
               </div>
             </>
           )}
@@ -439,8 +464,25 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
 
           {step === 'done' && result && (
             <>
-              <div className="ok-box row"><CheckCircle2 size={18} /> {tr('{a} added and {b} updated.', { a: result.created, b: result.updated })}</div>
-              {result.stopped && <div className="error-box">{tr('The import stopped before the end. The parts already saved are kept; you can undo them below.')}</div>}
+              {result.undone
+                ? <div className="error-box">{tr('A row was refused while saving, so nothing was imported (the parts already saved were taken back). Fix the rows below and import again.')}</div>
+                : <div className="ok-box row"><CheckCircle2 size={18} /> {tr('{a} added and {b} updated.', { a: result.created, b: result.updated })}</div>}
+              {result.totals && Object.keys(result.totals).length > 0 && (
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead><tr><th>{tr('Control totals')}</th><th className="num">{tr('In the file')}</th><th className="num">{tr('Saved')}</th><th /></tr></thead>
+                    <tbody>
+                      {importTotals(ws, mod.id, result.batch, result.totals).map((t) => (
+                        <tr key={t.key} style={{ cursor: 'default' }}>
+                          <td>{shown(fields.find((f) => f.key === t.key)!)}</td><td className="num">{t.file.toLocaleString()}</td><td className="num">{t.saved.toLocaleString()}</td>
+                          <td>{t.agrees ? <span className="pill green tiny">{tr('agrees')}</span> : <span className="pill red tiny">{tr('differs')}</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {result.stopped && !result.undone && <div className="error-box">{tr('The import stopped before the end. The parts already saved are kept; you can undo them below.')}</div>}
               {result.errors.length > 0 && errorList(result.errors)}
               <div className="row">
                 <button onClick={onClose}>{tr('Done')}</button>

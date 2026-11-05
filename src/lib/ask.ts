@@ -5,7 +5,7 @@
 // can be sent to the AI with the company's figures (not its records), when the AI is set up.
 import type { Workspace } from './types'
 import { moduleByRole, type AppSchema } from './schema'
-import { account as findAccount, moneyAccounts } from './accounts'
+import { account as findAccount, allMoneyAccounts } from './accounts'
 import { accountBalance, ageing, baseBalance, list, round2, todayISO } from './engine'
 import { incomeStatement } from './statements'
 import { reorderPlan } from './scan'
@@ -116,7 +116,7 @@ export function answer(ws: Workspace, schema: AppSchema, question: string, today
       return { intent, money: true, lines: [{ key: 'We owe suppliers {a}, of which {b} is past due.', values: { a: total, b: late } }], rows: rows.slice(0, 10).map((r) => ({ label: r.name, value: r.total, link: `/app/r/${r.party}` })) }
     }
     case 'cash': {
-      const accts = moneyAccounts(ws).map((a) => ({ label: a.name, value: accountBalance(ws, a.code) })).filter((r) => r.value !== 0)
+      const accts = allMoneyAccounts(ws).map((a) => ({ label: a.name, value: accountBalance(ws, a.code) })).filter((r) => r.value !== 0)
       const total = round2(accts.reduce((s, r) => s + r.value, 0))
       const f = cashForecast(ws, schema, today)
       return { intent, money: true, lines: [{ key: 'Cash and bank: {a}.', values: { a: total } }, { key: f.lowest.end < 0 ? 'It runs short in the week of {d} ({e}).' : 'The lowest point in the next 13 weeks: {e} (week of {d}).', values: { d: f.lowest.from, e: f.lowest.end } }], rows: accts }

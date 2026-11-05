@@ -8,6 +8,7 @@
 import type { Line, Rec, Workspace } from './types'
 import { moduleById, uid } from './schema'
 import {
+  flip,
   can, checkLinesPublic, createRecord, EngineError, findRecord, ISO_DATE, journal, lineNet, linkRecords, log, needFinance, nextNumber,
   noRealPostingOverSamples, nowISO, unitLines, productRec, putIntoStock, warehouseFor, round2, round4, setValuation, stockValue, tag, todayISO, type Ctx,
 } from './engine'
@@ -147,7 +148,7 @@ export function undoReceipt(ctx: Ctx, id: string) {
     if (p) setValuation(ctx.ws, p, round2(stockValue(ctx.ws, p) - (mv.value ?? 0)))
   }
   const je = ctx.ws.data.journal.find((j) => j.ref === r.number)
-  if (je) journal(ctx, { date, ref: `UNDO ${r.number}`, memo: `Goods received ${r.number} taken back`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, r)
+  if (je) journal(ctx, { date, ref: `UNDO ${r.number}`, memo: `Goods received ${r.number} taken back`, lines: je.lines.map(flip) }, r)
   r.undone = { at: nowISO(), by: ctx.user.name, date }
   log(ctx, `took back goods received ${r.number}`, findRecord(ctx.ws, r.order))
 }

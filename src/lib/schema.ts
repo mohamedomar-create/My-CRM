@@ -188,6 +188,8 @@ export interface RoleDef {
   costs?: boolean
   /** can sell at the counter (point of sale), without other finance rights */
   pos?: boolean
+  /** can see and run payroll (salaries and bank details), without other finance rights */
+  payroll?: boolean
 }
 
 export interface CompanyProfile {

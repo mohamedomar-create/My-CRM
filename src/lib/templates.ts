@@ -250,28 +250,7 @@ const ALL: Template[] = [
       core.contacts(),
       core.leads(),
       core.deals('Proposals', 'Proposal', [f('Service line', 'select', { key: 'service_line', options: opts('Strategy', 'Design', 'Development', 'Marketing', 'Support'), inList: true }), f('Retainer', 'checkbox')]),
-      {
-        role: 'custom', id: 'm_projects', name: 'Projects', singular: 'Project', icon: 'FolderKanban', color: '#6366f1',
-        extra: [
-          rel('Client', MODULE_IDS.accounts, { key: 'account', required: true }),
-          f('Start', 'date', { inList: true }),
-          f('Deadline', 'date', { inList: true }),
-          f('Budget hours', 'number', { key: 'budget_hours' }),
-          f('Status', 'select', { options: opts('Planned', 'Active', 'On hold', 'Delivered'), inList: true }),
-          f('Lead', 'user', { inList: true }),
-        ],
-      },
-      {
-        role: 'custom', id: 'm_time', name: 'Timesheets', singular: 'Time entry', icon: 'Timer', color: '#0ea5e9',
-        extra: [
-          rel('Project', 'm_projects', { key: 'project', required: true }),
-          f('Date', 'date', { required: true, inList: true }),
-          f('Hours', 'number', { required: true, inList: true }),
-          f('Hourly rate', 'currency', { key: 'rate' }),
-          f('Value', 'formula', { formula: 'hours * rate', inList: true }),
-          f('Team member', 'user', { key: 'member', inList: true }),
-        ],
-      },
+      // projects and timesheets are a built-in part (Projects & time): each project its own cost center, hours billed in one click
       core.products('Services', 'Service'),
       core.quotes(),
       core.invoices(),

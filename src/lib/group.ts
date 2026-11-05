@@ -9,7 +9,7 @@ import type { Workspace } from './types'
 import { moduleByRole } from './schema'
 import { accountBalance, baseBalance, docRate, findRecord, lineNet, list, round2, round4, todayISO } from './engine'
 import { balanceSheet, incomeStatement, type Section } from './statements'
-import { moneyAccounts } from './accounts'
+import { allMoneyAccounts } from './accounts'
 
 export interface GroupCompany { id: string; name: string; ws: Workspace }
 
@@ -18,7 +18,7 @@ const digits = (t: unknown) => String(t ?? '').replace(/\D/g, '')
 /** Each company's figures for the period. */
 export function companyFigures(c: GroupCompany, from: string, to: string) {
   const is = incomeStatement(c.ws, from, to)
-  const cash = round2(moneyAccounts(c.ws).reduce((s, a) => s + accountBalance(c.ws, a.code), 0))
+  const cash = round2(allMoneyAccounts(c.ws).reduce((s, a) => s + accountBalance(c.ws, a.code), 0))
   return { id: c.id, name: c.name, currency: c.ws.published?.company.currency ?? 'EGP', revenue: is.revenue.total, gross: is.gross, net: is.net, cash, owedToUs: accountBalance(c.ws, '1200'), weOwe: round2(-accountBalance(c.ws, '2100')), stock: accountBalance(c.ws, '1300') }
 }
 

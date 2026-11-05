@@ -42,7 +42,7 @@ export function publicRecord(schema: AppSchema, r: Rec, opts: { costs?: boolean 
   return {
     id: r.id, list: m ? slugOf(m) : r.module,
     ...(r.number ? { number: r.number } : {}), ...(r.status ? { status: r.status } : {}),
-    created_at: r.createdAt, updated_at: r.updatedAt, values,
+    created_at: r.createdAt, updated_at: r.updatedAt, ...(r.legacy?.id ? { external_id: r.legacy.id } : {}), values,
     ...(r.lines ? { lines: r.lines.map((l) => ({ ...(l.product ? { product: l.product } : {}), description: l.description, qty: l.qty, ...(l.unit ? { unit: l.unit } : {}), price: l.price, discount: l.discount, vat: l.vat, net: round2(lineNet(l)) })) } : {}),
   }
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { templateById } from './templates'
 import { emptyAnswers, generateSchema } from './recommend'
 import { emptyData, type User, type Workspace } from './types'
-import { createRecord, importKey, importRows, importStatus, list, normalPhone, previewImport, undoImport, updateRecord, type Ctx } from './engine'
+import { createRecord, importKey, importRows, importStatus, importTotals, list, normalPhone, previewImport, undoImport, updateRecord, type Ctx } from './engine'
 import { applyCommand } from './commands'
 import { handleCommands, type ServerDeps } from './commandServer'
 import { applyChanges } from './split'
@@ -196,5 +196,41 @@ describe('importing a company’s data', () => {
     expect(undo.results[0].ok).toBe(true)
     expect(list(row.doc, accounts)).toHaveLength(0)
     expect(row.doc.data.imports?.[0].undoneAt).toBeTruthy()
+  })
+})
+
+describe('import integrity: exact round trips, no silent merges, control totals', () => {
+  it('an exported list, corrected in Excel, goes back onto exactly the same records by their Nasq360 id', () => {
+    const { ctx, ws, schema } = setup()
+    const products = moduleByRole(schema, 'products')!.id
+    const a = createRecord(ctx, products, { name: 'Rice', sku: 'R1', price: 10 })
+    const b = createRecord(ctx, products, { name: 'Rice', sku: 'R2', price: 12 })
+    // two products of the same name: only the id tells them apart
+    const map = { Title: '', Name: 'name', Price: 'price', 'Nasq360 id': '__id' }
+    const out = importRows(ctx, products, [{ Title: 'Rice', Name: 'Rice', Price: '11', 'Nasq360 id': a.id }, { Title: 'Rice', Name: 'Rice (5 kg)', Price: '1,250.50', 'Nasq360 id': b.id }], map, { match: '__id' })
+    expect(out).toMatchObject({ created: 0, updated: 2, errors: [] })
+    expect([a.values.price, b.values.name, b.values.price]).toEqual([11, 'Rice (5 kg)', 1250.5])
+    expect(list(ws, products)).toHaveLength(2)
+    // control totals: the file's prices against what was saved
+    expect(importTotals(ws, products, out.batch, { price: 11 + 1250.5 })).toEqual([{ key: 'price', file: 1261.5, saved: 1261.5, agrees: true }])
+    expect(importTotals(ws, products, out.batch, { price: 1300 })[0].agrees).toBe(false)
+    // an id that isn't in the list is a mistake in the file, never a new record
+    const bad = importRows(ctx, products, [{ Name: 'Ghost', Price: '1', 'Nasq360 id': 'r_nope' }], map, { match: '__id' })
+    expect(bad).toMatchObject({ created: 0, updated: 0 })
+    expect(bad.errors[0].message).toMatch(/Nasq360 id “r_nope” isn’t in this list/)
+  })
+
+  it('the same key on two rows of one file is refused, not quietly merged — also across the parts of a big file', () => {
+    const { ctx, ws, accounts } = setup()
+    const rows = [{ 'Old id': 'C-1', Name: 'Nile Foods' }, { 'Old id': 'C-2', Name: 'Delta' }, { 'Old id': 'C-1', Name: 'Nile Foods (typo)' }]
+    const out = importRows(ctx, accounts, rows, { 'Old id': '__legacy_id', Name: 'name' }, { match: '__legacy_id' })
+    expect(out).toMatchObject({ created: 2, updated: 0 })
+    expect(out.errors).toEqual([{ row: 4, message: 'The file has “c-1” on more than one row: only its first row is imported', column: undefined }])
+    expect(list(ws, accounts).find((r) => r.legacy?.id === 'C-1')!.values.name).toBe('Nile Foods')
+    // the second part of the same file meets the first part's key
+    const part2 = importRows(ctx, accounts, [{ 'Old id': 'C-2', Name: 'Delta again' }], { 'Old id': '__legacy_id', Name: 'name' }, { match: '__legacy_id', batch: { id: out.batch, file: 'x.csv' }, firstRow: 5 })
+    expect(part2.errors[0]).toMatchObject({ row: 5 })
+    // the preview (all or nothing is decided on it) shows the same problem before anything is saved
+    expect(previewImport(ctx, accounts, rows, { 'Old id': '__legacy_id', Name: 'name' }, { match: '__legacy_id' }).errors).toHaveLength(1)
   })
 })

@@ -93,7 +93,7 @@ export interface PendingJournal {
   id: string
   date: string
   memo: string
-  lines: { account: string; debit: number; credit: number; note?: string; cc?: string }[]
+  lines: { account: string; debit: number; credit: number; note?: string; cc?: string; /** on a cash box or bank account in another currency: that currency's amount (+ in, − out) */ fx?: number }[]
   adjusting?: boolean
   reverseOn?: string
   total: number
@@ -139,7 +139,8 @@ export interface JournalEntry {
   memo: string
   doc?: string
   /** cc: the cost center of an income or expense line (P1) */
-  lines: { account: AccountCode; debit: number; credit: number; note?: string; cc?: string }[]
+  /** fx: on an account kept in another currency, the amount in that currency (+ in, − out) */
+  lines: { account: AccountCode; debit: number; credit: number; note?: string; cc?: string; /** on a cash box or bank account in another currency: that currency's amount (+ in, − out) */ fx?: number }[]
   sample?: boolean
   /** entered by hand (a journal voucher), not by a document */
   manual?: boolean
@@ -176,6 +177,8 @@ export interface Payment {
   cheque?: { id: string; no: string; bank?: string; due: string }
   /** the receipt or payment voucher (RV-/PV-…) when one payment covered several documents */
   voucher?: string
+  /** the other system's id of this payment (a shop or payment gateway): the same one is never recorded twice */
+  external?: string
   /** a document in another currency: the payment's rate, and what it took off the books' carrying amount */
   fx?: { rate: number; relief: number }
 }
@@ -344,6 +347,8 @@ export interface Workspace {
     deferrals?: import('./recurring').Deferral[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
+    /** bank statement lines with these words go to that account (learned when a line is sorted, see bankFeed.ts) */
+    bankRules?: import('./bankFeed').BankRule[]
     /** the balances brought in from the company's old system (Phase H2) */
     opening?: OpeningBooks
   }
@@ -366,6 +371,8 @@ export interface Workspace {
   quoteRevisions?: import('./quoteOnline').QuoteRevision[]
   /** the units each product is also sold or bought in, by product id (a carton = 12 pieces) */
   units?: Record<string, { name: string; nameAr?: string; factor: number }[]>
+  /** payroll's bank account and bank file layouts (no one's pay: that is in the payroll records) */
+  payrollSetup?: import('./payroll').PayrollSetup
   /** WhatsApp is connected (its display number; the token stays on the server): the inbox shows in the menu */
   whatsapp?: { phone: string }
   /** barcodes → the product (and unit) they stand for (see scan.ts) */
@@ -374,6 +381,11 @@ export interface Workspace {
   fxRates?: Record<string, { rate: number; date: string }>
   /** the company's warehouses and delivery vans; none = everything is in the main store */
   warehouses?: Warehouse[]
+  /** projects (each with its own cost center) and the hours logged on them (see projects.ts) */
+  projects?: import('./projects').Project[]
+  timesheets?: import('./projects').TimeEntry[]
+  /** the setup session: each decision agreed, by whom and when (see setupSession.ts) */
+  setupSession?: { agreed: Record<string, import('./setupSession').Agreed> }
   /** goods received notes: goods received against purchase orders (see purchasing.ts) */
   receipts?: import('./purchasing').Receipt[]
   /** delivery notes: goods sent against confirmed sales orders (see orders.ts) */
