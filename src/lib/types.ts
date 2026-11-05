@@ -93,7 +93,7 @@ export interface PendingJournal {
   id: string
   date: string
   memo: string
-  lines: { account: string; debit: number; credit: number; note?: string; cc?: string }[]
+  lines: { account: string; debit: number; credit: number; note?: string; cc?: string; /** on a cash box or bank account in another currency: that currency's amount (+ in, − out) */ fx?: number }[]
   adjusting?: boolean
   reverseOn?: string
   total: number
@@ -139,7 +139,8 @@ export interface JournalEntry {
   memo: string
   doc?: string
   /** cc: the cost center of an income or expense line (P1) */
-  lines: { account: AccountCode; debit: number; credit: number; note?: string; cc?: string }[]
+  /** fx: on an account kept in another currency, the amount in that currency (+ in, − out) */
+  lines: { account: AccountCode; debit: number; credit: number; note?: string; cc?: string; /** on a cash box or bank account in another currency: that currency's amount (+ in, − out) */ fx?: number }[]
   sample?: boolean
   /** entered by hand (a journal voucher), not by a document */
   manual?: boolean
@@ -344,6 +345,8 @@ export interface Workspace {
     deferrals?: import('./recurring').Deferral[]
     /** bank reconciliations: the statement balance on a date, and the journal entries it cleared */
     reconciliations?: { account: string; date: string; balance: number; entries: string[]; at: string; by: string }[]
+    /** bank statement lines with these words go to that account (learned when a line is sorted, see bankFeed.ts) */
+    bankRules?: import('./bankFeed').BankRule[]
     /** the balances brought in from the company's old system (Phase H2) */
     opening?: OpeningBooks
   }

@@ -7,6 +7,7 @@
 import type { Workspace } from './types'
 import { account as findAccount, moneyAccounts, systemAccount } from './accounts'
 import {
+  flip,
   activeCostCenter, ccSides, EngineError, ISO_DATE, journal, logLedger, money, monthEnd, needFinance, nextNumber, noRealPostingOverSamples, nowISO, round2, side, tag, todayISO, type Ctx,
 } from './engine'
 import { uid } from './schema'
@@ -172,7 +173,7 @@ export function undoDepreciation(ctx: Ctx, id: string) {
   const assets = run.lines.map((l) => assetsOf(ctx.ws).find((a) => a.id === l.asset)!)
   if (assets.some((a) => a.disposed)) throw new EngineError('An asset of this run was sold or scrapped since')
   const je = ctx.ws.data.journal.find((j) => j.id === run.entry)!
-  journal(ctx, { date: je.date, ref: `VOID ${run.number}`, memo: `Reversal of ${run.number}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+  journal(ctx, { date: je.date, ref: `VOID ${run.number}`, memo: `Reversal of ${run.number}`, lines: je.lines.map(flip) })
   run.lines.forEach((l, i) => {
     assets[i].accumulated = round2(assets[i].accumulated - l.amount)
     if (l.before) assets[i].through = l.before

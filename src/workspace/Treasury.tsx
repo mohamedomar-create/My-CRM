@@ -4,11 +4,16 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Banknote, CheckCircle2, FileUp, Landmark, Scale } from 'lucide-react'
 import { methodLabel, useApp } from './useApp'
-import { accountBalance, cheques, list, money, reconciliationState, recordTitle, round2, todayISO, type ChequeState } from '../lib/engine'
-import { accountLabel, moneyAccounts, moneyKind } from '../lib/accounts'
-import { matchStatement, parseStatementCsv, type StatementRow } from '../lib/bank'
+import { accountBalance, cheques, fxBalance, list, money, reconciliationState, recordTitle, round2, todayISO, type ChequeState } from '../lib/engine'
+import { accountLabel, allMoneyAccounts, moneyAccounts, moneyKind } from '../lib/accounts'
+import { matchStatement, parseStatementCsv, parseStatementRows, type StatementRow } from '../lib/bank'
+import { bankRules, ruleText, suggest, type Suggestion } from '../lib/bankFeed'
+import { readXlsx } from '../lib/xlsx'
+import { currentWorkspace } from '../lib/store'
+import { chartOf } from '../lib/accounts'
 import { WHT_RATES } from '../lib/tax'
-import { moduleByRole } from '../lib/schema'
+import { moduleByRole, type AppSchema } from '../lib/schema'
+import type { Workspace } from '../lib/types'
 import { N_, getLang, msg, tr } from '../lib/i18n'
 
 type Method = 'cash' | 'bank' | 'cheque' | 'instapay' | 'card'
@@ -24,14 +29,16 @@ const STATE: Record<ChequeState, [string, string]> = {
 export default function Treasury() {
   const { ws, schema } = useApp()
   const cur = schema.company.currency
-  const accounts = moneyAccounts(ws)
+  const accounts = allMoneyAccounts(ws)
   return (
     <div className="stack">
       <div className="dash">
         {accounts.map((a) => (
           <div className="card" key={a.code}>
-            <h2>{moneyKind(a) === 'cash' ? <Banknote size={15} /> : <Landmark size={15} />} {a.code} {accountLabel(a, getLang())}</h2>
-            <div className="kpi-value" style={accountBalance(ws, a.code) < 0 ? { color: 'var(--danger)' } : undefined}>{money(accountBalance(ws, a.code), cur)}</div>
+            <h2>{moneyKind(a) === 'cash' ? <Banknote size={15} /> : <Landmark size={15} />} {a.code} {accountLabel(a, getLang())}{a.currency ? <span className="badge">{a.currency}</span> : null}</h2>
+            {/* an account in another currency: what it holds in that currency, and what that is worth in the books */}
+            <div className="kpi-value" style={(a.currency ? fxBalance(ws, a.code) : accountBalance(ws, a.code)) < 0 ? { color: 'var(--danger)' } : undefined}>{a.currency ? money(fxBalance(ws, a.code), a.currency) : money(accountBalance(ws, a.code), cur)}</div>
+            {a.currency && <div className="kpi-sub">{tr('In the books: {amount}', { amount: money(accountBalance(ws, a.code), cur) })}</div>}
           </div>
         ))}
         <div className="card"><h2>{tr('Cheques in hand and under collection')}</h2><div className="kpi-value">{money(round2(accountBalance(ws, '1150') + accountBalance(ws, '1160')), cur)}</div><div className="kpi-sub">{tr('Issued, not yet cashed: {amount}', { amount: money(-accountBalance(ws, '2150'), cur) })}</div></div>
@@ -50,19 +57,24 @@ export default function Treasury() {
 function Transfer() {
   const { ws, schema, act } = useApp()
   const cur = schema.company.currency
-  const accounts = moneyAccounts(ws)
+  const accounts = allMoneyAccounts(ws)
   const [from, setFrom] = useState(accounts[0]?.code ?? '')
   const [to, setTo] = useState(accounts[1]?.code ?? '')
   const [amount, setAmount] = useState('')
+  const [received, setReceived] = useState('')
   const [charges, setCharges] = useState('')
   const [date, setDate] = useState(todayISO())
   const [memo, setMemo] = useState('')
   if (accounts.length < 2) return null
-  const name = (code: string) => { const a = accounts.find((x) => x.code === code); return a ? `${a.code} ${accountLabel(a, getLang())}` : code }
+  const name = (code: string) => { const a = accounts.find((x) => x.code === code); return a ? `${a.code} ${accountLabel(a, getLang())}${a.currency ? ` (${a.currency})` : ''}` : code }
+  const curOf = (code: string) => accounts.find((x) => x.code === code)?.currency ?? cur
+  // two currencies: buying or selling dollars — the person says what arrived, and the rate is shown back to check
+  const exchange = curOf(from) !== curOf(to)
+  const rate = exchange && Number(amount) > 0 && Number(received) > 0 ? (curOf(from) === cur ? Number(amount) / Number(received) : curOf(to) === cur ? Number(received) / Number(amount) : 0) : 0
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const out = act<{ ref: string }>('money.transfer', { from, to, amount: Number(amount), date, memo, charges: Number(charges) || 0 }, tr('Transfer posted'), `Transfer ${from} → ${to}`)
-    if (out) { setAmount(''); setCharges(''); setMemo('') }
+    const out = act<{ ref: string }>('money.transfer', { from, to, amount: Number(amount), date, memo, charges: Number(charges) || 0, ...(exchange ? { received: Number(received) } : {}) }, tr('Transfer posted'), `Transfer ${from} → ${to}`)
+    if (out) { setAmount(''); setReceived(''); setCharges(''); setMemo('') }
   }
   return (
     <details className="card">
@@ -71,13 +83,15 @@ function Transfer() {
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
           <label className="field" style={{ minWidth: 200 }}>{tr('From')}<select value={from} onChange={(e) => setFrom(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{name(a.code)}</option>)}</select></label>
           <label className="field" style={{ minWidth: 200 }}>{tr('To')}<select value={to} onChange={(e) => setTo(e.target.value)}>{accounts.map((a) => <option key={a.code} value={a.code}>{name(a.code)}</option>)}</select></label>
-          <label className="field" style={{ width: 140 }}>{tr('Amount')}<input inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} style={{ textAlign: 'end' }} /></label>
+          <label className="field" style={{ width: 140 }}>{exchange ? tr('{c} sent', { c: curOf(from) }) : tr('Amount')}<input inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} style={{ textAlign: 'end' }} /></label>
+          {exchange && <label className="field" style={{ width: 140 }}>{tr('{c} arrived', { c: curOf(to) })}<input inputMode="decimal" required value={received} onChange={(e) => setReceived(e.target.value)} style={{ textAlign: 'end' }} /></label>}
           <label className="field" style={{ width: 140 }}>{tr('Bank charges')}<input inputMode="decimal" value={charges} onChange={(e) => setCharges(e.target.value)} style={{ textAlign: 'end' }} /></label>
           <label className="field" style={{ width: 160 }}>{tr('Date')}<input type="date" required value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} /></label>
           <label className="field grow">{tr('Note')}<input value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
         </div>
-        {Number(amount) > 0 && from !== to && <p className="tiny muted" style={{ margin: 0 }}>{tr('Debit {to} {amount}; credit {from} {total}', { to: name(to), from: name(from), amount: money(Number(amount), cur), total: money(round2(Number(amount) + (Number(charges) || 0)), cur) })}{Number(charges) > 0 ? ` · ${tr('bank charges {amount} to 5500', { amount: money(Number(charges), cur) })}` : ''}</p>}
-        <div><button disabled={!(Number(amount) > 0) || from === to}>{tr('Post transfer')}</button></div>
+        {exchange && rate > 0 && <p className="tiny muted" style={{ margin: 0 }} dir="auto">{curOf(from) === cur ? tr('Rate: 1 {c} = {rate} {home}.', { c: curOf(to), rate: String(round2(rate * 10000) / 10000), home: cur }) : tr('Rate: 1 {c} = {rate} {home}. Any gain or loss against what the dollars cost goes to 4960.', { c: curOf(from), rate: String(round2(rate * 10000) / 10000), home: cur })}</p>}
+        {!exchange && Number(amount) > 0 && from !== to && <p className="tiny muted" style={{ margin: 0 }}>{tr('Debit {to} {amount}; credit {from} {total}', { to: name(to), from: name(from), amount: money(Number(amount), cur), total: money(round2(Number(amount) + (Number(charges) || 0)), cur) })}{Number(charges) > 0 ? ` · ${tr('bank charges {amount} to 5500', { amount: money(Number(charges), cur) })}` : ''}</p>}
+        <div><button disabled={!(Number(amount) > 0) || from === to || (exchange && !(Number(received) > 0))}>{tr('Post transfer')}</button></div>
       </form>
     </details>
   )
@@ -229,11 +243,13 @@ function ChequeRegister() {
 
 function Reconcile() {
   const { ws, schema, act } = useApp()
-  const cur = schema.company.currency
-  const banks = moneyAccounts(ws, 'bank')
+  const banks = allMoneyAccounts(ws, 'bank')
   const [account, setAccount] = useState('')
   const acct = banks.some((b) => b.code === account) ? account : banks[0]?.code ?? ''
+  // an account in another currency is agreed in that currency, as its statement is
+  const cur = banks.find((b) => b.code === acct)?.currency ?? schema.company.currency
   const st = reconciliationState(ws, acct)
+  const [rows, setRows] = useState<StatementRow[]>([])
   const [date, setDate] = useState(todayISO())
   const [balance, setBalance] = useState('')
   const [ticked, setTicked] = useState<Set<string>>(new Set())
@@ -245,7 +261,9 @@ function Reconcile() {
   async function load(file: File) {
     setError('')
     try {
-      const rows = parseStatementCsv(await file.text())
+      // the bank's CSV, or its Excel file (first sheet), with or without a title above the header
+      const rows = /\.xlsx$/i.test(file.name) ? parseStatementRows((await readXlsx(await file.arrayBuffer()))[0]?.rows ?? []) : parseStatementCsv(await file.text())
+      setRows(rows)
       const m = matchStatement(lines, rows)
       setTicked(new Set(m.matched))
       setUnmatched(m.unmatched)
@@ -275,7 +293,7 @@ function Reconcile() {
         <label className="field" style={{ width: 240 }}>{tr('Bank account')}<select value={acct} onChange={(e) => { setAccount(e.target.value); setTicked(new Set()); setUnmatched([]) }}>{banks.map((b) => <option key={b.code} value={b.code}>{b.code} {accountLabel(b, getLang())}</option>)}</select></label>
         <label className="field" style={{ width: 170 }}>{tr('Statement date')}<input type="date" required max={todayISO()} value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <label className="field" style={{ width: 170 }}>{tr('Ending balance')}<input required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></label>
-        <label className="btn secondary" style={{ cursor: 'pointer' }}><FileUp size={14} /> {tr('Load statement CSV')}<input type="file" accept=".csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && load(e.target.files[0])} /></label>
+        <label className="btn secondary" style={{ cursor: 'pointer' }}><FileUp size={14} /> {tr('Load the bank statement (Excel or CSV)')}<input type="file" accept=".csv,text/csv,.xlsx" hidden onChange={(e) => { if (e.target.files?.[0]) load(e.target.files[0]); e.target.value = '' }} /></label>
       </div>
       {error && <div className="error-box">{msg(error)}</div>}
       <div className="table-wrap">
@@ -293,17 +311,109 @@ function Reconcile() {
           </tbody>
         </table>
       </div>
-      {unmatched.length > 0 && (
-        <div className="info">
-          <b>{tr('On the statement but not in the books')}</b> {tr('(record them with a journal voucher, e.g. bank charges to 5500, then load the file again):')}
-          <ul style={{ margin: '6px 0 0' }}>{unmatched.map((r, i) => <li key={i} className="small">{r.date} · {r.description || '—'} · {money(r.amount, cur)}</li>)}</ul>
-        </div>
-      )}
+      {unmatched.length > 0 && <NewLines account={acct} cur={cur} unmatched={unmatched} onPosted={() => {
+        // posted lines are now movements in the books: matched again, they tick themselves
+        const fresh = reconciliationState(currentWorkspace() as typeof ws, acct).uncleared.filter((l) => l.date <= date)
+        const m = matchStatement(fresh, rows)
+        setTicked(new Set(m.matched))
+        setUnmatched(m.unmatched)
+      }} />}
+      <Rules />
       <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
         <span>{tr('Opening {opening} + ticked = {sum}', { opening: money(st.opening, cur), sum: money(sum, cur) })}</span>
         <span style={{ color: diff === 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 700 }}>{tr('Difference {amount}', { amount: money(diff, cur) })}</span>
         <button className="primary" disabled={diff !== 0 || balance === ''}><CheckCircle2 size={14} /> {tr('Agree statement')}</button>
       </div>
     </form>
+  )
+}
+
+/* ---------------- statement lines the books don't have yet: what each one is, ticked and posted ---------------- */
+
+function NewLines({ account, cur, unmatched, onPosted }: { account: string; cur: string; unmatched: StatementRow[]; onPosted: () => void }) {
+  const { ws, schema, act } = useApp()
+  const guesses = useMemo(() => suggest(ws, schema, account, unmatched), [ws, schema, account, unmatched])
+  // what the person chose for each line: a document (d:id) or an account (a:code); a sure guess comes pre-ticked
+  const initial = () => guesses.map((g) => ({ pick: g.s.kind === 'doc' ? `d:${g.s.doc}` : g.s.kind === 'account' ? `a:${g.s.account}` : '', on: g.s.kind !== 'none' && g.s.sure, remember: false }))
+  const [choice, setChoice] = useState(initial)
+  const [seen, setSeen] = useState(guesses)
+  if (seen !== guesses) { setSeen(guesses); setChoice(initial()) }
+  const accounts = chartOf(ws).filter((a) => a.active && !a.control && !a.money && ['expense', 'income', 'liability', 'equity'].includes(a.type))
+  const docs = (incoming: boolean) => {
+    const m = moduleByRole(schema, incoming ? 'invoices' : 'purchases')
+    const fx = allMoneyAccounts(ws).find((a) => a.code === account)?.currency
+    return m ? list(ws, m.id).filter((r) => (r.status === 'posted' || r.status === 'partial') && !r.values.credit_for && Number(r.values.balance) > 0 && (fx ? r.values.currency === fx : !r.values.currency)) : []
+  }
+  const set = (i: number, v: Partial<(typeof choice)[number]>) => setChoice(choice.map((c, k) => (k === i ? { ...c, ...v, ...(v.pick !== undefined ? { on: Boolean(v.pick) } : {}) } : c)))
+  const picked = choice.map((c, i) => ({ c, row: unmatched[i] })).filter((x) => x.c.on && x.c.pick)
+  const say = (g: Suggestion) => (g.kind === 'doc' ? tr('{party} paying {number}', { party: g.party, number: g.number }) : g.kind === 'account' ? (g.rule ? tr('Sorted like before') : tr('Bank charges or interest')) : tr('Not sure: choose what it is'))
+  function post() {
+    const lines = picked.map(({ c, row }) => ({ ...row, ...(c.pick.startsWith('d:') ? { doc: c.pick.slice(2) } : { account: c.pick.slice(2), ...(c.remember ? { rule: row.description } : {}) }) }))
+    if (act('bank.applyStatement', { account, lines }, tr('{n} statement lines posted', { n: lines.length }), 'Bank statement lines') !== undefined) onPosted()
+  }
+  return (
+    <div className="info stack" style={{ gap: 8 }}>
+      <b>{tr('On the statement but not in the books: {n}', { n: unmatched.length })}</b>
+      <span className="small muted">{tr('Each line says what it most likely is. Tick the ones that are right and post them: they become payments or entries, and the statement then agrees by itself.')}</span>
+      <div className="table-wrap">
+        <table className="data">
+          <thead><tr><th /><th>{tr('Date')}</th><th>{tr('Description')}</th><th className="num">{tr('Amount')}</th><th>{tr('What the line is')}</th></tr></thead>
+          <tbody>
+            {guesses.map((g, i) => {
+              const c = choice[i] ?? { pick: '', on: false, remember: false }
+              const row = g.row
+              return (
+                <tr key={i} style={{ cursor: 'default' }}>
+                  <td><input type="checkbox" aria-label={row.description || row.date} checked={c.on} disabled={!c.pick} onChange={(e) => set(i, { on: e.target.checked })} /></td>
+                  <td>{row.date}</td>
+                  <td className="small">{row.description || '—'}<div className="tiny muted">{say(g.s)}</div></td>
+                  <td className="num" style={{ color: row.amount < 0 ? 'var(--danger)' : undefined }}>{money(row.amount, cur)}</td>
+                  <td>
+                    <select aria-label={tr('What the line is')} value={c.pick} onChange={(e) => set(i, { pick: e.target.value })} style={{ maxWidth: 260 }}>
+                      <option value="">{tr('Choose…')}</option>
+                      <optgroup label={row.amount > 0 ? tr('A customer paying') : tr('Paying a supplier')}>
+                        {docs(row.amount > 0).map((d) => <option key={d.id} value={`d:${d.id}`}>{d.number} · {recordTitle(ws, schema, findParty(ws, schema, d))} · {money(Number(d.values.balance), cur)}</option>)}
+                      </optgroup>
+                      <optgroup label={tr('An account')}>
+                        {accounts.map((a) => <option key={a.code} value={`a:${a.code}`}>{a.code} {accountLabel(a, getLang())}</option>)}
+                      </optgroup>
+                    </select>
+                    {c.pick.startsWith('a:') && ruleText(row.description).length >= 3 && g.s.kind !== 'account' && (
+                      <label className="row tiny" style={{ gap: 4, marginTop: 4 }}><input type="checkbox" checked={c.remember} onChange={(e) => set(i, { remember: e.target.checked })} /> {tr('Always for lines like “{words}”', { words: ruleText(row.description) })}</label>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div><button type="button" className="primary" disabled={!picked.length} onClick={post}><CheckCircle2 size={14} /> {tr('Post the {n} ticked lines', { n: picked.length })}</button></div>
+    </div>
+  )
+}
+
+function findParty(ws: Workspace, schema: AppSchema, d: { values: Record<string, unknown> }) {
+  const id = String(d.values.customer ?? d.values.supplier ?? '')
+  return [...list(ws, moduleByRole(schema, 'accounts')?.id ?? ''), ...list(ws, moduleByRole(schema, 'suppliers')?.id ?? '')].find((r) => r.id === id)
+}
+
+/** The lines the system now sorts by itself, each one learned from a line the person sorted; any can be removed. */
+function Rules() {
+  const { ws, act } = useApp()
+  const rules = bankRules(ws)
+  if (!rules.length) return null
+  return (
+    <details>
+      <summary className="small">{tr('Lines sorted automatically ({n})', { n: rules.length })}</summary>
+      <ul style={{ margin: '6px 0 0' }}>
+        {rules.map((r) => (
+          <li key={r.match} className="small row" style={{ gap: 8 }}>
+            <span>“{r.match}” → {r.account} {accountLabel(chartOf(ws).find((a) => a.code === r.account) ?? { name: r.account }, getLang())}</span>
+            <button type="button" className="ghost small" onClick={() => act('bank.forgetRule', { match: r.match }, tr('Rule removed'))}>{tr('Remove')}</button>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

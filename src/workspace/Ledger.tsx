@@ -1,5 +1,6 @@
 // The accounting tools of Phase 2A.1: journal vouchers, the chart of accounts, opening balances, stock adjustments and
 // counts. Every action is a server command; the engine checks the rules (balance, control accounts, permissions).
+import { COMMON_CURRENCIES } from '../lib/fx'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, FileCheck, Lock, Plus, Repeat, Trash2, Undo2, Unlock, XCircle } from 'lucide-react'
@@ -30,7 +31,7 @@ function num(v: string) {
 
 /* ---------------- journal voucher ---------------- */
 
-interface Row { account: string; debit: string; credit: string; note: string; cc?: string }
+interface Row { account: string; debit: string; credit: string; note: string; cc?: string; fx?: string }
 const emptyRow = (): Row => ({ account: '', debit: '', credit: '', note: '' })
 
 export function JournalVoucher() {
@@ -51,9 +52,11 @@ export function JournalVoucher() {
   // Cost centers (P1) tag income and expense lines only.
   const withCc = costCenters(ws).some((c) => c.active)
   const pl = (code: string) => ['income', 'expense'].includes(accounts.find((a) => a.code === code)?.type ?? '')
+  // a cash box or bank account in another currency: the line also says how many dollars (or euros …) moved
+  const fxOf = (code: string) => accounts.find((a) => a.code === code)?.currency
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}) }))
+    const lines = rows.filter((r) => r.account && (num(r.debit) || num(r.credit))).map((r) => ({ account: r.account, debit: num(r.debit), credit: num(r.credit), note: r.note, ...(r.cc && pl(r.account) ? { cc: r.cc } : {}), ...(fxOf(r.account) ? { fx: num(r.fx ?? '') } : {}) }))
     const over = ws.books?.jvApprovalOver
     const waits = over !== undefined && dr > over
     if (repeat) {
@@ -97,7 +100,8 @@ export function JournalVoucher() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} style={{ cursor: 'default' }}>
-                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}</option>)}</select></td>
+                <td><select value={r.account} onChange={(e) => set(i, { account: e.target.value })}><option value="">{tr('Choose…')}</option>{accounts.map((a) => <option key={a.code} value={a.code}>{a.code} {accountLabel(a, getLang())}{a.currency ? ` (${a.currency})` : ''}</option>)}</select>
+                  {fxOf(r.account) && <input aria-label={tr('{c} amount', { c: fxOf(r.account)! })} placeholder={tr('{c} amount', { c: fxOf(r.account)! })} inputMode="decimal" required value={r.fx ?? ''} onChange={(e) => set(i, { fx: e.target.value })} style={{ marginTop: 4, textAlign: 'end' }} />}</td>
                 <td><input inputMode="decimal" value={r.debit} onChange={(e) => set(i, { debit: e.target.value, credit: e.target.value ? '' : r.credit })} style={{ textAlign: 'end' }} /></td>
                 <td><input inputMode="decimal" value={r.credit} onChange={(e) => set(i, { credit: e.target.value, debit: e.target.value ? '' : r.debit })} style={{ textAlign: 'end' }} /></td>
                 {withCc && <td>{pl(r.account) ? <CostCenterSelect value={r.cc} onChange={(v) => set(i, { cc: v })} style={{ width: 160 }} /> : <span className="tiny muted">{r.account ? tr('company-wide') : ''}</span>}</td>}
@@ -181,13 +185,15 @@ export function ChartOfAccounts() {
   const [nameAr, setNameAr] = useState('')
   const [type, setType] = useState<AccountType>('expense')
   const [moneyKind, setMoneyKind] = useState<'' | 'cash' | 'bank'>('')
+  const [currency, setCurrency] = useState('')
   function add(e: React.FormEvent) {
     e.preventDefault()
     const money = type === 'asset' && moneyKind ? moneyKind : undefined
-    if (act('accounts.add', { code, name, nameAr, type, money }, tr('Account {code} added', { code }), `Added account ${code} ${name}`) !== undefined) {
+    if (act('accounts.add', { code, name, nameAr, type, money, ...(money && currency ? { currency } : {}) }, tr('Account {code} added', { code }), `Added account ${code} ${name}`) !== undefined) {
       setCode('')
       setName('')
       setNameAr('')
+      setCurrency('')
     }
   }
   return (
@@ -201,7 +207,7 @@ export function ChartOfAccounts() {
               return (
                 <tr key={a.code} style={{ cursor: 'default', opacity: a.active ? 1 : 0.5 }}>
                   <td className="mono">{a.code}</td>
-                  <td>{a.name}{a.nameAr && <span className="muted small" dir="rtl"> · {a.nameAr}</span>} {a.control && <span className="pill gray tiny" title={tr('Changed only by documents')}>{tr('by documents')}</span>}</td>
+                  <td>{a.name}{a.nameAr && <span className="muted small" dir="rtl"> · {a.nameAr}</span>} {a.currency && <span className="badge">{a.currency}</span>} {a.control && <span className="pill gray tiny" title={tr('Changed only by documents')}>{tr('by documents')}</span>}</td>
                   <td className="muted">{typeLabel(a.type)}</td>
                   <td className="num">{money(normalSign(a) * b, cur)}</td>
                   <td className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
@@ -221,6 +227,15 @@ export function ChartOfAccounts() {
         <label className="field">{tr('Arabic name')}<input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} placeholder="مثال: التسويق" /></label>
         <label className="field">{tr('Type')}<select value={type} onChange={(e) => setType(e.target.value as AccountType)}>{Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}</select></label>
         {type === 'asset' && <label className="field">{tr('Payments can go through it')}<select value={moneyKind} onChange={(e) => setMoneyKind(e.target.value as '' | 'cash' | 'bank')}><option value="">{tr('No')}</option><option value="cash">{tr('Yes, as a cash box')}</option><option value="bank">{tr('Yes, as a bank account')}</option></select></label>}
+        {type === 'asset' && moneyKind && (
+          <label className="field">{tr('Currency')}
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <option value="">{tr('{c} (the company’s own)', { c: cur })}</option>
+              {COMMON_CURRENCIES.filter((c) => c !== cur).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {currency && <span className="tiny muted">{tr('Every entry on it will also state its {c} amount. Balances show in {c}, and its value in {home} is restated at each month end.', { c: currency, home: cur })}</span>}
+          </label>
+        )}
         <button>{tr('Add account')}</button>
         <p className="tiny muted">{tr('Accounts used by posting can be renamed but not turned off. An account with a balance can be turned off only after moving its balance.')}</p>
       </form>
@@ -234,7 +249,8 @@ export function OpeningBalances() {
   const { ws, schema, act } = useApp()
   const cur = schema.company.currency
   const [date, setDate] = useState(`${todayISO().slice(0, 4)}-01-01`)
-  const accounts = chartOf(ws).filter((a) => a.active && !a.control && a.code !== '3900')
+  // an account in another currency opens with a journal voucher that states its dollars
+  const accounts = chartOf(ws).filter((a) => a.active && !a.control && a.code !== '3900' && !a.currency)
   const [gl, setGl] = useState<Record<string, string>>({})
   const [party, setParty] = useState<{ kind: 'customer' | 'supplier'; id: string; amount: string; ref: string }>({ kind: 'customer', id: '', amount: '', ref: '' })
   const [stock, setStock] = useState({ product: '', qty: '', cost: '' })

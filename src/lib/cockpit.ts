@@ -6,7 +6,7 @@ import type { AppSchema } from './schema'
 import { moduleByRole } from './schema'
 import type { Workspace } from './types'
 import { list, onHand, recordTitle, round2, findRecord } from './engine'
-import { moneyAccounts } from './accounts'
+import { allMoneyAccounts } from './accounts'
 import { incomeStatement } from './statements'
 import { targets } from './targets'
 import { monthsOf } from './periods'
@@ -29,7 +29,7 @@ export interface Cockpit {
 
 /** Cash in the cash boxes and banks: now, and at the end of each of the last 30 days. */
 function cashOf(ws: Workspace, today: string) {
-  const codes = new Set(moneyAccounts(ws).map((a) => a.code))
+  const codes = new Set(allMoneyAccounts(ws).map((a) => a.code))
   let now = 0
   const byDay = new Map<string, number>()
   for (const j of ws.data.journal) {

@@ -7,6 +7,7 @@ import type { Rec, Workspace } from './types'
 import { moduleById, type AppSchema } from './schema'
 import { systemAccount } from './accounts'
 import {
+  flip,
   accountBalance, ageing, EngineError, findRecord, ISO_DATE, journal, log, logLedger, money, needFinance, nextNumber, noRealPostingOverSamples, refreshBalance, round2, side, todayISO, type Ctx,
 } from './engine'
 
@@ -95,7 +96,7 @@ export function reinstate(ctx: Ctx, id: string, date: string) {
   if (!ISO_DATE.test(String(date ?? '')) || date < wo.date) throw new EngineError('Choose a date on or after the write-off')
   const je = ctx.ws.data.journal.find((j) => j.ref === wo.ref && j.doc === rec.id)
   if (!je) throw new EngineError('The write-off entry is missing')
-  journal(ctx, { date, ref: `REV ${wo.ref}`, doc: rec.id, memo: `Written-off debt reinstated: ${rec.number}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
+  journal(ctx, { date, ref: `REV ${wo.ref}`, doc: rec.id, memo: `Written-off debt reinstated: ${rec.number}`, lines: je.lines.map(flip) }, rec)
   delete rec.values.written_off
   delete rec.values.write_off
   refreshBalance(rec)

@@ -5,11 +5,11 @@
 // then the month is closed, and its VAT settled.
 import type { Workspace } from './types'
 import { moduleByRole, type AppSchema } from './schema'
-import { moneyAccounts, moneyKind } from './accounts'
+import { allMoneyAccounts, moneyKind } from './accounts'
 import { booksHealth, list, manualJournal, money, monthEnd, round2, todayISO, type Ctx } from './engine'
 import { assetsOf, chargeUpTo, depreciate } from './assets'
 import { allowance, setAllowance, suggestedAllowance } from './badDebts'
-import { lastRates, openForeign, revalue } from './fx'
+import { currenciesToRevalue, lastRates, revalue, toRevalue } from './fx'
 import { dueNow, postDue } from './recurring'
 
 export interface Step {
@@ -59,19 +59,19 @@ export function closePlan(ws: Workspace, schema: AppSchema, month: string, today
   const need = suggestedAllowance(ws, schema, end).total
   const aside = round2(need - allowance(ws))
   if (need > 0 || allowance(ws) > 0) steps.push(aside > 0 ? { id: 'allowance', kind: 'auto', title: 'Set aside for customers who may not pay: {a} more', values: { a: money(aside, cur) }, amount: aside } : { id: 'allowance', kind: 'done', title: 'The allowance for late customers is enough' })
-  const foreign = (ws.books?.revaluations ?? []).some((r) => r.month >= month) ? [] : openForeign(ws, schema, end)
-  if (foreign.length) {
-    const codes = [...new Set(foreign.map((r) => String(r.values.currency)))]
+  const foreign = toRevalue(ws, schema, month)
+  if (foreign.count) {
+    const { codes } = foreign
     const rates = lastRates(ws)
     const known = codes.every((c) => Number(rates[c]?.rate) > 0)
     steps.push(known
-      ? { id: 'fx', kind: 'auto', title: 'Restate {n} amounts owed in {c} at the latest rates', values: { n: foreign.length, c: codes.join(', ') } }
-      : { id: 'fx', kind: 'you', title: 'Enter the closing rate of {c} to restate {n} amounts owed', values: { n: foreign.length, c: codes.join(', ') } })
+      ? { id: 'fx', kind: 'auto', title: 'Restate {n} amounts in {c} at the latest rates', values: { n: foreign.count, c: codes.join(', ') } }
+      : { id: 'fx', kind: 'you', title: 'Enter the closing rate of {c} to restate {n} amounts', values: { n: foreign.count, c: codes.join(', ') } })
   }
   for (const m of missingBills(ws, schema, month)) {
     steps.push({ id: `accrue-${m.supplier}`, kind: 'suggest', title: '{s} bills every month but not yet for {m}: accrue about {a}', values: { s: m.name, m: month, a: money(m.amount, cur) }, amount: m.amount, accrual: { supplier: m.supplier, account: '5100', amount: m.amount } })
   }
-  const banks = moneyAccounts(ws).filter((a) => moneyKind(a) === 'bank')
+  const banks = allMoneyAccounts(ws).filter((a) => moneyKind(a) === 'bank')
   for (const b of banks) {
     const rec = (ws.books?.reconciliations ?? []).filter((r) => r.account === b.code).map((r) => r.date).sort().at(-1)
     if (ws.data.journal.some((j) => j.date <= end && j.lines.some((l) => l.account === b.code)) && (!rec || rec < end)) {
@@ -101,7 +101,7 @@ export function prepareClose(ctx: Ctx, month: string) {
       if (s.id === 'depreciation') depreciate(ctx, month)
       if (s.id === 'allowance') setAllowance(ctx, { date: end, amount: suggestedAllowance(ctx.ws, ctx.schema, end).total, note: `Month-end ${month}` })
       if (s.id === 'fx') {
-        const codes = [...new Set(openForeign(ctx.ws, ctx.schema, end).map((r) => String(r.values.currency)))]
+        const codes = currenciesToRevalue(ctx.ws, ctx.schema, month)
         revalue(ctx, month, Object.fromEntries(codes.map((c) => [c, Number(lastRates(ctx.ws)[c]?.rate)])))
       }
       done.push(s.id)

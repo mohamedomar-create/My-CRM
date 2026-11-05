@@ -27,7 +27,7 @@ function splitCsv(line: string, sep: string) {
 }
 
 function toNumber(v: string) {
-  let t = digits(v ?? '').replace(/[\s,]|EGP|ج\.م/gi, '')
+  let t = digits(v ?? '').replace(/[\s,]|EGP|USD|EUR|ج\.م/gi, '')
   const negative = /^\(.*\)$/.test(t) || t.endsWith('-')
   t = t.replace(/[()]/g, '').replace(/-$/, '')
   const n = Number(t)
@@ -46,21 +46,38 @@ function toDate(v: string) {
 
 /** Reads a statement CSV. Throws a plain message when the columns can't be found. */
 export function parseStatementCsv(text: string): StatementRow[] {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim())
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim())
   if (lines.length < 2) throw new Error(N_('The file has no rows'))
-  const sep = [',', ';', '\t'].sort((a, b) => lines[0].split(b).length - lines[0].split(a).length)[0]
-  const head = splitCsv(lines[0], sep).map((h) => h.toLowerCase())
-  const find = (...names: string[]) => head.findIndex((h) => names.some((n) => h.includes(n)))
-  const date = find('date', 'تاريخ')
-  const desc = find('description', 'details', 'narrative', 'بيان', 'الوصف')
-  const amount = find('amount', 'المبلغ')
-  const debit = find('debit', 'withdrawal', 'مدين', 'سحب')
-  const credit = find('credit', 'deposit', 'دائن', 'إيداع')
-  if (date < 0 || (amount < 0 && (debit < 0 || credit < 0))) throw new Error(N_('Couldn’t find the date and amount columns (or debit and credit columns) in the first row'))
+  // the separator is the one that splits the header into the most columns (banks put a title above it sometimes)
+  const sample = lines.slice(0, 15)
+  const sep = [',', ';', '\t'].sort((a, b) => Math.max(...sample.map((l) => l.split(b).length)) - Math.max(...sample.map((l) => l.split(a).length)))[0]
+  return parseStatementRows(lines.map((l) => splitCsv(l, sep)))
+}
+
+/**
+ * Reads a statement already split into cells (a CSV, or the first sheet of the bank's Excel file). The header row is
+ * found among the first 15 rows: banks often put the account name, the period and an empty row above it.
+ */
+export function parseStatementRows(table: string[][]): StatementRow[] {
+  const cells = table.map((r) => r.map((c) => String(c ?? '').trim()))
+  if (cells.filter((r) => r.some(Boolean)).length < 2) throw new Error(N_('The file has no rows'))
+  const columns = (head: string[]) => {
+    const h = head.map((x) => x.toLowerCase())
+    const find = (...names: string[]) => h.findIndex((x) => names.some((n) => x.includes(n)))
+    return {
+      date: find('value date', 'date', 'تاريخ'),
+      desc: find('description', 'details', 'narrative', 'particulars', 'بيان', 'الوصف', 'التفاصيل'),
+      amount: find('amount', 'المبلغ'),
+      debit: find('debit', 'withdrawal', 'مدين', 'سحب'),
+      credit: find('credit', 'deposit', 'دائن', 'إيداع'),
+    }
+  }
+  const at = cells.slice(0, 15).findIndex((r) => { const c = columns(r); return c.date >= 0 && (c.amount >= 0 || (c.debit >= 0 && c.credit >= 0)) })
+  if (at < 0) throw new Error(N_('Couldn’t find the date and amount columns (or debit and credit columns) in the first row'))
+  const { date, desc, amount, debit, credit } = columns(cells[at])
   const rows: StatementRow[] = []
-  for (const l of lines.slice(1)) {
-    const c = splitCsv(l, sep)
-    const d = toDate(c[date])
+  for (const c of cells.slice(at + 1)) {
+    const d = toDate(c[date] ?? '')
     const n = amount >= 0 ? toNumber(c[amount]) : (toNumber(c[credit]) || 0) - (toNumber(c[debit]) || 0)
     if (!d || !Number.isFinite(n) || n === 0) continue
     rows.push({ date: d, description: desc >= 0 ? c[desc] ?? '' : '', amount: Math.round(n * 100) / 100 })

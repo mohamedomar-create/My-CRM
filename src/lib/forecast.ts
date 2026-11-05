@@ -7,7 +7,7 @@
 // stock growing while sales don't.
 import type { Rec, Workspace } from './types'
 import { moduleByRole, type AppSchema } from './schema'
-import { account as findAccount, moneyAccounts } from './accounts'
+import { account as findAccount, allMoneyAccounts } from './accounts'
 import { accountBalance, baseBalance, list, money, monthEnd, round2, todayISO } from './engine'
 import { occurrence, recurringOf } from './recurring'
 
@@ -47,7 +47,7 @@ function openCheques(ws: Workspace) {
 }
 
 export function cashForecast(ws: Workspace, schema: AppSchema, today = todayISO(), count = 13) {
-  const money_ = moneyAccounts(ws).map((a) => a.code)
+  const money_ = allMoneyAccounts(ws).map((a) => a.code)
   const start = round2(money_.reduce((s, c) => s + accountBalance(ws, c), 0))
   const weeks: Week[] = Array.from({ length: count }, (_, i) => ({ n: i + 1, from: addDays(today, i * 7), to: addDays(today, i * 7 + 6), customers: 0, cheques: 0, takings: 0, suppliers: 0, recurring: 0, spending: 0, vat: 0, net: 0, end: 0 }))
   const last = weeks[weeks.length - 1].to

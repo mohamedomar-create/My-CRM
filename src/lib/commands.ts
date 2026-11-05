@@ -2,6 +2,7 @@
 // responds instantly, and sends it to the server, which runs the same code on the latest saved data and is the only
 // one allowed to save. So business rules (who may post, what is locked, how stock and the books move) are enforced
 // by the server, not by whichever browser happens to send the data.
+import { applyStatement, forgetRule, type StatementPosting } from './bankFeed'
 import { publishBlockers } from './publishCheck'
 import { allocateLanded, undoLanded, type LandedMethod } from './landed'
 import { addAsset, depreciate, disposeAsset, undoDepreciation } from './assets'
@@ -66,6 +67,8 @@ export interface CommandArgs {
   'credit.use': { credit: string; doc: string; amount: number; date: string }
   'credit.unuse': { doc: string; use: string }
   'bank.reconcile': { account: string; date: string; balance: number; entries: string[] }
+  'bank.applyStatement': { account: string; lines: StatementPosting[] }
+  'bank.forgetRule': { match: string }
   'approval.request': { id: string; rule: string }
   'approval.decide': { approval: string; approve: boolean; note?: string }
   'approval.override': { id: string; rule: string; reason: string }
@@ -84,10 +87,10 @@ export interface CommandArgs {
   'team.removeUser': { userId: string }
   'team.handOver': { from: string; to: string; scope?: 'open' | 'all' }
   'import.activities': { rows: Record<string, string>[]; batch?: { id: string; file: string }; firstRow?: number; people?: Record<string, string> }
-  'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }
+  'accounts.add': { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank'; currency?: string }
   'accounts.update': { code: string; name?: string; nameAr?: string; active?: boolean }
   'journal.manual': { date: string; memo: string; lines: VoucherLine[]; adjusting?: boolean; reverseOn?: string }
-  'money.transfer': { from: string; to: string; amount: number; date: string; memo?: string; charges?: number }
+  'money.transfer': { from: string; to: string; amount: number; date: string; memo?: string; charges?: number; received?: number }
   'asset.add': { name: string; account?: string; date: string; cost: number; salvage?: number; life: number; from: string; cc?: string; accumulated?: number }
   'asset.depreciate': { month: string }
   'asset.undoDepreciation': { id: string }
@@ -179,7 +182,7 @@ export interface CommandArgs {
   'stock.transfer': { from: string; to: string; date: string; lines: { product: string; qty: number; lot?: string }[]; note?: string }
   'warehouse.save': { code: string; name: string; nameAr?: string; kind: 'store' | 'van'; person?: string; active?: boolean }
   'doc.creditNote': { id: string; lines: CreditLine[]; date: string; reason: string; restock?: boolean }
-  'doc.refund': { id: string; amount: number; date: string; method: Method }
+  'doc.refund': { id: string; amount: number; date: string; method: Method; account?: string; rate?: number }
   'payment.reverse': { id: string; reason: string; date?: string }
   'books.closeMonth': { month: string }
   'books.closeYear': { year: number }
@@ -272,6 +275,8 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'credit.use': { run: (ws, u, a) => void applyCredit(ctx(ws, u), { credit: String(a.credit ?? ''), doc: String(a.doc ?? ''), amount: Number(a.amount), date: String(a.date ?? '') }) },
   'credit.unuse': { run: (ws, u, a) => unuseCredit(ctx(ws, u), String(a.doc ?? ''), String(a.use ?? '')) },
   'bank.reconcile': { run: (ws, u, a) => reconcileBank(ctx(ws, u), { ...a, balance: Number(a.balance) }) },
+  'bank.applyStatement': { run: (ws, u, a) => applyStatement(ctx(ws, u), { account: String(a.account ?? ''), lines: (Array.isArray(a.lines) ? a.lines : []).slice(0, 500) }) },
+  'bank.forgetRule': { run: (ws, u, a) => forgetRule(ctx(ws, u), String(a.match ?? '')) },
   'approval.request': { run: (ws, u, a) => void requestApproval(ctx(ws, u), rec(ws, a.id), a.rule) },
   'approval.decide': { run: (ws, u, a) => decideApproval(ctx(ws, u), a.approval, Boolean(a.approve), a.note ?? '') },
   'approval.override': { admin: true, run: (ws, u, a) => void overrideApproval(ctx(ws, u), rec(ws, a.id), a.rule, String(a.reason ?? '')) },
@@ -460,7 +465,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'po.undoReceipt': { run: (ws, u, a) => void undoReceipt(ctx(ws, u), String(a.id ?? '')) },
   'po.bill': { run: (ws, u, a) => ({ id: billReceived(ctx(ws, u), String(a.id ?? '')).id }) },
   'po.close': { run: (ws, u, a) => void closePurchaseOrder(ctx(ws, u), String(a.id ?? ''), String(a.reason ?? '')) },
-  'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0 }) },
+  'money.transfer': { run: (ws, u, a) => transferMoney(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), amount: Number(a.amount), date: String(a.date ?? ''), memo: a.memo === undefined ? undefined : String(a.memo).slice(0, 200), charges: Number(a.charges ?? 0) || 0, ...(a.received !== undefined ? { received: Number(a.received) } : {}) }) },
   'asset.add': { run: (ws, u, a) => ({ id: addAsset(ctx(ws, u), { name: String(a.name ?? '').slice(0, 120), account: a.account === undefined ? undefined : String(a.account), date: String(a.date ?? ''), cost: Number(a.cost), salvage: Number(a.salvage ?? 0) || 0, life: Number(a.life), from: String(a.from ?? ''), cc: a.cc ? String(a.cc) : undefined, accumulated: Number(a.accumulated ?? 0) || 0 }).id }) },
   'asset.depreciate': { run: (ws, u, a) => depreciate(ctx(ws, u), String(a.month ?? '')).number },
   'asset.undoDepreciation': { run: (ws, u, a) => void undoDepreciation(ctx(ws, u), String(a.id ?? '')) },
@@ -494,7 +499,7 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
   'stock.transfer': { run: (ws, u, a) => transferStock(ctx(ws, u), { from: String(a.from ?? ''), to: String(a.to ?? ''), date: String(a.date ?? ''), lines: Array.isArray(a.lines) ? a.lines.slice(0, 500).map((l) => ({ product: String(l?.product ?? ''), qty: Number(l?.qty) || 0, lot: l?.lot ? String(l.lot) : undefined })) : [], note: a.note === undefined ? undefined : String(a.note) }).ref },
   'warehouse.save': { run: (ws, u, a) => saveWarehouse(ctx(ws, u), { code: String(a.code ?? ''), name: String(a.name ?? ''), nameAr: a.nameAr === undefined ? undefined : String(a.nameAr), kind: a.kind, person: a.person ? String(a.person) : undefined, active: a.active }) },
   'doc.creditNote': { run: (ws, u, a) => creditNote(ctx(ws, u), a.id, a).id },
-  'doc.refund': { run: (ws, u, a) => refundCredit(ctx(ws, u), a.id, Number(a.amount), String(a.date), a.method) },
+  'doc.refund': { run: (ws, u, a) => refundCredit(ctx(ws, u), a.id, Number(a.amount), String(a.date), a.method, a.account ? String(a.account) : undefined, a.rate === undefined ? undefined : Number(a.rate)) },
   'payment.reverse': { run: (ws, u, a) => reversePayment(ctx(ws, u), a.id, String(a.reason ?? ''), a.date) },
   'books.closeMonth': { run: (ws, u, a) => closeMonth(ctx(ws, u), String(a.month)) },
   'books.closeYear': { run: (ws, u, a) => closeYear(ctx(ws, u), Number(a.year)).profit },

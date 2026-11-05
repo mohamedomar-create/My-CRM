@@ -20,6 +20,8 @@ export interface Account {
   /** a contra account: it reduces the accounts of its type, so its balance sits on the other side (accumulated
    * depreciation and the allowance for doubtful debts against assets, sales returns against revenue) */
   contra?: boolean
+  /** a cash box or bank account kept in another currency (USD, EUR …): every entry on it states that amount too */
+  currency?: string
 }
 
 const sys = (code: string, name: string, nameAr: string, type: AccountType, control = false, contra = false): Account => ({ code, name, nameAr, type, system: true, control, active: true, ...(contra ? { contra } : {}) })
@@ -79,8 +81,13 @@ export function moneyKind(a: Account): 'cash' | 'bank' | undefined {
   return a.money ?? (a.code === '1100' ? 'cash' : a.code === '1110' ? 'bank' : undefined)
 }
 
-/** The active cash boxes and bank accounts. */
+/** The active cash boxes and bank accounts in the company's currency (what every screen offers by default). */
 export function moneyAccounts(ws: Pick<Workspace, 'chart'>, kind?: 'cash' | 'bank') {
+  return allMoneyAccounts(ws, kind).filter((a) => !a.currency)
+}
+
+/** Every active cash box and bank account, those in another currency included (totals, transfers, payments in that currency). */
+export function allMoneyAccounts(ws: Pick<Workspace, 'chart'>, kind?: 'cash' | 'bank') {
   return chartOf(ws).filter((a) => a.active && a.type === 'asset' && moneyKind(a) && (!kind || moneyKind(a) === kind))
 }
 

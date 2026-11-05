@@ -5,6 +5,7 @@
 // (IAS 21): the unrealized difference goes to 4960 and the document carries its new amount from then on.
 import type { Rec, Workspace } from './types'
 import { moduleById, moduleByRole, type AppSchema } from './schema'
+import { allMoneyAccounts, type Account } from './accounts'
 import {
   baseBalance, can, EngineError, findRecord, isForeign, journal, list, logLedger, log, monthEnd, money, needFinance, nextNumber, noRealPostingOverSamples, nowISO, round2, round4, side, todayISO, type Ctx,
 } from './engine'
@@ -42,19 +43,60 @@ export function setDocCurrency(ctx: Ctx, id: string, currency: string, rate?: nu
   log(ctx, `set the currency to ${code} at ${r}`, rec)
 }
 
-/** Posted invoices and bills in another currency with something still owed, oldest first. */
+/** Posted invoices and bills in another currency with something still owed, and credit left over on credit notes in
+ * another currency, oldest first. */
 export function openForeign(ws: Workspace, schema: AppSchema, upTo?: string) {
   const out: Rec[] = []
   for (const role of ['invoices', 'purchases'] as const) {
     const m = moduleByRole(schema, role)
     if (!m) continue
     for (const r of list(ws, m.id)) {
-      if (!isForeign(r) || r.values.credit_for || (r.status !== 'posted' && r.status !== 'partial') || !Number(r.values.balance)) continue
+      if (!isForeign(r) || (r.status !== 'posted' && r.status !== 'partial') || !Number(r.values.balance)) continue
       if (upTo && String(r.values.date ?? '') > upTo) continue
       out.push(r)
     }
   }
   return out.sort((a, b) => String(a.values.date ?? '').localeCompare(String(b.values.date ?? '')))
+}
+
+/** Cash boxes and bank accounts kept in another currency, with what they held at a date: in that currency and in the
+ * books (the company's currency). */
+export function foreignAccounts(ws: Workspace, upTo?: string) {
+  const out: { account: Account; currency: string; fx: number; value: number }[] = []
+  for (const a of allMoneyAccounts(ws)) {
+    if (!a.currency) continue
+    let fx = 0
+    let value = 0
+    for (const j of ws.data.journal) {
+      if (upTo && j.date > upTo) continue
+      for (const l of j.lines) if (l.account === a.code) { fx += Number(l.fx ?? 0); value += l.debit - l.credit }
+    }
+    out.push({ account: a, currency: a.currency, fx: round2(fx), value: round2(value) })
+  }
+  return out
+}
+
+/** What restating the foreign cash and bank balances at the closing rates would change (positive = a gain). */
+export function accountsRevaluationPlan(ws: Workspace, month: string, rates: Record<string, number>) {
+  return foreignAccounts(ws, monthEnd(month)).filter((a) => a.fx || a.value).map((a) => {
+    const rate = Number(rates[a.currency])
+    const now = rate > 0 ? round2(a.fx * rate) : undefined
+    return { ...a, rate, before: a.value, now, gain: now === undefined ? undefined : round2(now - a.value) }
+  })
+}
+
+/** The currencies a month end needs a closing rate for: what is owed, credited or held in them. */
+export function currenciesToRevalue(ws: Workspace, schema: AppSchema, month: string) {
+  const end = monthEnd(month)
+  return [...new Set([...openForeign(ws, schema, end).map((r) => String(r.values.currency)), ...accountsRevaluationPlan(ws, month, {}).map((a) => a.currency)])].sort()
+}
+
+/** What a month end has to restate (nothing once that month or a later one was revalued): how many amounts owed,
+ * credited or held in another currency, and the currencies. */
+export function toRevalue(ws: Workspace, schema: AppSchema, month: string) {
+  if ((ws.books?.revaluations ?? []).some((r) => r.month >= month)) return { count: 0, codes: [] as string[] }
+  const count = openForeign(ws, schema, monthEnd(month)).length + accountsRevaluationPlan(ws, month, {}).length
+  return { count, codes: count ? currenciesToRevalue(ws, schema, month) : [] }
 }
 
 /** What restating at the closing rates would change, per document (positive = the company is better off). */
@@ -81,17 +123,25 @@ export function revalue(ctx: Ctx, month: string, rates: Record<string, number>) 
   if ((ctx.ws.books?.revaluations ?? []).some((r) => r.month >= month)) throw new EngineError(`Foreign currency was already revalued for ${month} or later`)
   const clean = Object.fromEntries(Object.entries(rates ?? {}).map(([k, v]) => [k.toUpperCase(), round4(Number(v))]).filter(([, v]) => (v as number) > 0)) as Record<string, number>
   const plan = revaluationPlan(ctx.ws, ctx.schema, month, clean)
-  if (!plan.length) throw new EngineError(`Nothing is owed in another currency at the end of ${month}`)
-  const missing = [...new Set(plan.filter((p) => p.now === undefined).map((p) => p.currency))]
+  const held = accountsRevaluationPlan(ctx.ws, month, clean)
+  if (!plan.length && !held.length) throw new EngineError(`Nothing is owed or held in another currency at the end of ${month}`)
+  const missing = [...new Set([...plan.filter((p) => p.now === undefined), ...held.filter((h) => h.now === undefined)].map((p) => p.currency))]
   if (missing.length) throw new EngineError(`Enter the closing rate of ${missing.join(', ')}`)
   const sales = moduleByRole(ctx.schema, 'invoices')?.id
-  const lines: { account: string; debit: number; credit: number }[] = []
+  const lines: { account: string; debit: number; credit: number; fx?: number }[] = []
   let gain = 0
   for (const p of plan) {
     const diff = round2(p.now! - p.before)
     if (!diff) continue
-    lines.push(side(p.rec.module === sales ? '1200' : '2100', diff))
+    // receivables are a debit balance, payables a credit one: a bill worth more pounds is more owed (a credit)
+    lines.push(p.rec.module === sales ? side('1200', diff) : side('2100', -diff))
     gain = round2(gain + p.gain!)
+  }
+  // a foreign cash box or bank account: its value changes, not the dollars in it
+  for (const h of held) {
+    if (!h.gain) continue
+    lines.push({ ...side(h.account.code, h.gain!), fx: 0 })
+    gain = round2(gain + h.gain!)
   }
   const ref = nextNumber(ctx, 'FXR', end)
   if (lines.length) {

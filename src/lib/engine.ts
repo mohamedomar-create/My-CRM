@@ -5,7 +5,7 @@ import type { Aggregate, AppSchema, ApprovalRule, FieldDef, ModuleDef, ModuleRol
 import { fieldByKey, moduleById, moduleByRole, uid } from './schema'
 import { evalFormula } from './formula'
 import type { AccountCode, ActivityKind, Approval, CostCenter, JournalEntry, Line, OpeningBooks, OpeningStep, OpeningWht, Payment, PendingJournal, Rec, User, Warehouse, Workspace } from './types'
-import { account as findAccount, accountName, chartOf, type AccountType, moneyAccounts, moneyKind, systemAccount } from './accounts'
+import { account as findAccount, accountName, chartOf, type AccountType, allMoneyAccounts, moneyAccounts, moneyKind, systemAccount } from './accounts'
 import { lineTaxCode, taxCode, TAX_CODES, WHT_RATES, whtName } from './tax'
 
 export class EngineError extends Error {}
@@ -884,15 +884,29 @@ export function journal(ctx: Ctx, entry: Omit<JournalEntry, 'id'>, from?: { samp
   checkOpenPeriod(ctx, entry.date)
   if (entry.lines.some((l) => round2(l.debit) < 0 || round2(l.credit) < 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has a negative amount`)
   const lines = entry.lines.filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0).map((l) => {
-    const { cc, ...rest } = l as typeof l & { cc?: string }
+    const { cc, fx, ...rest } = l as typeof l & { cc?: string }
+    const acc = findAccount(ctx.ws, l.account)
     // A cost center tags income and expenses only (P1): the balance sheet is the company's as a whole.
-    const keep = cc && costCenter(ctx.ws, cc) && ['income', 'expense'].includes(findAccount(ctx.ws, l.account)?.type ?? '')
+    const keep = cc && costCenter(ctx.ws, cc) && ['income', 'expense'].includes(acc?.type ?? '')
+    // A cash box or bank account in another currency: every line on it states that currency's amount too, the same
+    // way round (money in is positive), so its balance in that currency is always known. 0 only restates its value.
+    if (acc?.currency) {
+      const f = round2(Number(fx))
+      if (typeof fx !== 'number' || !Number.isFinite(f)) throw new EngineError(`${acc.code} ${acc.name} is kept in ${acc.currency}: state the ${acc.currency} amount of this entry`)
+      if ((f > 0 && round2(l.credit) > 0) || (f < 0 && round2(l.debit) > 0)) throw new EngineError(`Internal check failed: journal ${entry.ref} has ${acc.currency} the wrong way round on ${acc.code}`)
+      return { ...rest, fx: f, debit: round2(l.debit), credit: round2(l.credit) }
+    }
     return { ...rest, ...(keep ? { cc } : {}), debit: round2(l.debit), credit: round2(l.credit) }
   })
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
   if (dr !== cr) throw new EngineError(`Internal check failed: journal ${entry.ref} does not balance (${dr} ≠ ${cr})`)
   ctx.ws.data.journal.unshift(tag(ctx, { ...entry, lines, id: uid('j') }, from))
+}
+
+/** A journal line the other way round (a reversal): debit and credit swapped, a foreign amount negated. */
+export function flip<L extends { debit: number; credit: number; fx?: number }>(l: L): L {
+  return { ...l, debit: l.credit, credit: l.debit, ...(typeof l.fx === 'number' ? { fx: -l.fx } : {}) }
 }
 
 /** One account's amount split by cost center: a line per cost center (debit when positive), untagged together. */
@@ -1430,6 +1444,11 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   const spread = (ctx.ws.books?.deferrals ?? []).find((d) => d.doc === rec.id && d.status === 'active')
   if (spread) throw new EngineError(`${rec.number} is being spread over months. Stop the spread first (Accounting → Spread over months).`)
   if (rec.status === 'ordered') throw new EngineError('This is a purchase order: close it instead')
+  // Restated at a month end: undoing the original entry would leave the restatement behind, so it is credited instead.
+  if (isForeign(rec) && rec.values.carry_rate !== undefined) {
+    if (rec.values.credit_for) throw new EngineError(`${rec.number} was restated at a month-end rate: refund the credit instead`)
+    throw new EngineError(`${rec.number} was restated at a month-end rate: issue a credit note instead`)
+  }
   const lc = (ctx.ws.landed ?? []).find((l) => !l.undone && (l.from === rec.id || l.to.includes(rec.id)))
   if (lc) throw new EngineError(`This bill is part of landed cost ${lc.number}. Undo the landed cost first.`)
   const date = ctx.today ?? todayISO()
@@ -1458,7 +1477,7 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
     setValuation(ctx.ws, p, value)
   }
   for (const je of ctx.ws.data.journal.filter((j) => j.doc === rec.id && !j.ref.startsWith('VOID'))) {
-    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map(flip) }, rec)
   }
   if (residual !== 0) {
     journal(ctx, { date, ref: `VOID ${rec.number} ADJ`, memo: `Inventory rounding after voiding ${rec.number}`, doc: rec.id, lines: [side('5000', residual), side('1300', -residual)] }, rec)
@@ -1470,8 +1489,10 @@ export function voidDocument(ctx: Ctx, rec: Rec) {
   const orig = rec.values.credit_for ? findRecord(ctx.ws, String(rec.values.credit_for)) : undefined
   if (orig) {
     orig.values.credited = round2(Number(orig.values.credited ?? 0) - Number(rec.values.applied ?? 0))
+    if (isForeign(orig)) orig.values.base_balance = round2(Number(orig.values.base_balance ?? 0) + Number(rec.values.applied_base ?? 0))
     refreshBalance(orig)
   }
+  if (isForeign(rec)) rec.values.base_balance = 0
   log(ctx, `voided ${mod.singular} ${rec.number}`, rec)
 }
 
@@ -1489,12 +1510,14 @@ export interface PayOptions {
 }
 
 /** The cash box or bank account a payment goes through. Cheques wait in 1150 (received) or 2150 (issued) until cashed. */
-function moneyAccountFor(ctx: Ctx, method: PayMethod, incoming: boolean, account?: string): AccountCode {
+function moneyAccountFor(ctx: Ctx, method: PayMethod, incoming: boolean, account?: string, currency?: string): AccountCode {
   if (method === 'cheque') return incoming ? '1150' : '2150'
   const kind = method === 'cash' ? 'cash' : 'bank'
   if (account) {
-    const a = moneyAccounts(ctx.ws).find((x) => x.code === account)
+    const a = allMoneyAccounts(ctx.ws).find((x) => x.code === account)
     if (!a) throw new EngineError(`Account ${account} isn’t an active cash box or bank account`)
+    // An account in another currency takes only money in that currency: a USD account pays USD bills, nothing else.
+    if (a.currency && a.currency !== currency) throw new EngineError(`${a.name} is kept in ${a.currency}: it takes only payments in ${a.currency}`)
     if (moneyKind(a) !== kind) throw new EngineError(kind === 'cash' ? 'Cash goes into a cash box, not a bank account' : `${method === 'bank' ? 'A bank transfer' : method === 'card' ? 'A card payment' : 'InstaPay'} goes through a bank account, not a cash box`)
     return a.code
   }
@@ -1523,23 +1546,27 @@ function payDoc(ctx: Ctx, rec: Rec, amount: number, date: string, method: PayMet
   const withheld = round2((base * o.whtRate) / 100)
   const wht = o.whtRate ? { rate: o.whtRate, base, amount: withheld } : undefined
   const handed = round2(amount - withheld)
-  ctx.ws.data.payments.unshift(tag(ctx, {
-    id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref: o.ref, account: o.account,
-    ...(wht ? { wht } : {}), ...(o.cheque ? { cheque: o.cheque } : {}), ...(o.voucher ? { voucher: o.voucher } : {}),
-  }, rec))
   // In another currency: the money at the payment's rate, the debt at what the books carry; the difference is a
   // realized exchange gain or loss (4960).
   const foreign = isForeign(rec)
   const rate = foreign ? Number(o.rate) || docRate(rec) : 1
-  const handedB = round2(handed * rate)
+  // Money into an account kept in that currency comes in at the day's rate; money out of one leaves at the rate it was
+  // put in at, so what the dollars cost and what they settled are compared once, in the gain or loss.
+  const fxAcct = findAccount(ctx.ws, o.account)?.currency ? o.account : undefined
+  const handedB = fxAcct && !incoming ? fxCarry(ctx.ws, fxAcct, handed) : round2(handed * rate)
   const withheldB = round2(withheld * rate)
+  const fxOn = (l: { account: string; debit: number; credit: number }) => (fxAcct && l.account === fxAcct ? { ...l, fx: incoming ? handed : -handed } : l)
   const relief = foreign ? relieve(rec, amount) : amount
   const gain = round2(incoming ? handedB + withheldB - relief : relief - handedB - withheldB)
+  ctx.ws.data.payments.unshift(tag(ctx, {
+    id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: incoming ? 'in' : 'out' as const, ref: o.ref, account: o.account,
+    ...(wht ? { wht } : {}), ...(o.cheque ? { cheque: o.cheque } : {}), ...(o.voucher ? { voucher: o.voucher } : {}),
+  }, rec))
   journal(ctx, {
     date, ref: o.ref, memo: `${incoming ? 'Received from customer' : 'Paid to supplier'} for ${rec.number}${o.cheque ? `, cheque ${o.cheque.no}` : ''}${wht ? `, ${whtName(o.whtRate)} withheld` : ''}`, doc: rec.id,
-    lines: incoming
+    lines: (incoming
       ? [{ account: o.account, debit: handedB, credit: 0 }, { account: '1450', debit: withheldB, credit: 0 }, { account: '1200', debit: 0, credit: relief }, side('4960', -gain)]
-      : [{ account: '2100', debit: relief, credit: 0 }, { account: o.account, debit: 0, credit: handedB }, { account: '2400', debit: 0, credit: withheldB }, side('4960', -gain)],
+      : [{ account: '2100', debit: relief, credit: 0 }, { account: o.account, debit: 0, credit: handedB }, { account: '2400', debit: 0, credit: withheldB }, side('4960', -gain)]).map(fxOn),
   }, rec)
   if (foreign) {
     const p = ctx.ws.data.payments[0]
@@ -1580,7 +1607,7 @@ export function registerPayment(ctx: Ctx, rec: Rec, amount: number, date: string
   if (o.rate !== undefined && !(Number(o.rate) > 0)) throw new EngineError('The exchange rate must be more than 0')
   const cheque = method === 'cheque' ? chequeInfo(o.cheque, date) : undefined
   const ref = `PAY-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account), cheque, ref, rate: o.rate === undefined ? undefined : Number(o.rate) })
+  payDoc(ctx, rec, amount, date, method, { whtRate, account: moneyAccountFor(ctx, method, incoming, o.account, isForeign(rec) ? String(rec.values.currency) : undefined), cheque, ref, rate: o.rate === undefined ? undefined : Number(o.rate) })
   log(ctx, `registered ${money(amount, ctx.schema.company.currency)} payment on ${rec.number}`, rec)
 }
 
@@ -1748,11 +1775,17 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   const tf = totals(lines)
   const already = creditNotesOf(ctx.ws, orig).reduce((s, cn) => s - Number(cn.values.total ?? 0), 0)
   if (round2(already + tf.total) > round2(Number(orig.values.total))) throw new EngineError('The credit notes would be more than the original document')
-  if (foreign && tf.total > round2(Number(orig.values.balance ?? 0))) throw new EngineError(`${orig.number} is in ${orig.values.currency}: a credit note can be up to what is still owed on it (${orig.values.balance})`)
   // the amounts booked: in the company's currency at the original document's rate
   const t = foreign ? baseTotals(lines, fx) : tf
+  // The credit first reduces what is still owed on the original document; what is left over waits as the customer's
+  // (or supplier's) credit, in that currency at the original rate, until it is refunded.
+  const open = Math.max(0, Number(orig.values.balance ?? 0))
+  const applied = round2(Math.min(open, tf.total))
+  const leftover = round2(tf.total - applied)
+  const appliedRelief = foreign ? (applied ? relieve(orig, applied) : 0) : applied
+  const leftoverBase = foreign ? round2(t.total - round2(applied * fx)) : leftover
   // what the customer or supplier balance comes down by in the books (a foreign document: its carrying amount)
-  const arRelief = foreign ? relieve(orig, tf.total) : t.total
+  const arRelief = foreign ? round2(appliedRelief + leftoverBase) : t.total
   const fxGain = round2(arRelief - t.total)
 
   const prefix = sales ? 'CN' : 'DN'
@@ -1806,10 +1839,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   }
   journal(ctx, { date, ref: number, memo: `${sales ? 'Credit note' : 'Debit note'} ${number} for ${orig.number}: ${reason}`, doc: rec.id, lines: jl }, rec)
 
-  // The credit first reduces what is still owed on the original document.
-  const open = Math.max(0, Number(orig.values.balance ?? 0))
-  const applied = round2(Math.min(open, tf.total))
-  if (foreign) orig.values.base_balance = round2(Number(orig.values.base_balance ?? 0) - arRelief)
+  if (foreign) orig.values.base_balance = round2(Number(orig.values.base_balance ?? 0) - appliedRelief)
   orig.values.credited = round2(Number(orig.values.credited ?? 0) + applied)
   refreshBalance(orig)
   rec.number = number
@@ -1818,7 +1848,7 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
   rec.values.subtotal = -tf.subtotal
   rec.values.tax = -tf.tax
   rec.values.total = -tf.total
-  if (foreign) { rec.values.total_base = -t.total; rec.values.base_balance = 0 }
+  if (foreign) { rec.values.total_base = -t.total; rec.values.base_balance = -leftoverBase; rec.values.applied_base = appliedRelief }
   rec.values.credit_for = orig.id
   rec.values.reason = reason
   rec.values.applied = applied
@@ -1830,13 +1860,13 @@ export function creditNote(ctx: Ctx, origId: string, n: { lines: CreditLine[]; d
 }
 
 /** Pays back a credit: money to the customer for a credit note, or from the supplier for a debit note. */
-export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method'], account?: string) {
+export function refundCredit(ctx: Ctx, id: string, amount: number, date: string, method: Payment['method'], account?: string, rate?: number) {
   needFinance(ctx, 'register refunds')
   const rec = findRecord(ctx.ws, id)
   const mod = rec ? moduleById(ctx.schema, rec.module) : undefined
   if (!rec || !mod || !rec.values.credit_for) throw new EngineError('Refunds are made on credit and debit notes')
   if (rec.status !== 'posted' && rec.status !== 'partial') throw new EngineError('There is no credit left to refund')
-  noForeign(rec, 'a refund')
+  if (rate !== undefined && rate !== null && !(Number(rate) > 0)) throw new EngineError('The exchange rate must be more than 0')
   amount = round2(Number(amount))
   const left = round2(-Number(rec.values.balance ?? 0))
   if (!(amount > 0)) throw new EngineError('The refund must be more than 0')
@@ -1845,13 +1875,24 @@ export function refundCredit(ctx: Ctx, id: string, amount: number, date: string,
   noFutureDate(ctx, date, 'refund')
   if (method === 'cheque') throw new EngineError('Refund by cash or bank transfer')
   const sales = mod.role === 'invoices'
-  const cash = moneyAccountFor(ctx, method, !sales, account)
+  const foreign = isForeign(rec)
+  const cash = moneyAccountFor(ctx, method, !sales, account, foreign ? String(rec.values.currency) : undefined)
   const ref = `REF-${rec.number}-${ctx.ws.data.payments.filter((p) => p.doc === rec.id).length + 1}`
-  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref, account: cash }, rec))
+  // In another currency: the credit comes off at what the books carry it at, the money moves at the day's rate (or,
+  // out of an account in that currency, at what its money cost); the difference is an exchange gain or loss (4960).
+  const r = foreign ? Number(rate) || docRate(rec) : 1
+  const carried = -Number(rec.values.base_balance ?? 0)
+  const relief = foreign ? (amount >= left ? round2(carried) : round2((carried * amount) / (left || 1))) : amount
+  const fxAcct = findAccount(ctx.ws, cash)?.currency ? cash : undefined
+  const moneyB = fxAcct && sales ? fxCarry(ctx.ws, fxAcct, amount) : round2(amount * r)
+  const gain = round2(sales ? relief - moneyB : moneyB - relief)
+  ctx.ws.data.payments.unshift(tag(ctx, { id: uid('p'), doc: rec.id, module: rec.module, amount, date, method, direction: sales ? 'out' as const : 'in' as const, ref, account: cash, ...(foreign ? { fx: { rate: r, relief } } : {}) }, rec))
+  const withFx = (l: { account: string; debit: number; credit: number }) => (fxAcct && l.account === fxAcct ? { ...l, fx: sales ? -amount : amount } : l)
   journal(ctx, {
     date, ref, memo: `Refund on ${rec.number}`, doc: rec.id,
-    lines: sales ? [{ account: '1200', debit: amount, credit: 0 }, { account: cash, debit: 0, credit: amount }] : [{ account: cash, debit: amount, credit: 0 }, { account: '2100', debit: 0, credit: amount }],
+    lines: (sales ? [{ account: '1200', debit: relief, credit: 0 }, { account: cash, debit: 0, credit: moneyB }, side('4960', -gain)] : [{ account: cash, debit: moneyB, credit: 0 }, { account: '2100', debit: 0, credit: relief }, side('4960', -gain)]).map(withFx),
   }, rec)
+  if (foreign) rec.values.base_balance = round2(Number(rec.values.base_balance ?? 0) + relief)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) + amount)
   refreshBalance(rec)
   log(ctx, `refunded ${money(amount, ctx.schema.company.currency)} on ${rec.number}`, rec)
@@ -1982,9 +2023,10 @@ export function reversePayment(ctx: Ctx, paymentId: string, reason: string, date
   if (!je) throw new EngineError('The payment’s journal entry is missing')
   const ref = `REV ${p.ref}`
   ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
-  journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
+  journal(ctx, { date, ref, memo: `Reversal of ${p.ref}: ${why}`, doc: p.doc, lines: je.lines.map(flip) }, rec)
   rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
-  if (p.fx) rec.values.base_balance = round2(Number(rec.values.base_balance ?? 0) + p.fx.relief)
+  // a payment had taken its relief off what the document carries; a refund had taken it off the credit
+  if (p.fx) rec.values.base_balance = round2(Number(rec.values.base_balance ?? 0) + (rec.values.credit_for ? -p.fx.relief : p.fx.relief))
   refreshBalance(rec)
   log(ctx, `reversed payment ${p.ref} (${why})`, rec)
 }
@@ -2100,7 +2142,7 @@ export function bounceCheque(ctx: Ctx, id: string, date: string, reason: string,
     ctx.ws.data.payments.unshift(tag(ctx, { ...p, id: uid('p'), amount: -p.amount, date, ref, reverses: p.id, ...(p.wht ? { wht: { ...p.wht, base: -p.wht.base, amount: -p.wht.amount } } : {}) }, rec))
     journal(ctx, {
       date, ref, memo: `Cheque ${c.no} bounced: ${why}`, doc: p.doc, cheque: { id, step: 'bounced' },
-      lines: je.lines.map((l) => ({ ...l, account: holding && l.account === '1150' ? holding : l.account, debit: l.credit, credit: l.debit })),
+      lines: je.lines.map((l) => ({ ...flip(l), account: holding && l.account === '1150' ? holding : l.account })),
     }, rec)
     rec.values.paid = round2(Number(rec.values.paid ?? 0) - p.amount)
     refreshBalance(rec)
@@ -2127,8 +2169,10 @@ export interface BankLine {
 /** Every movement on a cash box or bank account, oldest first, one per journal entry. */
 export function bankLines(ws: Workspace, account: string): BankLine[] {
   const out: BankLine[] = []
+  // An account in another currency is agreed in that currency, as its statement is (a restatement moves no money).
+  const foreign = Boolean(findAccount(ws, account)?.currency)
   for (const j of ws.data.journal) {
-    const amount = round2(j.lines.filter((l) => l.account === account).reduce((s, l) => s + l.debit - l.credit, 0))
+    const amount = round2(j.lines.filter((l) => l.account === account).reduce((s, l) => s + (foreign ? Number(l.fx ?? 0) : l.debit - l.credit), 0))
     if (j.lines.some((l) => l.account === account) && amount !== 0) out.push({ entry: j.id, date: j.date, ref: j.ref, memo: j.memo, amount })
   }
   return out.reverse()
@@ -2149,7 +2193,10 @@ export function reconciliationState(ws: Workspace, account: string) {
  */
 export function reconcileBank(ctx: Ctx, r: { account: string; date: string; balance: number; entries: string[] }) {
   needFinance(ctx, 'reconcile bank accounts')
-  const account = bankAccount(ctx, r.account)
+  const acct = allMoneyAccounts(ctx.ws, 'bank').find((x) => x.code === r.account)
+  if (!acct) throw new EngineError('Choose the bank account')
+  const account = acct.code
+  const cur = acct.currency ?? ctx.schema.company.currency
   noFutureDate(ctx, r.date, 'statement')
   const st = reconciliationState(ctx.ws, account)
   if (st.last && r.date <= st.last.date) throw new EngineError(`The last statement agreed was dated ${st.last.date}: use a later statement`)
@@ -2159,9 +2206,9 @@ export function reconcileBank(ctx: Ctx, r: { account: string; date: string; bala
   if (picked.some((l) => l!.date > r.date)) throw new EngineError('A movement dated after the statement can’t be on it')
   const balance = round2(Number(r.balance))
   const reached = round2(st.opening + picked.reduce((s, l) => s + l!.amount, 0))
-  if (reached !== balance) throw new EngineError(`The ticked movements give ${money(reached, ctx.schema.company.currency)}, the statement says ${money(balance, ctx.schema.company.currency)}: a difference of ${money(round2(balance - reached), ctx.schema.company.currency)}`)
+  if (reached !== balance) throw new EngineError(`The ticked movements give ${money(reached, cur)}, the statement says ${money(balance, cur)}: a difference of ${money(round2(balance - reached), cur)}`)
   ctx.ws.books = { ...ctx.ws.books, reconciliations: [...(ctx.ws.books?.reconciliations ?? []), { account, date: r.date, balance, entries: ids, at: nowISO(), by: ctx.user.id }] }
-  logLedger(ctx, `reconciled ${account} to the statement of ${r.date} (${money(balance, ctx.schema.company.currency)})`)
+  logLedger(ctx, `reconciled ${account} to the statement of ${r.date} (${money(balance, cur)})`)
 }
 
 /* ---------------- closing the books: lock date, month-end checks, year-end close ---------------- */
@@ -2362,7 +2409,7 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
   try {
     for (const c of reopened) {
       const je = ctx.ws.data.journal.find((j) => j.id === c.entry)
-      if (je) journal(ctx, { date: je.date, ref: `REOPEN ${c.year}`, memo: `Reversal of the ${c.year} year-end close: ${why}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+      if (je) journal(ctx, { date: je.date, ref: `REOPEN ${c.year}`, memo: `Reversal of the ${c.year} year-end close: ${why}`, lines: je.lines.map(flip) })
     }
   } finally {
     ctx.closing = false
@@ -2373,7 +2420,7 @@ export function reopenBooks(ctx: Ctx, date: string, reason: string) {
   try {
     for (const v of refiled) {
       const je = ctx.ws.data.journal.find((j) => j.id === v.entry)
-      if (je) journal(ctx, { date: je.date, ref: `VAT REOPEN ${v.month}`, memo: `Reversal of the ${v.month} VAT settlement: ${why}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+      if (je) journal(ctx, { date: je.date, ref: `VAT REOPEN ${v.month}`, memo: `Reversal of the ${v.month} VAT settlement: ${why}`, lines: je.lines.map(flip) })
     }
   } finally {
     ctx.closing = false
@@ -2579,7 +2626,24 @@ export function accountBalance(ws: Workspace, code: string) {
   return round2(b)
 }
 
-export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank' }) {
+/** Balance of a cash box or bank account in its own currency (USD, EUR …): the foreign amounts of its entries. */
+export function fxBalance(ws: Workspace, code: string) {
+  let b = 0
+  for (const j of ws.data.journal) for (const l of j.lines) if (l.account === code) b += Number(l.fx ?? 0)
+  return round2(b)
+}
+
+/** What taking `amount` (in its currency) out of a foreign cash box or bank account takes off its value in the
+ * books: at the rate its money was put in at (its average), all of it when it is emptied. */
+export function fxCarry(ws: Workspace, code: string, amount: number) {
+  const a = findAccount(ws, code)
+  const have = fxBalance(ws, code)
+  if (round2(amount) > have) throw new EngineError(`${a?.name ?? code} holds only ${have} ${a?.currency ?? ''}`.trim())
+  const value = accountBalance(ws, code)
+  return round2(amount) === have ? value : round2((value * amount) / have)
+}
+
+export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: string; type: AccountType; money?: 'cash' | 'bank'; currency?: string }) {
   needFinance(ctx, 'change the chart of accounts')
   const code = String(a.code ?? '').trim()
   const name = String(a.name ?? '').trim()
@@ -2588,7 +2652,13 @@ export function addAccount(ctx: Ctx, a: { code: string; name: string; nameAr?: s
   if (!TYPES.includes(a.type)) throw new EngineError('Choose the account type')
   if (findAccount(ctx.ws, code)) throw new EngineError(`Account ${code} already exists`)
   if (a.money && (a.type !== 'asset' || !['cash', 'bank'].includes(a.money))) throw new EngineError('Only an asset account can be a cash box or bank account')
-  ctx.ws.chart = [...chartOf(ctx.ws), { code, name, nameAr: a.nameAr?.trim() || undefined, type: a.type, active: true, ...(a.money ? { money: a.money } : {}) }].sort((x, y) => x.code.localeCompare(y.code))
+  const currency = String(a.currency ?? '').trim().toUpperCase()
+  if (currency) {
+    if (!a.money) throw new EngineError('Only a cash box or bank account can be kept in another currency')
+    if (!/^[A-Z]{3}$/.test(currency)) throw new EngineError('A currency is a 3-letter code, e.g. USD')
+    if (currency === ctx.schema.company.currency) throw new EngineError(`${currency} is the company’s own currency: leave the currency empty`)
+  }
+  ctx.ws.chart = [...chartOf(ctx.ws), { code, name, nameAr: a.nameAr?.trim() || undefined, type: a.type, active: true, ...(a.money ? { money: a.money } : {}), ...(currency ? { currency } : {}) }].sort((x, y) => x.code.localeCompare(y.code))
 }
 
 export function updateAccount(ctx: Ctx, code: string, change: { name?: string; nameAr?: string; active?: boolean }) {
@@ -2603,7 +2673,7 @@ export function updateAccount(ctx: Ctx, code: string, change: { name?: string; n
 }
 
 /** An account a journal line may use: it exists, is active, and (for manual entries) isn't a control account. */
-function postable(ctx: Ctx, code: string, manual: boolean) {
+export function postable(ctx: Ctx, code: string, manual: boolean) {
   const a = findAccount(ctx.ws, code)
   if (!a) throw new EngineError(`Account ${code} doesn’t exist`)
   if (!a.active) throw new EngineError(`Account ${code} ${a.name} is turned off`)
@@ -2620,6 +2690,8 @@ export interface VoucherLine {
   note?: string
   /** the cost center of an income or expense line */
   cc?: string
+  /** on a cash box or bank account in another currency: how much of that currency (always positive here) */
+  fx?: number
 }
 
 /** A journal voucher entered by hand. It must balance; it can't be changed afterwards, only reversed. */
@@ -2629,13 +2701,20 @@ export function checkVoucher(ctx: Ctx, v: { date: string; memo: string; lines: V
   const memo = String(v.memo ?? '').trim()
   if (!ISO_DATE.test(date)) throw new EngineError('Choose the date of the entry')
   if (memo.length < 3) throw new EngineError('Describe the entry (what it is for)')
-  const lines = (v.lines ?? []).map((l) => ({ account: String(l.account), debit: round2(Number(l.debit) || 0), credit: round2(Number(l.credit) || 0), note: l.note?.trim() || undefined, ...(l.cc ? { cc: activeCostCenter(ctx, String(l.cc)) } : {}) }))
+  const lines = (v.lines ?? []).map((l) => ({ account: String(l.account), debit: round2(Number(l.debit) || 0), credit: round2(Number(l.credit) || 0), note: l.note?.trim() || undefined, ...(l.cc ? { cc: activeCostCenter(ctx, String(l.cc)) } : {}), ...(l.fx !== undefined && l.fx !== null && String(l.fx) !== '' ? { fx: Number(l.fx) } : {}) }))
     .filter((l) => l.debit !== 0 || l.credit !== 0)
   if (lines.length < 2) throw new EngineError('A journal entry needs at least two lines')
   for (const l of lines) {
-    postable(ctx, l.account, true)
+    const a = postable(ctx, l.account, true)
     if (l.debit < 0 || l.credit < 0) throw new EngineError('Amounts can’t be negative: use the other column')
     if (l.debit && l.credit) throw new EngineError('Each line is either a debit or a credit, not both')
+    // A line on a cash box or bank account in another currency says how much of that currency moved; the books store
+    // it signed (money in is positive). On any other account it means nothing, so it isn't kept.
+    if (a.currency) {
+      const f = Math.abs(round2(Number(l.fx)))
+      if (!(f > 0)) throw new EngineError(`${a.code} ${a.name} is kept in ${a.currency}: enter the ${a.currency} amount of that line`)
+      l.fx = l.debit ? f : -f
+    } else delete (l as { fx?: number }).fx
   }
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0))
   const cr = round2(lines.reduce((s, l) => s + l.credit, 0))
@@ -2651,7 +2730,7 @@ function postVoucher(ctx: Ctx, c: ReturnType<typeof checkVoucher>, people?: { en
   journal(ctx, { date: c.date, ref, memo: c.memo, lines: c.lines, manual: true, ...(c.adjusting ? { adjusting: true } : {}), ...(people ?? {}) })
   const id = ctx.ws.data.journal[0].id
   // An accrual reverses itself on the day given, so the real bill or receipt can be entered as usual then.
-  if (c.reverseOn) journal(ctx, { date: c.reverseOn, ref: `REV ${ref}`, memo: `Automatic reversal of ${ref}: ${c.memo}`, manual: true, reverses: id, lines: c.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+  if (c.reverseOn) journal(ctx, { date: c.reverseOn, ref: `REV ${ref}`, memo: `Automatic reversal of ${ref}: ${c.memo}`, manual: true, reverses: id, lines: c.lines.map(flip) })
   logLedger(ctx, c.reverseOn ? `entered adjusting entry ${ref}, reversing on ${c.reverseOn}: ${c.memo}` : `entered journal voucher ${ref}: ${c.memo}`)
   return { ref, id }
 }
@@ -2722,27 +2801,48 @@ export function rejectJournal(ctx: Ctx, id: string, reason: string) {
  * Money moved between two of the company's own cash boxes and bank accounts (a contra entry, قيد عكسي بين النقدية
  * والبنك): cash deposited at the bank, cash drawn from it, or a transfer between banks, with any bank charge.
  */
-export function transferMoney(ctx: Ctx, t: { from: string; to: string; amount: number; date: string; memo?: string; charges?: number }) {
+export function transferMoney(ctx: Ctx, t: { from: string; to: string; amount: number; date: string; memo?: string; charges?: number; received?: number }) {
   needFinance(ctx, 'move money between accounts')
   noRealPostingOverSamples(ctx)
   if (!ISO_DATE.test(String(t.date ?? ''))) throw new EngineError('Choose the date of the transfer')
   if (String(t.date) > (ctx.today ?? todayISO())) throw new EngineError('A transfer can’t be dated in the future')
-  const own = moneyAccounts(ctx.ws)
+  const own = allMoneyAccounts(ctx.ws)
   const from = own.find((a) => a.code === String(t.from))
   const to = own.find((a) => a.code === String(t.to))
   if (!from || !to) throw new EngineError('Choose a cash box or bank account on both sides')
   if (from.code === to.code) throw new EngineError('Choose two different accounts')
+  const home = ctx.schema.company.currency
+  const fromCur = from.currency ?? home
+  const toCur = to.currency ?? home
+  const exchange = fromCur !== toCur
   const amount = round2(Number(t.amount))
   const charges = round2(Number(t.charges ?? 0) || 0)
   if (!(amount > 0)) throw new EngineError('The amount must be more than 0')
   if (charges < 0) throw new EngineError('Bank charges can’t be negative')
   const charge = findAccount(ctx.ws, '5500')
   if (charges && !(charge?.active && charge.type === 'expense')) throw new EngineError('Bank charges need the expense account 5500 Bank charges')
+  // Between two currencies (buying or selling dollars) the person says what arrived: the rate is what the bank gave.
+  const received = exchange ? round2(Number(t.received)) : amount
+  if (exchange && !(received > 0)) throw new EngineError(`Enter how many ${toCur} arrived in ${to.name}`)
   const date = String(t.date)
   const ref = nextNumber(ctx, 'TRF', date)
+  // What leaves, in the company's currency: at what the money cost if it is foreign (the amount and any charges, which
+  // are in the sending account's currency), else as it is.
+  const outB = from.currency ? fxCarry(ctx.ws, from.code, round2(amount + charges)) : round2(amount + charges)
+  const chargesB = from.currency ? round2((outB * charges) / round2(amount + charges)) : charges
+  const sentB = round2(outB - chargesB)
+  // What arrives: the company's own currency as it is; another currency at what was given for it.
+  const inB = to.currency ? sentB : received
+  const gain = round2(inB - sentB)
   const memo = String(t.memo ?? '').trim() || `${from.name} → ${to.name}`
-  journal(ctx, { date, ref, memo: `Transfer: ${memo}`, lines: [{ account: to.code, debit: amount, credit: 0 }, { account: '5500', debit: charges, credit: 0 }, { account: from.code, debit: 0, credit: round2(amount + charges) }] })
-  logLedger(ctx, `moved ${money(amount, ctx.schema.company.currency)} from ${from.code} to ${to.code} (${ref})`)
+  const lines = [
+    { account: to.code, debit: inB, credit: 0, ...(to.currency ? { fx: received } : {}) },
+    { account: '5500', debit: chargesB, credit: 0 },
+    { account: from.code, debit: 0, credit: outB, ...(from.currency ? { fx: -round2(amount + charges) } : {}) },
+    side('4960', -gain),
+  ]
+  journal(ctx, { date, ref, memo: `${exchange ? 'Exchange' : 'Transfer'}: ${memo}${exchange ? ` (${amount} ${fromCur} → ${received} ${toCur})` : ''}`, lines })
+  logLedger(ctx, exchange ? `exchanged ${amount} ${fromCur} for ${received} ${toCur} from ${from.code} to ${to.code} (${ref})` : `moved ${from.currency ? `${amount} ${from.currency}` : money(amount, home)} from ${from.code} to ${to.code} (${ref})`)
   return { ref }
 }
 
@@ -2755,7 +2855,7 @@ export function reverseJournal(ctx: Ctx, id: string, date = todayISO()) {
   if (je.reverses) throw new EngineError('This entry is itself a reversal')
   if (ctx.ws.data.journal.some((j) => j.reverses === id)) throw new EngineError('This entry was already reversed')
   if (!ISO_DATE.test(date) || date < je.date) throw new EngineError('The reversal can’t be dated before the entry')
-  journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Reversal of ${je.ref}: ${je.memo}`, manual: true, reverses: id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, je)
+  journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Reversal of ${je.ref}: ${je.memo}`, manual: true, reverses: id, lines: je.lines.map(flip) }, je)
   logLedger(ctx, `reversed journal voucher ${je.ref}`)
 }
 
@@ -4019,7 +4119,7 @@ export function clearOpeningStep(ctx: Ctx, key: string) {
   }
   for (const id of s.entries) {
     const je = ctx.ws.data.journal.find((j) => j.id === id)
-    if (je) journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+    if (je) journal(ctx, { date, ref: `REV ${je.ref}`, memo: `Entered again: ${je.memo}`, lines: je.lines.map(flip) })
   }
   if (s.recon && ctx.ws.books?.reconciliations) ctx.ws.books.reconciliations = ctx.ws.books.reconciliations.filter((r) => !(r.account === s.recon && r.date === date && r.at === s.at))
   if (key === 'tb') delete o.tb
@@ -4042,7 +4142,7 @@ function voidOpeningDoc(ctx: Ctx, rec: Rec, date: string, look: OpeningLookup) {
   if ((look.paid.get(rec.id) ?? 0) !== 0) throw new EngineError(`${rec.number} has payments in Nasq360. Reverse them first.`)
   if (look.credited.has(rec.id)) throw new EngineError('This document has credit notes. Void them first.')
   for (const je of (look.entries.get(rec.id) ?? []).filter((j) => j.ref === rec.number)) {
-    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) }, rec)
+    journal(ctx, { date, ref: `VOID ${je.ref}`, memo: `Reversal of ${je.ref}`, doc: rec.id, lines: je.lines.map(flip) }, rec)
   }
   rec.status = 'void'
   rec.values.balance = 0
@@ -4244,7 +4344,7 @@ function clearEarlierPeriods(ctx: Ctx, o: OpeningBooks, s: OpeningStep) {
       const je = ctx.ws.data.journal.find((j) => j.id === id)
       if (!je) continue
       const ref = je.ref.startsWith('CLOSE ') ? `REOPEN ${je.ref.slice(6)}` : `REV ${je.ref}`
-      journal(ctx, { date: je.date, ref, memo: `Entered again: ${je.memo}`, lines: je.lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit })) })
+      journal(ctx, { date: je.date, ref, memo: `Entered again: ${je.memo}`, lines: je.lines.map(flip) })
     }
   } finally {
     ctx.closing = false
