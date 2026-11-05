@@ -1,6 +1,7 @@
 // Cloud store. Accounts are Supabase Auth users; `workspace_members` says which e-mails may open which company.
 // The app opens a workspace through open_workspace(), which returns only what the person's role may see, works on
 // that copy and sends every change to the "command" server function.
+import { makeBackup } from './backup'
 import { useSyncExternalStore } from 'react'
 import type { User as AuthUser, RealtimeChannel } from '@supabase/supabase-js'
 import type { SavedView, User, Workspace } from './types'
@@ -1043,10 +1044,11 @@ export async function transferOwnership(workspaceId: string, email: string) {
 }
 
 /** The whole workspace as a JSON file, so the owner always has their own copy. */
-export function downloadBackup() {
+export async function downloadBackup() {
   const ws = currentWorkspace()
   if (!ws) return
-  const blob = new Blob([JSON.stringify(ws, null, 2)], { type: 'application/json' })
+  // the company, the date and a fingerprint of its contents (backup.ts), so a changed or damaged file is known
+  const blob = new Blob([JSON.stringify(await makeBackup(ws))], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = `nasq360-backup-${(ws.answers.companyName || ws.id).replace(/[^\w-]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`
@@ -1130,3 +1132,11 @@ export const staffBuilderRequests = () => call<BuilderRequest[]>('staff_builder_
 export const staffBuilderGrant = (workspaceId: string, days: number | null, note: string) => call<BuilderRequest[]>('staff_builder_grant', { p_id: workspaceId, p_days: days, p_note: note })
 export const staffBuilderDecline = (workspaceId: string, answer: string) => call<BuilderRequest[]>('staff_builder_decline', { p_id: workspaceId, p_answer: answer })
 export const staffBuilderRevoke = (workspaceId: string) => call<BuilderRequest[]>('staff_builder_revoke', { p_id: workspaceId })
+
+/** Restores a checked backup as a new company (never over one in use), and opens it. */
+export async function restoreAsNewCompany(backup: Workspace, name: string) {
+  await createCompany(name)
+  run('backup.restore', { workspace: backup }, 'Restored a backup')
+  await flush()
+  if (state.sync === 'error') throw new Error('The backup couldn’t be saved. The new company is empty; delete it and try again.')
+}

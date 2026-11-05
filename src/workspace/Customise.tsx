@@ -2,11 +2,13 @@
 // admins' own; customising the system itself (lists, fields, pipelines, automations, rules, roles) is opened by
 // Nasq360 on request, so nothing changes how the company works by accident.
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Database, LayoutDashboard, Lock, Palette, Send, Unlock, Wand2 } from 'lucide-react'
+import { Database, LayoutDashboard, Lock, Palette, RotateCcw, Send, ShieldCheck, Unlock, Upload, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { isAdmin } from '../lib/engine'
-import { builderRequest, builderStatus, type BuilderStatus } from '../lib/store'
+import { builderRequest, builderStatus, restoreAsNewCompany, type BuilderStatus } from '../lib/store'
+import { readBackup, type BackupCheck } from '../lib/backup'
 import ReportsTab from '../builder/ReportsTab'
 import { DraftMode } from '../builder/useDraft'
 import type { Focus } from '../builder/Builder'
@@ -42,7 +44,7 @@ export default function Customise() {
         </DraftMode.Provider>
       )}
       {tab === 'look' && <Look />}
-      {tab === 'company' && <><BackupCard /><DeleteCompany /></>}
+      {tab === 'company' && <><BackupCard /><RestoreCard /><DeleteCompany /></>}
       {tab === 'system' && <SystemAccess />}
     </div>
   )
@@ -130,3 +132,62 @@ export function BuilderLocked() {
   )
 }
 
+
+/** A backup file brought back as a new company, after the same checks as the books (never over a company in use). */
+function RestoreCard() {
+  const nav = useNavigate()
+  const [check, setCheck] = useState<BackupCheck | null>(null)
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const date = (d: string) => new Date(d).toLocaleString(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  async function load(f: File) {
+    setError('')
+    setCheck(null)
+    if (f.size > 9_500_000) return setError(tr('This backup is larger than 9.5 MB: ask Nasq360 to restore it for you'))
+    try {
+      const c = await readBackup(await f.text())
+      setCheck(c)
+      setName(tr('{name} (restored)', { name: c.company }))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  async function restore() {
+    if (!check || !confirm(tr('Restore {name} as a new company? The company you are in now is not changed.', { name: check.company }))) return
+    setBusy(true)
+    setError('')
+    try {
+      await restoreAsNewCompany(check.workspace, name)
+      nav('/app')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+    setBusy(false)
+  }
+  const blocked = Boolean(check?.problems.length)
+  return (
+    <div className="card stack" style={{ marginTop: 16 }}>
+      <h2 style={{ margin: 0 }}><RotateCcw size={18} /> {tr('Restore a backup')}</h2>
+      <p className="small muted" style={{ margin: 0 }}>{tr('A backup file comes back as a new company, next to this one, so nothing in use is ever overwritten. It is checked first: its fingerprint, and its books (they must balance, and every customer, supplier, stock and cheque total must match its account).')}</p>
+      <label className="btn secondary" style={{ cursor: 'pointer', alignSelf: 'flex-start' }}><Upload size={14} /> {tr('Choose a backup file')}<input type="file" accept=".json,application/json" hidden onChange={(e) => { if (e.target.files?.[0]) void load(e.target.files[0]); e.target.value = '' }} /></label>
+      {error && <div className="error-box">{msg(error)}</div>}
+      {check && (
+        <>
+          <div className={blocked ? 'error-box' : check.fingerprint === 'none' ? 'note' : 'ok-box'}>
+            <b className="row" style={{ gap: 6 }}><ShieldCheck size={15} /> {check.company}{check.at ? ` · ${date(check.at)}` : ''}</b>
+            <div className="small">{check.fingerprint === 'ok' ? tr('Fingerprint matches: the file is exactly as it was taken.') : check.fingerprint === 'none' ? tr('An older backup with no fingerprint: its contents can’t be proven unchanged.') : ''}</div>
+            <div className="small">{tr('{r} records, {d} documents, {e} journal entries, {p} payments, {u} people', { r: check.counts.records, d: check.counts.documents, e: check.counts.entries, p: check.counts.payments, u: check.counts.people })}</div>
+            {check.problems.length > 0 && <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>{check.problems.map((p, i) => <li key={i}>{msg(p)}</li>)}</ul>}
+          </div>
+          {!blocked && (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <label className="field grow">{tr('Name of the new company')}<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+              <button disabled={busy || name.trim().length < 2} onClick={() => void restore()}><RotateCcw size={14} /> {busy ? tr('Please wait…') : tr('Restore as a new company')}</button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
