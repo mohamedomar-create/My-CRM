@@ -8,6 +8,7 @@ import { ImportModal } from './ImportModal'
 import { ActivityImport } from './ActivityImport'
 import GoLive, { type SheetPreset } from './GoLive'
 import { HistoryImport } from './HistoryImport'
+import { LiveDocsImport } from './LiveDocsImport'
 import { can, canPost, list, money, openingStatus } from '../lib/engine'
 import { findStepSheet, migrationSteps, migrationWorkbook, stepSheetName, type MigrationStep } from '../lib/migration'
 import type { AppSchema } from '../lib/schema'
@@ -25,6 +26,7 @@ export default function Migrate() {
   const [book, setBook] = useState<{ file: string; sheets: Sheet[] } | null>(null)
   const [problem, setProblem] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const [live, setLive] = useState<'sales' | 'purchases' | null>(null)
   const o = ws.books?.opening
   const st = openingStatus(ws, saved, lang)
   const quarterStart = o ? ['01', '04', '07', '10'].includes(o.goLive.slice(5, 7)) && o.goLive.endsWith('-01') : false
@@ -156,6 +158,18 @@ export default function Migrate() {
           </table></div>
         </div>
       )}
+
+      {finance && (
+        <div className="card stack">
+          <h2 style={{ margin: 0 }}>{tr('4. Invoices and bills still to work on')}</h2>
+          <p className="small muted" style={{ margin: 0 }}>{tr('Documents that belong in the books from now on (not past history, and not only an amount owed): each comes in with its lines and is posted, moving balances, stock and VAT. Every row is checked first; nothing is saved unless all are right.')}</p>
+          <div className="row">
+            <button className="secondary" onClick={() => setLive('sales')}><Upload size={14} /> {tr('Sales invoices')}</button>
+            <button className="secondary" onClick={() => setLive('purchases')}><Upload size={14} /> {tr('Purchase bills')}</button>
+          </div>
+        </div>
+      )}
+      {live && <LiveDocsImport side={live} onClose={() => setLive(null)} />}
 
       {currentHistory && (() => {
         const sh = sheetOf(currentHistory)
