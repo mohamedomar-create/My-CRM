@@ -1,4 +1,5 @@
 import { visibleSheets } from '../lib/sheets'
+import { EmptyState } from '../components/EmptyState'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Clock, FileSpreadsheet, Sparkles, Wand2 } from 'lucide-react'
@@ -72,10 +73,7 @@ export default function Dashboard() {
       {erp && <TargetsCard />}
 
       {reports.length === 0 && (
-        <div className="card empty">
-          <div className="big-ic" style={{ background: 'var(--area-tint)' }}><Sparkles size={30} /></div>
-          <b>{tr('No reports for your role yet.')}</b>
-        </div>
+        <EmptyState icon={<Sparkles size={28} />} title={tr('No reports for your role yet.')} text={tr('An admin adds charts for each role in Customise → Dashboard & reports.')} />
       )}
       <div className="dash">
         {reports.map((base) => {

@@ -1,4 +1,5 @@
 import { useDeferredValue, useEffect, useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { Bookmark, CalendarDays, ChevronLeft, ChevronRight, Clock, Download, Filter as FilterIcon, Flame, Kanban, Plus, Table2, Upload, X } from 'lucide-react'
@@ -161,12 +162,11 @@ function View({ mod, ws, schema }: { mod: ModuleDef; ws: Workspace; schema: AppS
       </div>
 
       {all.length === 0 ? (
-        <div className="card empty">
-          <div className="big-ic" style={{ background: mod.color }}><Icon name={mod.icon} size={32} /></div>
-          <b>{tr('No {what} yet', { what: mod.name.toLowerCase() })}</b>
-          <p className="small">{tr('Create the first one to get started.')}</p>
-          {can({ schema, user }, mod.id, 'create') && <Link className="btn" to={`/app/new/${mod.id}`}><Plus size={16} /> {tr('New {what}', { what: mod.singular.toLowerCase() })}</Link>}
-        </div>
+        <EmptyState color={mod.color} icon={<Icon name={mod.icon} size={30} />} title={tr('No {what} yet', { what: mod.name.toLowerCase() })} text={tr('Create the first one, or bring them all in from Excel at once.')}
+          action={can({ schema, user }, mod.id, 'create') && <Link className="btn" to={`/app/new/${mod.id}`}><Plus size={16} /> {tr('New {what}', { what: mod.singular.toLowerCase() })}</Link>} />
+      ) : rows.length === 0 && (query || stage) ? (
+        <EmptyState compact color={mod.color} icon={<FilterIcon size={22} />} title={tr('Nothing matches')} text={tr('No {what} match this search or filter.', { what: mod.name.toLowerCase() })}
+          action={<button className="secondary" onClick={() => { setQ(''); setStage('') }}><X size={14} /> {tr('Clear the search')}</button>} />
       ) : view === 'calendar' && dateField ? (
         <Calendar rows={rows} dateKey={dateField.key} ws={ws} schema={schema} color={mod.color} />
       ) : view === 'board' && mod.stages ? (

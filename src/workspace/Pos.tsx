@@ -1,6 +1,7 @@
 // The shop counter. Made for speed at a till: search or scan, tap products, take cash, card or InstaPay (or a mix), print
 // the receipt, next customer. The drawer is opened with its cash and closed by counting it; returns come back against
 // the receipt. With no connection the counter keeps selling: sales wait on this device and are sent when it's back.
+import { EmptyState } from '../components/EmptyState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, CreditCard, Minus, Plus, Printer, RotateCcw, Search, Smartphone, Store, Trash2, WifiOff, X } from 'lucide-react'
 import { showToast, useApp } from './useApp'
@@ -42,7 +43,7 @@ export default function Pos() {
       {!canSell({ schema, user })
         ? <div className="card"><p style={{ margin: 0 }}>{tr('Your role can’t sell at the counter. An admin can allow it in Team → Access.')}</p></div>
         : !counters.length || setup
-          ? (admin ? <CounterSetup onDone={() => setSetup(false)} /> : <div className="card"><p style={{ margin: 0 }}>{tr('No counter is set up yet. Ask an admin to set one up here.')}</p></div>)
+          ? (admin ? <CounterSetup onDone={() => setSetup(false)} /> : <EmptyState icon={<Store size={28} />} title={tr('No counter yet')} text={tr('No counter is set up yet. Ask an admin to set one up here.')} />)
           : closed
             ? <div className="stack" style={{ gap: 10 }}><ZReport sessionId={closed} /><button className="ghost no-print" style={{ alignSelf: 'center' }} onClick={() => setClosed(null)}>{tr('Done')}</button></div>
             : !session

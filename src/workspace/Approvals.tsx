@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { EmptyState } from '../components/EmptyState'
 import { Link } from 'react-router-dom'
-import { Check, ClipboardCheck, X } from 'lucide-react'
+import { Check, CheckCircle2, ClipboardCheck, X } from 'lucide-react'
 import { useApp } from './useApp'
 import { canApprove, findRecord, recordTitle } from '../lib/engine'
 import { moduleById } from '../lib/schema'
@@ -43,7 +44,7 @@ export default function Approvals() {
     <div className="page">
       <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><ClipboardCheck size={20} /></span>{tr('Approvals')}</h1></div>
       <h2>{tr('Waiting for you ({n})', { n: mine.length })}</h2>
-      {mine.length === 0 ? <p className="muted small">{tr('Nothing to approve. 🎉')}</p> : mine.map((a) => row(a, true))}
+      {mine.length === 0 ? <EmptyState compact color="var(--success)" icon={<CheckCircle2 size={22} />} title={tr('Nothing to approve')} text={tr('Everything sent to you has been decided.')} /> : mine.map((a) => row(a, true))}
       <h2 style={{ marginTop: 22 }}>{tr('Your requests')}</h2>
       {requested.length === 0 ? <p className="muted small">{tr('You haven’t requested any approvals.')}</p> : requested.map((a) => row(a, false))}
       <h2 style={{ marginTop: 22 }}>{tr('Recent decisions')}</h2>

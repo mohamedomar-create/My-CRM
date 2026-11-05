@@ -1,6 +1,7 @@
 // Payroll, kept simple: this month (prepare, approve, bank file, paid), the people (bank details and monthly pay), the
 // bank file's layout (made once from the bank's own template), and past months. Only the owner, admins and roles
 // given "Payroll" open it.
+import { EmptyState } from '../components/EmptyState'
 import { useMemo, useState } from 'react'
 import { Banknote, CheckCircle2, Download, FileSpreadsheet, Plus, Trash2, Upload, Users, Wallet } from 'lucide-react'
 import { showToast, useApp } from './useApp'
@@ -52,7 +53,7 @@ function Month() {
   const locked = Boolean(saved && saved.status !== 'draft')
   const canApprove = saved?.status === 'draft' && (saved.preparedBy !== user.id || isAdmin({ ws, schema, user }))
   const prepare = () => act('payroll.prepare', { month, changes: Object.fromEntries(people.map((p) => { const c = changesOf(p.id); return [p.id, { additions: Number(c.additions) || 0, deductions: Number(c.deductions) || 0, ...(c.note ? { note: c.note } : {}) }] })) }, tr('Payroll prepared: another person approves it'), `Payroll ${month} prepared`)
-  if (!people.length && !saved) return <div className="card">{tr('Add the people on the payroll first (People tab).')}</div>
+  if (!people.length && !saved) return <EmptyState icon={<Users size={28} />} title={tr('No employees yet')} text={tr('Add the people you pay on the Employees tab, with their bank details and monthly pay. Then this month’s payroll is prepared here in one step.')} />
   return (
     <div className="stack">
       <div className="card stack" style={{ gap: 10 }}>
@@ -173,7 +174,7 @@ function People() {
         </div>
       )}
       <div className="card">
-        {!people.length ? <p className="small muted" style={{ margin: 0 }}><Users size={14} /> {tr('No one yet. Add the people you pay each month.')}</p> : (
+        {!people.length ? <EmptyState compact icon={<Users size={22} />} title={tr('No employees yet')} text={tr('No one yet. Add the people you pay each month.')} /> : (
           <div className="table-wrap">
             <table className="data">
               <thead><tr><th>{tr('Person')}</th><th>{tr('Paid by')}</th><th className="num">{tr('Basic')}</th><th className="num">{tr('Allowances')}</th><th className="num">{tr('Net pay')}</th><th /></tr></thead>
@@ -267,7 +268,7 @@ function History() {
   const { ws, schema } = useApp()
   const cur = (n: number) => money(n, schema.company.currency)
   const runs = useMemo(() => runsOf(ws), [ws])
-  if (!runs.length) return <div className="card small muted">{tr('No payroll yet.')}</div>
+  if (!runs.length) return <EmptyState icon={<Wallet size={28} />} title={tr('No payroll yet.')} text={tr('Prepare this month’s payroll on the first tab: it is approved by another person, then posted as one total.')} />
   return (
     <div className="card">
       <div className="table-wrap">

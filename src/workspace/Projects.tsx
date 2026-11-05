@@ -1,5 +1,6 @@
 // Projects and time: everyone logs their hours; finance starts projects and bills the unbilled hours in one click; each
 // project shows its hours, what is left to bill, its budget used and its profit (from the books, by its cost center).
+import { EmptyState } from '../components/EmptyState'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, Clock, FolderKanban, Plus, Receipt, Trash2, Undo2 } from 'lucide-react'
@@ -23,7 +24,7 @@ export default function Projects() {
         <table className="data">
           <thead><tr><th>{tr('Project')}</th><th>{tr('Customer')}</th><th className="num">{tr('Hours')}</th><th className="num">{tr('To bill')}</th><th className="num">{tr('Revenue')}</th><th className="num">{tr('Costs')}</th><th className="num">{tr('Profit')}</th><th /></tr></thead>
           <tbody>
-            {all.length === 0 && <tr><td colSpan={8} className="muted">{tr('No projects yet. Start one, and everyone can log their hours on it.')}</td></tr>}
+            {all.length === 0 && <tr style={{ cursor: 'default' }}><td colSpan={8} style={{ padding: 0 }}><EmptyState compact icon={<FolderKanban size={22} />} title={tr('No projects yet')} text={tr('No projects yet. Start one, and everyone can log their hours on it.')} /></td></tr>}
             {all.map((p) => {
               const st = projectStatus(ws, p.id)!
               return (
