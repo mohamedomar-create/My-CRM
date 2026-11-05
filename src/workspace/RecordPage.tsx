@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../components/Dialog'
 import { RecordPicker } from '../components/RecordPicker'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ClipboardList, ImagePlus, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Star, Trash2, Undo2, UserPlus, X } from 'lucide-react'
+import { ClipboardList, ImagePlus, Truck, ArrowLeft, Ban, Banknote, CheckCircle2, GitBranch, Clock, FileCheck2, FileText, Flame, Lock, MessageSquare, Plus, Printer, Save, Send, ShieldAlert, Trash2, Undo2, UserPlus, X } from 'lucide-react'
 import { methodLabel, showToast, statusLabel, useApp, actorName } from './useApp'
 import { useStore } from '../lib/store'
 import { Icon } from '../components/Icon'
@@ -22,10 +22,10 @@ import { RecipePanel } from './RecipePanel'
 import { QuoteSharePanel } from './QuoteSharePanel'
 import { docFlow } from './docFlow'
 import {
-  can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, descendants, displayValue, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
+  can, canPost, costCenters, creditNotesOf, creditProblems, dueDateFor, isAdmin, spreadDiscount, parentField, findRecord, lineNet, lineTax, list, money, onHand, recordTitle, round2, todayISO, totals, defaultValues, approvalNeeded, canApprove, mayActAsApprover, canSeeCosts, costKeys, fieldValue, isVisible, rotting, score,
   usesWarehouses, unitsOf, approvalRoles, quoteLocked,
 } from '../lib/engine'
-import type { FieldDef, ModuleDef } from '../lib/schema'
+import type { ModuleDef } from '../lib/schema'
 import { moduleById, moduleByRole, uid } from '../lib/schema'
 import type { Line, Rec, Workspace } from '../lib/types'
 import type { AppSchema } from '../lib/schema'
@@ -47,6 +47,7 @@ import { overBudgetWarnings } from '../lib/budget'
 import { ProductPhotoCard } from './ProductPhoto'
 import { PRODUCT_PHOTOS } from '../lib/config'
 import { poProgress } from '../lib/purchasing'
+import { FieldInput, QuickCreate } from './Fields'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -392,82 +393,6 @@ function relatedRecords(ws: Workspace, schema: AppSchema, rec: Rec) {
   return out.slice(0, 20)
 }
 
-/** A link field: type to find the record, or create one when only its name is needed (4.2d). */
-type Ids = Set<string>
-type RelationProps = { field: FieldDef; value?: string; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema; exclude?: Ids }
-
-function RelationPicker({ field, value, onChange, disabled, ws, schema, exclude }: RelationProps) {
-  const { user, act } = useApp()
-  const target = moduleById(schema, field.target ?? '')
-  // Only a record that needs nothing but its name is created from here; anything more opens its own form.
-  const simple = target && can({ schema, user }, target.id, 'create') && target.fields.every((f) => !f.required || f.key === target.titleField || f.readOnly)
-  const create = simple ? (name: string) => (act('record.create', { module: target!.id, values: { [target!.titleField]: name } }, tr('{what} created', { what: target!.singular })) as { id: string } | undefined)?.id : undefined
-  return <RecordPicker ws={ws} schema={schema} moduleId={field.target ?? ''} value={value} onChange={(id) => onChange(id)} disabled={disabled} exclude={exclude} onCreate={create} label={field.label} />
-}
-
-function FieldInput({ field, value, onChange, disabled, ws, schema, self, mod }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; disabled?: boolean; ws: Workspace; schema: AppSchema; self?: string; mod?: ModuleDef }) {
-  if (field.readOnly || field.type === 'formula' || field.type === 'lookup' || field.type === 'rollup') {
-    const shown = field.type === 'formula' ? (value === undefined || value === null ? '—' : Number(value).toLocaleString()) : displayValue(ws, schema, field, value) || (value === 0 ? '0' : '—')
-    return <div className="ro-value">{shown}</div>
-  }
-  const str = value === undefined || value === null ? '' : String(value)
-  switch (field.type) {
-    case 'longtext':
-      return <textarea value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} dir="auto" />
-    case 'number':
-    case 'currency':
-    case 'percent':
-      return <input type="number" step={field.type === 'number' ? 'any' : '0.01'} min={field.min} max={field.max} value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
-    case 'rating':
-      return (
-        <div className="row" style={{ gap: 2 }}>
-          {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" className="ghost icon" disabled={disabled} onClick={() => onChange(n)} aria-label={tr('{n} of 5', { n })} aria-pressed={Number(value) >= n}><Star size={20} fill={Number(value) >= n ? 'var(--accent)' : 'none'} color="var(--accent)" /></button>)}
-        </div>
-      )
-    case 'date':
-      return <input type="date" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
-    case 'checkbox':
-      return <label className="inline"><input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} disabled={disabled} /> {field.label}</label>
-    case 'select':
-      return (
-        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
-          <option value="">—</option>
-          {field.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      )
-    case 'multiselect': {
-      const cur = (value as string[]) ?? []
-      return (
-        <div className="chips">
-          {field.options?.map((o) => (
-            <button key={o.value} type="button" disabled={disabled} className={`chip ${cur.includes(o.value) ? 'on' : ''}`} style={{ padding: '5px 11px' }} onClick={() => onChange(cur.includes(o.value) ? cur.filter((x) => x !== o.value) : [...cur, o.value])}>{o.label}</button>
-          ))}
-        </div>
-      )
-    }
-    case 'relation': {
-      // Under itself or under one of its own is a loop: those aren't offered.
-      const own = mod && field.target === mod.id && self ? new Set([self, ...descendants(ws, mod, self).map((d) => d.rec.id)]) : undefined
-      return <RelationPicker field={field} value={str || undefined} onChange={onChange} disabled={disabled} ws={ws} schema={schema} exclude={own} />
-    }
-    case 'user':
-      return (
-        <select value={str} onChange={(e) => onChange(e.target.value || undefined)} disabled={disabled}>
-          <option value="">—</option>
-          {ws.users.filter((u) => !u.former || u.id === str).map((u) => <option key={u.id} value={u.id}>{u.former ? tr('{name} (former)', { name: u.name }) : u.name}</option>)}
-        </select>
-      )
-    case 'email':
-      return <input type="email" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
-    case 'phone':
-      return <input type="tel" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="+20 10 0000 0000" />
-    case 'url':
-      return <input type="url" value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} placeholder="https://" dir="ltr" />
-    default:
-      return <input value={str} onChange={(e) => onChange(e.target.value)} disabled={disabled} dir="auto" />
-  }
-}
-
 function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currency }: { mod: ModuleDef; lines: Line[]; onChange: (l: Line[]) => void; disabled: boolean; ws: Workspace; schema: AppSchema; date?: string; currency?: string }) {
   const { user } = useApp()
   // Cost centers (P1): each line's income or cost goes to one; a new line starts with the person's own.
@@ -478,6 +403,15 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
   const t = totals(lines)
   const cur = currency || schema.company.currency
   const upd = (i: number, patch: Partial<Line>) => onChange(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)))
+  // a product or service not in the list yet is created from the line itself, then used on it
+  const [making, setMaking] = useState<{ line: number; name: string } | null>(null)
+  const buying = mod.role === 'purchases'
+  const mayCreate = Boolean(products && can({ schema, user }, products.id, 'create'))
+  const made = (i: number, id: string, v: Record<string, unknown>, cost?: number) => {
+    const vat = Number(v.vat_rate ?? schema.company.vatRate)
+    const price = buying ? (cost ?? 0) : Number(v.price ?? 0)
+    upd(i, { product: id, description: String(v[products!.titleField] ?? ''), price, vat, taxCode: codeForRate(vat) })
+  }
   const pick = (i: number, pid: string) => {
     const p = items.find((x) => x.id === pid)
     if (!p) return upd(i, { product: undefined })
@@ -510,14 +444,14 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
         <table className="lines">
           <thead><tr><th style={{ minWidth: 180 }}>{tr('Product / service')}</th><th>{tr('Qty')}</th><th>{tr('Unit price')}</th><th>{tr('Disc %')}</th><th>{tr('Disc. amount')}</th><th>{tr('Tax code')}</th>{withCc && <th>{tr('Cost center')}</th>}<th className="num">{tr('Net')}</th><th className="num">{tr('VAT')}</th><th /></tr></thead>
           <tbody>
-            {lines.length === 0 && <tr><td colSpan={withCc ? 10 : 9} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={withCc ? 10 : 9} className="muted small" style={{ padding: 16 }}>{mod.role === 'purchases' ? tr('No lines yet. Add the products or services you are buying.') : tr('No lines yet. Add the products or services you are selling.')}{mayCreate && <> {tr('Not in the list yet? Type its name in the line and choose “Create”.')}</>}</td></tr>}
             {lines.map((l, i) => {
               const p = items.find((x) => x.id === l.product)
               const stock = p?.values.track_stock ? onHand(ws, p.id) : undefined
               return (
                 <tr key={l.id}>
                   <td>
-                    {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} /> : null}
+                    {products ? <RecordPicker ws={ws} schema={schema} moduleId={products.id} value={l.product} onChange={(id) => pick(i, id ?? '')} disabled={disabled} label={tr('Product / service')} onCreate={mayCreate ? (name) => { setMaking({ line: i, name }); return undefined } : undefined} /> : null}
                     {!l.product && <input value={l.description} onChange={(e) => upd(i, { description: e.target.value })} disabled={disabled} placeholder={tr('Description')} style={{ marginTop: 4 }} />}
                     {stock !== undefined && mod.role !== 'purchases' && <span className={`tiny ${stock < l.qty * (l.factor ?? 1) ? 'pill red' : 'muted'}`}>{tr('On hand: {n}', { n: stock })}</span>}
                     {mod.role === 'purchases' && Boolean(p?.values.track_stock) && (
@@ -573,6 +507,7 @@ function LinesEditor({ mod, lines, onChange, disabled, ws, schema, date, currenc
         <span>{tr('VAT')}</span><b className="num">{money(t.tax, cur)}</b>
         <span className="grand">{tr('Total')}</span><span className="grand num">{money(t.total, cur)}</span>
       </div>
+      {making && products && <QuickCreate mod={products} name={making.name} buying={buying} onClose={() => setMaking(null)} onDone={(id, v, cost) => { made(making.line, id, v, cost); setMaking(null) }} />}
     </div>
   )
 }

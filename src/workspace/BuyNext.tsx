@@ -5,10 +5,11 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ShoppingCart } from 'lucide-react'
 import { useApp } from './useApp'
-import { can, findRecord, list, money } from '../lib/engine'
+import { can, findRecord, money } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { tr } from '../lib/i18n'
 import { reorderPlan } from '../lib/scan'
+import { PickOrCreate } from './Fields'
 
 export function BuyNext() {
   const { ws, schema, user, act } = useApp()
@@ -22,7 +23,6 @@ export function BuyNext() {
   const supplierOf = (pid: string, s?: string) => chosen[pid] ?? s ?? ''
   const groups = new Map<string, typeof plan>()
   for (const r of plan) { const s = supplierOf(r.product, r.supplier); groups.set(s, [...(groups.get(s) ?? []), r]) }
-  const allSuppliers = list(ws, suppliers.id)
   return (
     <div className="card stack" style={{ gap: 10 }}>
       <h2 style={{ margin: 0 }}><ShoppingCart size={17} /> {tr('Buy next')}</h2>
@@ -47,7 +47,7 @@ export function BuyNext() {
                       <td className="num">{r.onHand}</td><td className="num">{r.held || '—'}</td><td className="num">{r.onOrder || '—'}</td><td className="num">{r.level}</td>
                       <td className="num">{r.daysLeft === null ? '—' : r.daysLeft}</td>
                       <td style={{ width: 110 }}><input aria-label={tr('Order')} inputMode="decimal" value={qty[r.product] ?? String(r.qty)} onChange={(e) => setQty({ ...qty, [r.product]: e.target.value })} style={{ textAlign: 'end' }} /></td>
-                      {!s && <td><select aria-label={tr('Supplier')} value={supplierOf(r.product, r.supplier)} onChange={(e) => setChosen({ ...chosen, [r.product]: e.target.value })}><option value="">{tr('Choose…')}</option>{allSuppliers.map((x) => <option key={x.id} value={x.id}>{String(x.values.name ?? '')}</option>)}</select></td>}
+                      {!s && <td style={{ minWidth: 200 }}><PickOrCreate moduleId={suppliers.id} label={tr('Supplier')} value={supplierOf(r.product, r.supplier) || undefined} onChange={(id) => setChosen({ ...chosen, [r.product]: id ?? '' })} /></td>}
                     </tr>
                   ))}
                 </tbody>

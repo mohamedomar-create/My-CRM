@@ -9,6 +9,7 @@ import { canPost, list, money, recordTitle, todayISO } from '../lib/engine'
 import { moduleByRole } from '../lib/schema'
 import { isBilled, projectsOf, projectStatus, timeOf } from '../lib/projects'
 import { tr } from '../lib/i18n'
+import { PickOrCreate } from './Fields'
 
 export default function Projects() {
   const { ws, schema, user } = useApp()
@@ -120,14 +121,16 @@ function LogTime() {
 /** Finance: start a project for a customer, with its hourly rate and budget. */
 function NewProject() {
   const { ws, schema, act } = useApp()
-  const customers = list(ws, moduleByRole(schema, 'accounts')?.id ?? '').filter((r) => !r.sample)
+  const accountsMod = moduleByRole(schema, 'accounts')
+  // a real project never points at a sample customer
+  const sampleCustomers = new Set(list(ws, accountsMod?.id ?? '').filter((r) => r.sample).map((r) => r.id))
   const [f, setF] = useState({ name: '', customer: '', rate: '', budgetHours: '', budget: '' })
   return (
     <details className="card">
       <summary><b><Plus size={15} /> {tr('Start a project')}</b> <span className="small muted">{tr('It gets its own cost center: tag bills and expenses with it to see its profit')}</span></summary>
       <form className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); if (act('project.save', { name: f.name, customer: f.customer || undefined, rate: Number(f.rate) || 0, ...(f.budgetHours ? { budgetHours: Number(f.budgetHours) } : {}), ...(f.budget ? { budget: Number(f.budget) } : {}) }, tr('Project started')) !== undefined) setF({ name: '', customer: '', rate: '', budgetHours: '', budget: '' }) }}>
         <label className="field" style={{ minWidth: 220 }}>{tr('Name')}<input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-        <label className="field" style={{ minWidth: 200 }}>{tr('Customer')}<select value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })}><option value="">{tr('Choose…')}</option>{customers.map((c) => <option key={c.id} value={c.id}>{recordTitle(ws, schema, c)}</option>)}</select></label>
+        {accountsMod && <div className="field" style={{ minWidth: 220 }}>{tr('Customer')}<PickOrCreate moduleId={accountsMod.id} exclude={sampleCustomers} value={f.customer || undefined} label={tr('Customer')} onChange={(id) => setF({ ...f, customer: id ?? '' })} /></div>}
         <label className="field" style={{ width: 130 }}>{tr('Rate per hour')}<input inputMode="decimal" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} /></label>
         <label className="field" style={{ width: 130 }}>{tr('Hours agreed')}<input inputMode="decimal" value={f.budgetHours} onChange={(e) => setF({ ...f, budgetHours: e.target.value })} /></label>
         <label className="field" style={{ width: 150 }}>{tr('Amount agreed')}<input inputMode="decimal" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></label>

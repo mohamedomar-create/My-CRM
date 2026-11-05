@@ -19,6 +19,7 @@ import { findByCode } from '../lib/scan'
 import { EVERY_LABEL, type Every } from '../lib/recurring'
 import { WarehouseSelect } from './Warehouses'
 import { useDefaultWarehouse } from './useApp'
+import { PickOrCreate } from './Fields'
 
 
 
@@ -274,10 +275,12 @@ export function OpeningBalances() {
   }
   function saveParty(e: React.FormEvent) {
     e.preventDefault()
+    if (!party.id) return showToast({ kind: 'error', text: tr('Choose the customer or supplier') })
     if (act('opening.balance', { kind: party.kind, party: party.id, amount: num(party.amount), date, ref: party.ref }, tr('Opening balance saved'), `Opening balance for a ${party.kind}`) !== undefined) setParty({ ...party, id: '', amount: '', ref: '' })
   }
   function saveStock(e: React.FormEvent) {
     e.preventDefault()
+    if (!stock.product) return showToast({ kind: 'error', text: tr('Choose a product') })
     if (act('stock.adjust', { product: stock.product, qty: num(stock.qty), unitCost: num(stock.cost), reason: 'Opening stock', date, opening: true }, tr('Opening stock saved'), 'Opening stock') !== undefined) setStock({ product: '', qty: '', cost: '' })
   }
   const parties = party.kind === 'customer' ? customers : suppliers
@@ -305,10 +308,7 @@ export function OpeningBalances() {
         <p className="small muted">{tr('One line per customer or supplier. Each becomes an opening document you can later receive or pay against, and it shows in their balance and ageing.')}</p>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <select value={party.kind} onChange={(e) => setParty({ ...party, kind: e.target.value as 'customer' | 'supplier', id: '' })} style={{ width: 'auto' }}><option value="customer">{tr('Customer owes us')}</option><option value="supplier">{tr('We owe supplier')}</option></select>
-          <select required value={party.id} onChange={(e) => setParty({ ...party, id: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-            <option value="">{tr('Choose…')}</option>
-            {parties && list(ws, parties.id).map((r) => <option key={r.id} value={r.id}>{String(r.values.name ?? '')}</option>)}
-          </select>
+          {parties && <div style={{ minWidth: 220 }}><PickOrCreate key={parties.id} moduleId={parties.id} value={party.id || undefined} onChange={(id) => setParty({ ...party, id: id ?? '' })} label={party.kind === 'customer' ? tr('Customer') : tr('Supplier')} /></div>}
           <input required inputMode="decimal" value={party.amount} onChange={(e) => setParty({ ...party, amount: e.target.value })} placeholder={tr('Amount ({cur})', { cur })} style={{ width: 160, textAlign: 'end' }} />
           <input value={party.ref} onChange={(e) => setParty({ ...party, ref: e.target.value })} placeholder={tr('Old reference (optional)')} style={{ width: 200 }} />
           <button>{tr('Add')}</button>
@@ -319,10 +319,8 @@ export function OpeningBalances() {
         <form className="card stack" onSubmit={saveStock}>
           <h2>{tr('3. Stock on hand')}</h2>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <select required value={stock.product} onChange={(e) => setStock({ ...stock, product: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-              <option value="">{tr('Choose a product…')}</option>
-              {list(ws, products.id).filter((p) => p.values.track_stock).map((p) => <option key={p.id} value={p.id}>{String(p.values.name)} ({onHand(ws, p.id)} on hand)</option>)}
-            </select>
+            <div style={{ minWidth: 220 }}><PickOrCreate moduleId={products.id} stock exclude={new Set(list(ws, products.id).filter((p) => !p.values.track_stock).map((p) => p.id))} value={stock.product || undefined} onChange={(id) => setStock({ ...stock, product: id ?? '' })} label={tr('Product')} /></div>
+            {stock.product && <span className="small muted">{tr('{n} on hand', { n: onHand(ws, stock.product) })}</span>}
             <input required inputMode="decimal" value={stock.qty} onChange={(e) => setStock({ ...stock, qty: e.target.value })} placeholder={tr('Quantity')} style={{ width: 120, textAlign: 'end' }} />
             <input required inputMode="decimal" value={stock.cost} onChange={(e) => setStock({ ...stock, cost: e.target.value })} placeholder={tr('Cost per unit ({cur})', { cur })} style={{ width: 170, textAlign: 'end' }} />
             <button>{tr('Add')}</button>
@@ -350,6 +348,7 @@ export function StockTools() {
   const items = list(ws, products.id).filter((p) => p.values.track_stock)
   function adjust(e: React.FormEvent) {
     e.preventDefault()
+    if (!adj.product) return showToast({ kind: 'error', text: tr('Choose a product') })
     const qty = num(adj.qty)
     if (act('stock.adjust', { product: adj.product, qty, unitCost: adj.cost ? num(adj.cost) : undefined, reason: adj.reason, date: adj.date, ...place }, tr('Stock adjusted'), `Stock adjustment ${qty > 0 ? '+' : ''}${qty}`) !== undefined) {
       setAdj({ ...adj, product: '', qty: '', cost: '', reason: '' })
@@ -380,10 +379,8 @@ export function StockTools() {
           <p className="small muted">{tr('For damage, loss, samples or stock found. Use + to add and − to take away. Removals are valued at average cost and go to 5900 Inventory adjustments.')}</p>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <input type="date" value={adj.date} onChange={(e) => setAdj({ ...adj, date: e.target.value })} style={{ width: 160 }} />
-            <select required value={adj.product} onChange={(e) => setAdj({ ...adj, product: e.target.value })} style={{ width: 'auto', minWidth: 200 }}>
-              <option value="">{tr('Choose a product…')}</option>
-              {items.map((p) => <option key={p.id} value={p.id}>{String(p.values.name)} ({onHand(ws, p.id)} on hand)</option>)}
-            </select>
+            <div style={{ minWidth: 220 }}><PickOrCreate moduleId={products.id} stock exclude={new Set(list(ws, products.id).filter((p) => !p.values.track_stock).map((p) => p.id))} value={adj.product || undefined} onChange={(id) => setAdj({ ...adj, product: id ?? '' })} label={tr('Product')} /></div>
+            {adj.product && <span className="small muted">{tr('{n} on hand', { n: onHand(ws, adj.product) })}</span>}
             <input required inputMode="decimal" value={adj.qty} onChange={(e) => setAdj({ ...adj, qty: e.target.value })} placeholder={tr('+5 or −2')} style={{ width: 110, textAlign: 'end' }} />
             {num(adj.qty) > 0 && <input inputMode="decimal" value={adj.cost} onChange={(e) => setAdj({ ...adj, cost: e.target.value })} placeholder={tr('Cost per unit (blank = average)')} style={{ width: 220 }} />}
             <input required value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} placeholder={tr('Reason (e.g. damaged in storage)')} style={{ minWidth: 240 }} />

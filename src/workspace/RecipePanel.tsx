@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { Factory, Plus, Trash2, Undo2 } from 'lucide-react'
 import { useApp } from './useApp'
-import { can, canPost, list, money, todayISO } from '../lib/engine'
+import { can, canPost, findRecord, list, money, todayISO } from '../lib/engine'
 import { productionOf, recipeOf, requirements, unitCostToMake } from '../lib/production'
 import { moduleByRole } from '../lib/schema'
 import type { Rec } from '../lib/types'
 import { tr } from '../lib/i18n'
+import { PickOrCreate } from './Fields'
 
 export function RecipePanel({ rec }: { rec: Rec }) {
   const { ws, schema, user, act } = useApp()
@@ -20,8 +21,10 @@ export function RecipePanel({ rec }: { rec: Rec }) {
   if (!rec.values.track_stock) return null
   if (!recipe && !edit) return null
   const cur = schema.company.currency
-  const products = (() => { const m = moduleByRole(schema, 'products'); return m ? list(ws, m.id).filter((p) => p.values.track_stock && p.id !== rec.id) : [] })()
-  const name = (id: string) => String(products.find((p) => p.id === id)?.values.name ?? '')
+  const productsMod = moduleByRole(schema, 'products')
+  // a component is goods kept in stock, and not the product itself; a missing raw material is created right here
+  const notComponents = new Set([rec.id, ...(productsMod ? list(ws, productsMod.id).filter((p) => !p.values.track_stock).map((p) => p.id) : [])])
+  const name = (id: string) => String(findRecord(ws, id)?.values.name ?? '')
   const orders = productionOf(ws, rec.id).slice(0, 10)
   const plan = Number(qty) > 0 ? requirements(ws, rec.id, Number(qty)) : []
   return (
@@ -42,7 +45,7 @@ export function RecipePanel({ rec }: { rec: Rec }) {
           </div>
           {form.items.map((it, i) => (
             <div key={i} className="row" style={{ gap: 8, alignItems: 'end' }}>
-              <label className="field grow">{tr('Component')}<select value={it.product} onChange={(e) => setForm({ ...form, items: form.items.map((x, j) => (j === i ? { ...x, product: e.target.value } : x)) })}><option value="">{tr('Choose…')}</option>{products.map((p) => <option key={p.id} value={p.id}>{String(p.values.name)}</option>)}</select></label>
+              <div className="field grow">{tr('Component')}{productsMod && <PickOrCreate moduleId={productsMod.id} stock exclude={notComponents} value={it.product || undefined} label={tr('Component')} onChange={(id) => setForm({ ...form, items: form.items.map((x, j) => (j === i ? { ...x, product: id ?? '' } : x)) })} />}</div>
               <label className="field" style={{ width: 120 }}>{tr('Quantity')}<input inputMode="decimal" value={it.qty} onChange={(e) => setForm({ ...form, items: form.items.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)) })} /></label>
               <button type="button" className="ghost icon" aria-label={tr('Remove')} onClick={() => setForm({ ...form, items: form.items.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
             </div>
