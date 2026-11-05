@@ -32,7 +32,7 @@ export default function Pos() {
   return (
     <div className="page stack pos">
       <div className="page-head no-print row between" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <h1><span className="badge" style={{ background: 'var(--ink)' }}><Store size={20} /></span>{tr('Point of sale')}</h1>
+        <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Store size={20} /></span>{tr('Point of sale')}</h1>
         <span className="row" style={{ gap: 8 }}>
           <Waiting />
           {counters.length > 1 && <select aria-label={tr('Counter')} value={counter?.id} onChange={(e) => choose(e.target.value)} style={{ width: 180 }}>{counters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
@@ -221,7 +221,7 @@ function Till({ session, onClosed }: { session: PosSession; onClosed: (id: strin
               <button className="ghost" disabled={!cart.length} onClick={() => setPaying('split')}>{tr('Split')}</button>
             </div>
           )}
-        <div className="row between" style={{ borderTop: '1px solid var(--line)', paddingTop: 8, gap: 6, flexWrap: 'wrap' }}>
+        <div className="row between" style={{ borderTop: '1px solid var(--border)', paddingTop: 8, gap: 6, flexWrap: 'wrap' }}>
           <span className="tiny muted">{tr('{n} sales', { n: session.sales })}</span>
           <span className="row" style={{ gap: 6 }}>
             {cart.length > 0 && <button className="ghost small" onClick={() => setCart([])}><X size={13} /> {tr('Clear')}</button>}

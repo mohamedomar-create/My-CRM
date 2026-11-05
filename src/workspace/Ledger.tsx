@@ -154,7 +154,7 @@ export function PendingJournals() {
     <div className="card stack" style={{ gap: 8 }}>
       <h2 style={{ margin: 0 }}>{tr('Journal vouchers waiting for approval')}</h2>
       {list_.map((p) => (
-        <div key={p.id} className="row between" style={{ gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+        <div key={p.id} className="row between" style={{ gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
           <span className="small"><b>{p.memo}</b> · {p.date} · {money(p.total, cur)} · {tr('entered by {a}', { a: name(p.by) })}<br /><span className="tiny muted">{p.lines.map((l) => `${l.account} ${l.debit ? `Dr ${l.debit}` : `Cr ${l.credit}`}`).join(' · ')}</span></span>
           {p.by === user.id ? <span className="pill amber">{tr('waiting for someone else')}</span> : (
             <span className="row" style={{ gap: 6 }}>

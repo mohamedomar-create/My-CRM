@@ -74,7 +74,7 @@ export default function Access() {
     <div className="page access">
       <div className="page-head">
         <div>
-          <h1><span className="badge" style={{ background: 'var(--ink)' }}><KeyRound size={20} /></span>{tr('Access rights')}</h1>
+          <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><KeyRound size={20} /></span>{tr('Access rights')}</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>{tr('Choose what each role can see and do. A change applies at once to everyone with that role.')}</p>
         </div>
         <Link to="/app/team" className="btn secondary"><Users size={16} /> {tr('Team: who has which role')}</Link>

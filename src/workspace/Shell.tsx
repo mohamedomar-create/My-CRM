@@ -152,7 +152,7 @@ export default function Shell() {
         )}
         <NavLink to="/security" className="side-item"><ShieldCheck size={16} /> {tr('Security')}</NavLink>
       </aside>
-      <div className="main">
+      <div className="main" style={area ? { ['--a' as string]: AREA_INFO[area].color } : undefined}>
         <header className="topbar no-print">
           <button type="button" className="secondary search-btn" onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K">
             <Search size={16} aria-hidden /> <span className="grow" style={{ textAlign: 'start' }}>{tr('Search customers, deals, invoices…')}</span> <kbd>{SHORTCUT}</kbd>

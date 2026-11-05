@@ -16,7 +16,7 @@ export default function Projects() {
   const all = projectsOf(ws)
   return (
     <div className="page stack">
-      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--ink)' }}><FolderKanban size={20} /></span>{tr('Projects & time')}<span className="count">{all.length}</span></h1></div>
+      <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><FolderKanban size={20} /></span>{tr('Projects & time')}<span className="count">{all.length}</span></h1></div>
       <LogTime />
       {finance && <NewProject />}
       <div className="table-wrap card" style={{ padding: 0 }}>

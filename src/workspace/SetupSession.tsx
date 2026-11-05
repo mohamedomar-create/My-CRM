@@ -29,13 +29,13 @@ export default function SetupSession() {
   return (
     <div className="page stack">
       <div className="page-head">
-        <h1><span className="badge" style={{ background: 'var(--ink)' }}><ClipboardCheck size={20} /></span>{tr('Setup session')}</h1>
+        <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><ClipboardCheck size={20} /></span>{tr('Setup session')}</h1>
         <button className="secondary" onClick={() => window.print()}><Printer size={15} /> {tr('Print the minutes')}</button>
       </div>
       <p className="muted" style={{ margin: 0 }}>{tr('Sit with the people who run each part and settle each question together. The usual answer is already in place: change it here if your company works differently, then mark it agreed.')}</p>
       <div className="card row between" style={{ gap: 12, flexWrap: 'wrap' }}>
         <b>{tr('{a} of {n} agreed', { a: agreed.length, n: ds.length })}</b>
-        <div style={{ flex: 1, minWidth: 160, height: 8, background: 'var(--line)', borderRadius: 4 }} role="progressbar" aria-valuenow={agreed.length} aria-valuemax={ds.length} aria-label={tr('Setup session')}>
+        <div style={{ flex: 1, minWidth: 160, height: 8, background: 'var(--surface-3)', borderRadius: 4 }} role="progressbar" aria-valuenow={agreed.length} aria-valuemax={ds.length} aria-label={tr('Setup session')}>
           <div style={{ width: `${(agreed.length / ds.length) * 100}%`, height: 8, background: 'var(--success)', borderRadius: 4 }} />
         </div>
       </div>

@@ -93,7 +93,7 @@ function Progress({ d }: { d: Deferral }) {
   const pct = d.amount ? Math.round((d.released / d.amount) * 100) : 0
   return (
     <div className="stack" style={{ gap: 3 }}>
-      <div aria-hidden style={{ height: 6, borderRadius: 3, background: 'var(--line)' }}><div style={{ width: `${pct}%`, height: 6, borderRadius: 3, background: 'var(--brand)' }} /></div>
+      <div aria-hidden style={{ height: 6, borderRadius: 3, background: 'var(--surface-3)' }}><div style={{ width: `${pct}%`, height: 6, borderRadius: 3, background: 'var(--brand)' }} /></div>
       <span className="tiny muted">{tr('{done} of {months} months · {left} left', { done: d.done, months: d.months, left: money(leftToRelease(d), schema.company.currency) })}</span>
     </div>
   )
