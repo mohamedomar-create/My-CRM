@@ -28,7 +28,7 @@ describe('the four areas', () => {
     expect(ops).toContain('quotes')
     expect(keys(both, admin, 'plan')).toEqual(['plan', 'budgets', 'sales', 'reports'])
     // the Billing page only once charging starts (the launch period has it out of sight)
-    expect(keys(both, admin, 'setup')).toEqual(['session', 'doctor', 'migrate', 'team', 'access', 'customise', 'connections', ...(CHARGING ? ['billing'] : []), 'audit'])
+    expect(keys(both, admin, 'setup')).toEqual(['session', 'doctor', 'migrate', 'team', 'access', 'library', 'customise', 'connections', ...(CHARGING ? ['billing'] : []), 'audit'])
   })
 
   it('a salesperson works in Customer relations: being allowed to look at invoices does not open Operations', () => {

@@ -31,3 +31,16 @@ export function suggestCode(ws: Workspace, mod: ModuleDef, key: string): string 
     if (!used.has(code)) return code
   }
 }
+
+/** Several free codes in a row (P-0007, P-0008…), for adding many products at once. */
+export function suggestCodes(ws: Workspace, mod: ModuleDef, key: string, n: number): string[] {
+  const out: string[] = []
+  const rec = (code: string) => ({ id: code, module: mod.id, createdAt: '', updatedAt: '', createdBy: '', values: { [key]: code } })
+  let w = ws
+  for (let i = 0; i < n; i++) {
+    const code = suggestCode(w, mod, key)
+    out.push(code)
+    w = { ...w, data: { ...w.data, records: { ...w.data.records, [mod.id]: [...list(w, mod.id), rec(code)] } } }
+  }
+  return out
+}

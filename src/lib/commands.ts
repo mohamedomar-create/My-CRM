@@ -31,6 +31,8 @@ import { approveBudget, budgetDigest, createBudget, deleteBudget, rejectBudget, 
 import { removeTarget, setTarget } from './targets'
 import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
+import { installBlueprint, makeDocument, uninstallBlueprint } from './moduleLibrary'
+import { blueprintById } from './blueprints'
 import {
   EngineError, list, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, setProductImage, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
@@ -87,6 +89,9 @@ export interface CommandArgs {
   'setup.chooseTemplate': { draft: AppSchema; seedOnPublish: boolean }
   'setup.saveDraft': { draft: AppSchema }
   'setup.publish': Record<string, never>
+  'module.install': { id: string; access?: Record<string, Permission[]> }
+  'module.uninstall': { id: string }
+  'record.make': { id: string; make: string }
   'project.save': { id?: string; name: string; customer?: string; rate?: number; budgetHours?: number; budget?: number; start?: string }
   'project.status': { id: string; status: 'open' | 'done' }
   'project.bill': { id: string; upTo?: string }
@@ -238,6 +243,31 @@ function edits(c: Ctx, id: string, values?: Record<string, unknown>, lines?: Lin
   if (values && Object.keys(values).length) updateRecord(c, r, values)
   if (lines && moduleById(c.schema, r.module)?.lines) setLines(c, r, lines)
   return r
+}
+
+/**
+ * A change to the live system made outside the builder (a library module added or taken off): checked like a publish,
+ * kept in the version history, and made to the setup being edited as well, so the next publish doesn't undo it.
+ */
+function liveChange(ws: Workspace, change: (s: AppSchema) => AppSchema, note: string) {
+  const live = ws.published!
+  const next = change(live)
+  const errors = validate(next).filter((i) => i.level === 'error')
+  if (errors.length) throw new EngineError(errors[0].message)
+  const orphans = publishBlockers(ws, next)
+  if (orphans.length) throw new EngineError(orphans[0].message)
+  const version = live.version + 1
+  const snapshot = structuredClone({ ...next, version })
+  const same = ws.draft && JSON.stringify({ ...ws.draft, version: 0 }) === JSON.stringify({ ...live, version: 0 })
+  try {
+    ws.draft = same || !ws.draft ? structuredClone(snapshot) : { ...change(ws.draft), version }
+  } catch {
+    ws.draft = structuredClone(snapshot)
+  }
+  ws.published = snapshot
+  ws.history.unshift({ version, at: new Date().toISOString(), note, schema: snapshot })
+  ws.history = ws.history.slice(0, 20)
+  return version
 }
 
 function isSchema(x: unknown): x is AppSchema {
@@ -396,6 +426,28 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
       return { version, first }
     },
   },
+  // A module from the library: vetted to Nasq360's standard, so an admin adds it without opening the builder. It goes
+  // live at once as a new version of the system (kept in its history), and the setup being edited gets it too.
+  'module.install': {
+    admin: true,
+    run: (ws, _u, a) => {
+      const bp = blueprintById(String(a.id ?? ''))
+      if (!bp) throw new EngineError('That module isn’t in the library')
+      if (!ws.published) throw new EngineError('Publish the system before adding modules')
+      const access = a.access && typeof a.access === 'object' ? a.access : undefined
+      return { version: liveChange(ws, (s) => installBlueprint(s, bp, { access }), `Added ${bp.name}`) }
+    },
+  },
+  'module.uninstall': {
+    admin: true,
+    run: (ws, _u, a) => {
+      const bp = blueprintById(String(a.id ?? ''))
+      if (!bp) throw new EngineError('That module isn’t in the library')
+      if (!ws.published) throw new EngineError('Publish the system first')
+      return { version: liveChange(ws, (s) => uninstallBlueprint(ws, s, bp.id), `Removed ${bp.name}`) }
+    },
+  },
+  'record.make': { run: (ws, u, a) => ({ id: makeDocument(ctx(ws, u), String(a.id ?? ''), String(a.make ?? '')).id }) },
   'setup.restoreVersion': {
     admin: true,
     run: (ws, _u, a) => {

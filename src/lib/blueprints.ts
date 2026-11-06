@@ -1,0 +1,462 @@
+// The modules in the library. Each is written to the standard in moduleLibrary.ts (checkBlueprint) and installs into
+// any company in one step. To add one from another ERP, describe its lists here the same way: see docs/ADDING_A_MODULE.md.
+import type { Blueprint } from './moduleLibrary'
+
+export const BLUEPRINTS: Blueprint[] = [
+  {
+    id: 'fleet',
+    name: 'Fleet',
+    tagline: 'Company vehicles, their drivers, licence and insurance dates, and every service and its cost.',
+    alsoKnownAs: 'Odoo Fleet',
+    category: 'operations',
+    icon: 'Car',
+    color: '#0ea5e9',
+    worksWith: ['purchases', 'suppliers', 'products'],
+    modules: [
+      {
+        key: 'vehicles', name: 'Vehicles', singular: 'Vehicle', icon: 'Car', color: '#0ea5e9', title: 'Plate number', area: 'ops',
+        fields: [
+          { label: 'Model', type: 'text', inList: true },
+          { label: 'Vehicle type', type: 'select', key: 'vehicle_type', options: ['Car', 'Van', 'Truck', 'Motorcycle', 'Forklift'], inList: true },
+          { label: 'Driver', type: 'user', inList: true },
+          { label: 'Year', type: 'number', min: 1950 },
+          { label: 'Odometer (km)', type: 'number', key: 'odometer', min: 0 },
+          { label: 'Licence expires', type: 'date', key: 'licence_expiry', inList: true },
+          { label: 'Insurance expires', type: 'date', key: 'insurance_expiry' },
+          { label: 'Status', type: 'select', options: ['Active', 'In the workshop', 'Sold'], inList: true },
+          { label: 'Services', type: 'rollup', key: 'service_count', rollup: { from: 'services', via: 'vehicle', op: 'count' } },
+          { label: 'Service costs', type: 'rollup', key: 'service_cost', rollup: { from: 'services', via: 'vehicle', op: 'sum', field: 'cost' } },
+        ],
+      },
+      {
+        key: 'services', name: 'Vehicle services', singular: 'Vehicle service', icon: 'Wrench', color: '#f97316', title: 'Service', area: 'ops',
+        fields: [
+          { label: 'Vehicle', type: 'relation', link: '#vehicles', required: true, inList: true },
+          { label: 'Service date', type: 'date', key: 'service_date', required: true, inList: true },
+          { label: 'Service type', type: 'select', key: 'service_type', options: ['Oil change', 'Tyres', 'Repair', 'Licence renewal', 'Insurance', 'Fuel'], inList: true },
+          { label: 'Odometer (km)', type: 'number', key: 'odometer', min: 0 },
+          { label: 'Cost', type: 'currency', min: 0, inList: true },
+          { label: 'Supplier', type: 'relation', link: '@suppliers' },
+          { label: 'Status', type: 'select', options: ['Planned', 'Done'], inList: true },
+        ],
+      },
+    ],
+    makes: [{ id: 'bill', label: 'Make the purchase bill', module: 'services', target: 'purchases', party: 'supplier', line: { text: '{name}: {vehicle}', price: 'cost' } }],
+    automations: [
+      { name: 'Vehicle licence expired', module: 'vehicles', trigger: { type: 'date_passed', field: 'licence_expiry' }, actions: [{ type: 'create_task', title: 'Renew the licence of {name}', dueInDays: 3 }] },
+      { name: 'Vehicle insurance expired', module: 'vehicles', trigger: { type: 'date_passed', field: 'insurance_expiry' }, actions: [{ type: 'create_task', title: 'Renew the insurance of {name}', dueInDays: 3 }] },
+    ],
+    reports: [
+      { name: 'Service costs by vehicle', module: 'services', chart: 'hbar', groupBy: 'vehicle', measure: { op: 'sum', field: 'cost' } },
+      { name: 'Services by type', module: 'services', chart: 'pie', groupBy: 'service_type', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'maintenance',
+    name: 'Maintenance',
+    tagline: 'Machines and equipment, preventive maintenance dates, and repair requests through to done.',
+    alsoKnownAs: 'Odoo Maintenance',
+    category: 'operations',
+    icon: 'Cog',
+    color: '#64748b',
+    worksWith: ['products', 'purchases', 'tickets'],
+    modules: [
+      {
+        key: 'equipment', name: 'Equipment', singular: 'Equipment', icon: 'Cog', color: '#64748b', area: 'ops',
+        fields: [
+          { label: 'Category', type: 'select', options: ['Machine', 'Vehicle', 'IT', 'Building', 'Tool'], inList: true },
+          { label: 'Serial no.', type: 'text', key: 'serial_no', inList: true },
+          { label: 'Location', type: 'text' },
+          { label: 'Responsible', type: 'user', inList: true },
+          { label: 'Next preventive maintenance', type: 'date', key: 'next_maintenance', inList: true },
+          { label: 'Warranty ends', type: 'date', key: 'warranty_end' },
+          { label: 'Status', type: 'select', options: ['Working', 'Under repair', 'Out of service'], inList: true },
+          { label: 'Requests', type: 'rollup', key: 'request_count', rollup: { from: 'requests', via: 'equipment', op: 'count' } },
+        ],
+      },
+      {
+        key: 'requests', name: 'Maintenance requests', singular: 'Maintenance request', icon: 'Wrench', color: '#ef4444', title: 'Subject', area: 'ops',
+        fields: [
+          { label: 'Equipment', type: 'relation', link: '#equipment', required: true, inList: true },
+          { label: 'Maintenance type', type: 'select', key: 'maintenance_type', options: ['Corrective', 'Preventive'], inList: true },
+          { label: 'Priority', type: 'select', options: ['Low', 'Normal', 'Urgent'], inList: true },
+          { label: 'Requested on', type: 'date', key: 'requested_on' },
+          { label: 'Technician', type: 'user', inList: true },
+          { label: 'Cost', type: 'currency', min: 0 },
+          { label: 'What was done', type: 'longtext', key: 'work_done' },
+        ],
+        stages: [
+          { name: 'New request', type: 'open' },
+          { name: 'In progress', type: 'open', requires: ['technician'] },
+          { name: 'Repaired', type: 'won', requires: ['work_done'] },
+          { name: 'Scrapped', type: 'lost' },
+        ],
+      },
+    ],
+    automations: [
+      { name: 'Preventive maintenance due', module: 'equipment', trigger: { type: 'date_passed', field: 'next_maintenance' }, actions: [{ type: 'create_task', title: 'Preventive maintenance due for {name}', dueInDays: 2 }] },
+      { name: 'Urgent maintenance request', module: 'requests', trigger: { type: 'created' }, actions: [{ type: 'notify', message: 'New maintenance request: {name} on {equipment}' }] },
+    ],
+    reports: [
+      { name: 'Maintenance requests by stage', module: 'requests', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+      { name: 'Maintenance cost by equipment', module: 'requests', chart: 'hbar', groupBy: 'equipment', measure: { op: 'sum', field: 'cost' } },
+    ],
+  },
+  {
+    id: 'repairs',
+    name: 'Repairs',
+    tagline: 'Customer items in for repair: diagnosis, parts, the quotation, the invoice and handing it back.',
+    alsoKnownAs: 'Odoo Repairs',
+    category: 'service',
+    icon: 'Wrench',
+    color: '#f59e0b',
+    worksWith: ['tickets', 'invoices', 'quotes', 'accounts'],
+    modules: [
+      {
+        key: 'orders', name: 'Repair orders', singular: 'Repair order', icon: 'Wrench', color: '#f59e0b', title: 'Item', area: 'ops',
+        fields: [
+          { label: 'Customer', type: 'relation', link: '@accounts', key: 'customer', required: true, inList: true },
+          { label: 'Serial no.', type: 'text', key: 'serial_no', inList: true },
+          { label: 'Problem', type: 'longtext', required: true },
+          { label: 'Received on', type: 'date', key: 'received_on', inList: true },
+          { label: 'Under warranty', type: 'checkbox', key: 'warranty' },
+          { label: 'Technician', type: 'user', inList: true },
+          { label: 'Product used', type: 'relation', link: '@products', key: 'product' },
+          { label: 'Repair price', type: 'currency', key: 'price', min: 0, inList: true },
+        ],
+        stages: [
+          { name: 'Received', type: 'open' },
+          { name: 'Diagnosing', type: 'open', requires: ['technician'] },
+          { name: 'Waiting for parts', type: 'open' },
+          { name: 'Repaired', type: 'won', requires: ['price'] },
+          { name: 'Returned unrepaired', type: 'lost' },
+        ],
+      },
+    ],
+    makes: [
+      { id: 'quote', label: 'Make a quotation', module: 'orders', target: 'quotes', party: 'customer', line: { text: 'Repair of {name} ({serial_no})', price: 'price', product: 'product' }, stages: ['Diagnosing', 'Waiting for parts'] },
+      { id: 'invoice', label: 'Make the invoice', module: 'orders', target: 'invoices', party: 'customer', line: { text: 'Repair of {name} ({serial_no})', price: 'price', product: 'product' }, stages: ['Repaired'] },
+    ],
+    automations: [
+      { name: 'Repair finished', module: 'orders', trigger: { type: 'stage_changed', stage: 'Repaired' }, actions: [{ type: 'create_task', title: 'Tell {customer} that {name} is ready', dueInDays: 1 }] },
+    ],
+    reports: [
+      { name: 'Repairs by stage', module: 'orders', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+      { name: 'Repair income by technician', module: 'orders', chart: 'bar', groupBy: 'technician', measure: { op: 'sum', field: 'price' } },
+    ],
+  },
+  {
+    id: 'rental',
+    name: 'Rental',
+    tagline: 'Equipment or space rented out: dates, daily rate, deposit, pick-up, return and the invoice.',
+    alsoKnownAs: 'Odoo Rental',
+    category: 'sales',
+    icon: 'CalendarClock',
+    color: '#8b5cf6',
+    worksWith: ['quotes', 'invoices', 'accounts'],
+    modules: [
+      {
+        key: 'orders', name: 'Rental orders', singular: 'Rental order', icon: 'CalendarClock', color: '#8b5cf6', title: 'Item rented', area: 'ops',
+        fields: [
+          { label: 'Customer', type: 'relation', link: '@accounts', key: 'customer', required: true, inList: true },
+          { label: 'Product', type: 'relation', link: '@products', key: 'product' },
+          { label: 'From', type: 'date', key: 'from_date', required: true, inList: true },
+          { label: 'To', type: 'date', key: 'to_date', required: true, inList: true },
+          { label: 'Days', type: 'number', required: true, min: 1 },
+          { label: 'Rate per day', type: 'currency', key: 'rate', required: true, min: 0 },
+          { label: 'Rental total', type: 'formula', key: 'total', formula: 'days * rate', inList: true },
+          { label: 'Deposit', type: 'currency', min: 0 },
+        ],
+        stages: [
+          { name: 'Reserved', type: 'open' },
+          { name: 'Picked up', type: 'open' },
+          { name: 'Returned', type: 'won' },
+          { name: 'Cancelled', type: 'lost' },
+        ],
+      },
+    ],
+    makes: [{ id: 'invoice', label: 'Make the invoice', module: 'orders', target: 'invoices', party: 'customer', line: { text: 'Rental of {name}: {from_date} to {to_date}', qty: 'days', price: 'rate', product: 'product' } }],
+    automations: [
+      { name: 'Rental due back', module: 'orders', trigger: { type: 'date_passed', field: 'to_date' }, open: true, actions: [{ type: 'create_task', title: 'Collect {name} from {customer}', dueInDays: 1 }] },
+    ],
+    reports: [
+      { name: 'Rental income by customer', module: 'orders', chart: 'hbar', groupBy: 'customer', measure: { op: 'sum', field: 'total' } },
+      { name: 'Rentals by stage', module: 'orders', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'fieldservice',
+    name: 'Field service',
+    tagline: 'Visits at the customer’s site: who goes when, hours worked, the visit report and the invoice.',
+    alsoKnownAs: 'Odoo Field Service',
+    category: 'service',
+    icon: 'MapPin',
+    color: '#14b8a6',
+    worksWith: ['tickets', 'invoices', 'accounts'],
+    modules: [
+      {
+        key: 'visits', name: 'Field visits', singular: 'Field visit', icon: 'MapPin', color: '#14b8a6', title: 'Visit', area: 'ops',
+        fields: [
+          { label: 'Customer', type: 'relation', link: '@accounts', key: 'customer', required: true, inList: true },
+          { label: 'Address', type: 'text' },
+          { label: 'Scheduled on', type: 'date', key: 'scheduled_on', required: true, inList: true },
+          { label: 'Technician', type: 'user', inList: true },
+          { label: 'Hours', type: 'number', min: 0 },
+          { label: 'Rate per hour', type: 'currency', key: 'rate', min: 0 },
+          { label: 'Visit total', type: 'formula', key: 'total', formula: 'hours * rate', inList: true },
+          { label: 'Visit report', type: 'longtext', key: 'report' },
+        ],
+        stages: [
+          { name: 'Planned', type: 'open' },
+          { name: 'On the way', type: 'open', requires: ['technician'] },
+          { name: 'Done', type: 'won', requires: ['hours', 'report'] },
+          { name: 'Cancelled', type: 'lost' },
+        ],
+      },
+    ],
+    makes: [{ id: 'invoice', label: 'Make the invoice', module: 'visits', target: 'invoices', party: 'customer', line: { text: 'Field visit {name} on {scheduled_on}', qty: 'hours', price: 'rate' }, stages: ['Done'] }],
+    automations: [
+      { name: 'Field visit overdue', module: 'visits', trigger: { type: 'date_passed', field: 'scheduled_on' }, open: true, actions: [{ type: 'create_task', title: 'Visit {name} at {customer} is overdue', dueInDays: 1 }] },
+    ],
+    reports: [
+      { name: 'Hours by technician', module: 'visits', chart: 'bar', groupBy: 'technician', measure: { op: 'sum', field: 'hours' } },
+      { name: 'Field visits by stage', module: 'visits', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'recruitment',
+    name: 'Recruitment',
+    tagline: 'Open positions and applicants from first CV to hired, with sources and interview steps.',
+    alsoKnownAs: 'Odoo Recruitment',
+    category: 'people',
+    icon: 'Briefcase',
+    color: '#ec4899',
+    worksWith: ['tasks'],
+    modules: [
+      {
+        key: 'jobs', name: 'Job positions', singular: 'Job position', icon: 'Briefcase', color: '#ec4899', title: 'Job title', area: 'crm',
+        fields: [
+          { label: 'Department', type: 'select', options: ['Sales', 'Operations', 'Finance', 'Warehouse', 'Service', 'Management'], inList: true },
+          { label: 'Openings', type: 'number', min: 1, inList: true },
+          { label: 'Hiring manager', type: 'user', key: 'manager' },
+          { label: 'Status', type: 'select', options: ['Open', 'On hold', 'Filled'], inList: true },
+          { label: 'Applicants', type: 'rollup', key: 'applicant_count', rollup: { from: 'applicants', via: 'job', op: 'count' } },
+        ],
+      },
+      {
+        key: 'applicants', name: 'Applicants', singular: 'Applicant', icon: 'UserRound', color: '#8b5cf6', area: 'crm',
+        fields: [
+          { label: 'Job position', type: 'relation', link: '#jobs', key: 'job', required: true, inList: true },
+          { label: 'Phone', type: 'phone', inList: true },
+          { label: 'E-mail', type: 'email', key: 'email' },
+          { label: 'Source', type: 'select', options: ['LinkedIn', 'Wuzzuf', 'Referral', 'Website', 'Walk-in'], inList: true },
+          { label: 'Expected salary', type: 'currency', key: 'expected_salary', min: 0 },
+          { label: 'CV link', type: 'url', key: 'cv' },
+          { label: 'Interviewer', type: 'user' },
+          { label: 'Evaluation', type: 'rating' },
+        ],
+        stages: [
+          { name: 'New applicant', type: 'open' },
+          { name: 'Screening', type: 'open' },
+          { name: 'Interview', type: 'open', requires: ['interviewer'] },
+          { name: 'Offer', type: 'open', requires: ['expected_salary'] },
+          { name: 'Hired', type: 'won' },
+          { name: 'Refused', type: 'lost' },
+        ],
+      },
+    ],
+    automations: [
+      { name: 'Interview to arrange', module: 'applicants', trigger: { type: 'stage_changed', stage: 'Interview' }, actions: [{ type: 'create_task', title: 'Arrange the interview with {name}', dueInDays: 2 }] },
+    ],
+    reports: [
+      { name: 'Applicants by stage', module: 'applicants', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+      { name: 'Applicants by source', module: 'applicants', chart: 'pie', groupBy: 'source', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'timeoff',
+    name: 'Time off',
+    tagline: 'Leave requests by type and days, approved or refused, so everyone knows who is away.',
+    alsoKnownAs: 'Odoo Time Off',
+    category: 'people',
+    icon: 'CalendarCheck',
+    color: '#10b981',
+    worksWith: ['tasks'],
+    modules: [
+      {
+        key: 'requests', name: 'Leave requests', singular: 'Leave request', icon: 'CalendarCheck', color: '#10b981', title: 'Employee', area: 'crm',
+        fields: [
+          { label: 'Leave type', type: 'select', key: 'leave_type', options: ['Annual', 'Sick', 'Casual', 'Unpaid', 'Maternity'], required: true, inList: true },
+          { label: 'From', type: 'date', key: 'from_date', required: true, inList: true },
+          { label: 'To', type: 'date', key: 'to_date', required: true, inList: true },
+          { label: 'Days', type: 'number', required: true, min: 0.5, inList: true },
+          { label: 'Approver', type: 'user' },
+          { label: 'Reason', type: 'longtext' },
+        ],
+        stages: [
+          { name: 'Requested', type: 'open' },
+          { name: 'Approved', type: 'won', requires: ['approver'] },
+          { name: 'Refused', type: 'lost' },
+        ],
+      },
+    ],
+    automations: [
+      { name: 'Leave request to review', module: 'requests', trigger: { type: 'created' }, actions: [{ type: 'notify', message: 'Leave request from {name}: {days} days from {from_date}' }] },
+    ],
+    reports: [
+      { name: 'Leave days by type', module: 'requests', chart: 'pie', groupBy: 'leave_type', measure: { op: 'sum', field: 'days' } },
+      { name: 'Leave days by employee', module: 'requests', chart: 'hbar', groupBy: 'name', measure: { op: 'sum', field: 'days' } },
+    ],
+  },
+  {
+    id: 'events',
+    name: 'Events',
+    tagline: 'Exhibitions, trainings and launches: registrations, capacity, attendance and paid tickets.',
+    alsoKnownAs: 'Odoo Events',
+    category: 'sales',
+    icon: 'Star',
+    color: '#f43f5e',
+    worksWith: ['leads', 'deals', 'accounts'],
+    modules: [
+      {
+        key: 'events', name: 'Events', singular: 'Event', icon: 'Star', color: '#f43f5e', area: 'crm',
+        fields: [
+          { label: 'Event date', type: 'date', key: 'event_date', required: true, inList: true },
+          { label: 'Venue', type: 'text', inList: true },
+          { label: 'Capacity', type: 'number', min: 1 },
+          { label: 'Ticket price', type: 'currency', key: 'ticket_price', min: 0 },
+          { label: 'Organiser', type: 'user' },
+          { label: 'Status', type: 'select', options: ['Planned', 'Registration open', 'Done', 'Cancelled'], inList: true },
+          { label: 'Registrations', type: 'rollup', key: 'registration_count', rollup: { from: 'registrations', via: 'event', op: 'count' } },
+        ],
+      },
+      {
+        key: 'registrations', name: 'Event registrations', singular: 'Registration', icon: 'Users2', color: '#ec4899', title: 'Attendee', area: 'crm',
+        fields: [
+          { label: 'Event', type: 'relation', link: '#events', key: 'event', required: true, inList: true },
+          { label: 'Company', type: 'relation', link: '@accounts', key: 'customer', inList: true },
+          { label: 'Phone', type: 'phone', inList: true },
+          { label: 'E-mail', type: 'email', key: 'email' },
+          { label: 'Ticket price', type: 'currency', key: 'ticket_price', min: 0 },
+        ],
+        stages: [
+          { name: 'Registered', type: 'open' },
+          { name: 'Confirmed', type: 'open' },
+          { name: 'Attended', type: 'won' },
+          { name: 'Cancelled', type: 'lost' },
+        ],
+      },
+    ],
+    makes: [{ id: 'invoice', label: 'Make the invoice', module: 'registrations', target: 'invoices', party: 'customer', line: { text: 'Ticket for {event}: {name}', price: 'ticket_price' }, stages: ['Confirmed', 'Attended'] }],
+    automations: [
+      { name: 'Event registration confirmed', module: 'registrations', trigger: { type: 'stage_changed', stage: 'Confirmed' }, actions: [{ type: 'create_task', title: 'Send the event details to {name}', dueInDays: 1 }] },
+    ],
+    reports: [
+      { name: 'Registrations by event', module: 'registrations', chart: 'bar', groupBy: 'event', measure: { op: 'count' } },
+      { name: 'Registrations by stage', module: 'registrations', chart: 'funnel', groupBy: '__stage', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'contracts',
+    name: 'Contracts & renewals',
+    tagline: 'Service contracts and subscriptions: value, billing period, end date, renewals and their invoices.',
+    alsoKnownAs: 'Odoo Subscriptions',
+    category: 'sales',
+    icon: 'FileText',
+    color: '#6366f1',
+    worksWith: ['deals', 'invoices', 'accounts'],
+    modules: [
+      {
+        key: 'contracts', name: 'Contracts', singular: 'Contract', icon: 'FileText', color: '#6366f1', title: 'Contract', area: 'ops',
+        fields: [
+          { label: 'Customer', type: 'relation', link: '@accounts', key: 'customer', required: true, inList: true },
+          { label: 'Starts', type: 'date', key: 'start_date', required: true },
+          { label: 'Ends', type: 'date', key: 'end_date', required: true, inList: true },
+          { label: 'Billing', type: 'select', options: ['Monthly', 'Quarterly', 'Yearly'], required: true, inList: true },
+          { label: 'Amount per period', type: 'currency', key: 'amount', required: true, min: 0, inList: true },
+          { label: 'Owner', type: 'user' },
+        ],
+        stages: [
+          { name: 'Draft contract', type: 'open' },
+          { name: 'Running', type: 'open' },
+          { name: 'Renewed', type: 'won' },
+          { name: 'Ended', type: 'lost' },
+        ],
+      },
+    ],
+    makes: [{ id: 'invoice', label: 'Invoice this period', module: 'contracts', target: 'invoices', party: 'customer', line: { text: '{name}: {billing} service', price: 'amount' }, stages: ['Running'], repeat: true }],
+    automations: [
+      { name: 'Contract ended', module: 'contracts', trigger: { type: 'date_passed', field: 'end_date' }, open: true, actions: [{ type: 'create_task', title: 'Renew or close the contract {name} with {customer}', dueInDays: 3 }] },
+    ],
+    reports: [
+      { name: 'Contract value by customer', module: 'contracts', chart: 'hbar', groupBy: 'customer', measure: { op: 'sum', field: 'amount' } },
+      { name: 'Contracts by stage', module: 'contracts', chart: 'pie', groupBy: '__stage', measure: { op: 'count' } },
+    ],
+  },
+  {
+    id: 'quality',
+    name: 'Quality checks',
+    tagline: 'Checks on received goods and finished products: who checked, what failed, and what was done.',
+    alsoKnownAs: 'Odoo Quality',
+    category: 'operations',
+    icon: 'ShieldCheck',
+    color: '#22c55e',
+    worksWith: ['products', 'purchases'],
+    modules: [
+      {
+        key: 'checks', name: 'Quality checks', singular: 'Quality check', icon: 'ShieldCheck', color: '#22c55e', title: 'Check', area: 'ops',
+        fields: [
+          { label: 'Product', type: 'relation', link: '@products', key: 'product', inList: true },
+          { label: 'Supplier', type: 'relation', link: '@suppliers', key: 'supplier' },
+          { label: 'Batch no.', type: 'text', key: 'batch_no', inList: true },
+          { label: 'Checked on', type: 'date', key: 'checked_on', inList: true },
+          { label: 'Inspector', type: 'user' },
+          { label: 'Defects found', type: 'number', key: 'defects', min: 0 },
+          { label: 'Notes', type: 'longtext' },
+        ],
+        stages: [
+          { name: 'To check', type: 'open' },
+          { name: 'Passed', type: 'won', requires: ['inspector'] },
+          { name: 'Failed', type: 'lost', requires: ['inspector', 'notes'] },
+        ],
+      },
+    ],
+    automations: [
+      { name: 'Quality check failed', module: 'checks', trigger: { type: 'stage_changed', stage: 'Failed' }, actions: [{ type: 'create_task', title: 'Decide on the failed batch {batch_no} of {product}', dueInDays: 1 }] },
+    ],
+    reports: [
+      { name: 'Quality results', module: 'checks', chart: 'pie', groupBy: '__stage', measure: { op: 'count' } },
+      { name: 'Defects by supplier', module: 'checks', chart: 'hbar', groupBy: 'supplier', measure: { op: 'sum', field: 'defects' } },
+    ],
+  },
+  {
+    id: 'documents',
+    name: 'Licences & documents',
+    tagline: 'Commercial register, tax card, permits and certificates, with a reminder so none of them lapses.',
+    alsoKnownAs: 'Odoo Documents',
+    category: 'operations',
+    icon: 'Award',
+    color: '#c2620a',
+    worksWith: ['tasks'],
+    modules: [
+      {
+        key: 'docs', name: 'Licences & documents', singular: 'Document', icon: 'Award', color: '#c2620a', area: 'ops',
+        fields: [
+          { label: 'Document type', type: 'select', key: 'doc_type', options: ['Commercial register', 'Tax card', 'Permit', 'Certificate', 'Lease', 'Insurance'], required: true, inList: true },
+          { label: 'Document no.', type: 'text', key: 'doc_no', inList: true },
+          { label: 'Issued on', type: 'date', key: 'issued_on' },
+          { label: 'Expires on', type: 'date', key: 'expires_on', required: true, inList: true },
+          { label: 'Responsible', type: 'user' },
+          { label: 'File link', type: 'url', key: 'file' },
+          { label: 'Status', type: 'select', options: ['Valid', 'Renewal in progress', 'Expired'], inList: true },
+        ],
+      },
+    ],
+    automations: [
+      { name: 'Document expired', module: 'docs', trigger: { type: 'date_passed', field: 'expires_on' }, actions: [{ type: 'create_task', title: 'Renew {name} ({doc_type})', dueInDays: 2 }] },
+    ],
+    reports: [{ name: 'Documents by type', module: 'docs', chart: 'pie', groupBy: 'doc_type', measure: { op: 'count' } }],
+  },
+]
+
+export const blueprintById = (id: string) => BLUEPRINTS.find((b) => b.id === id)

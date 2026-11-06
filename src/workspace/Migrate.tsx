@@ -2,7 +2,8 @@
 // each step then opens with its sheet, in an order where every list comes after the lists it links to, and the
 // opening books follow. A summary shows how far the company is.
 import { useState } from 'react'
-import { CheckCircle2, Circle, Download, FileSpreadsheet, Lock, Upload } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, CheckCircle2, Circle, Download, FileSpreadsheet, Lock, Upload, Wand2 } from 'lucide-react'
 import { useApp } from './useApp'
 import { ImportModal } from './ImportModal'
 import { ActivityImport } from './ActivityImport'
@@ -78,6 +79,15 @@ export default function Migrate() {
       <div className="page-head" style={{ marginBottom: 0 }}>
         <h1><span className="badge" style={{ background: 'var(--area-tint)' }}><FileSpreadsheet size={20} /></span>{tr('Bring your data in')}</h1>
       </div>
+
+      <Link to="/app/excel" className="card row migrate-easy" style={{ gap: 14, alignItems: 'center', textDecoration: 'none', color: 'var(--text)' }}>
+        <span className="lib-icon" style={{ ['--c' as string]: 'var(--primary)' }} aria-hidden><Wand2 size={22} /></span>
+        <span className="grow stack" style={{ gap: 2 }}>
+          <b>{tr('Your own Excel, as it is')}</b>
+          <span className="small muted">{tr('Upload the sheets you already keep, however messy. A step-by-step wizard finds the tables, cleans them, merges the same customer written differently and brings everything in the right order.')}</span>
+        </span>
+        <ArrowRight size={18} className="flip" aria-hidden />
+      </Link>
 
       <div className="card stack">
         <p className="small" style={{ margin: 0 }}>{tr('Bring what your old system holds into Nasq360: customers and the people there, suppliers, products, leads and deals, then the opening books. Download a workbook made for your system, fill a sheet per step (copy from your old system’s exports), and upload it here. Each step opens with its sheet; you check the rows and save. Nothing is final until you go live, and each import can be undone.')}</p>
