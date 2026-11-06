@@ -1115,11 +1115,25 @@ table.statement .total-row td { border-top: 2px solid var(--border-strong); }
 .cal-ev { font-size: 0.72rem; background: var(--surface); border-inline-start: 3px solid; border-radius: 5px; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: var(--shadow); }
 /* The module library: one card per ready module, its colour on the icon */
 .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.lib-card { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 12px; text-align: start; cursor: pointer; font: inherit; color: var(--text); border: 1px solid var(--border); background: var(--surface); padding: 14px; border-radius: 14px; transition: border-color .15s, box-shadow .15s; }
-.lib-card:hover, .lib-card:focus-visible { border-color: var(--c); box-shadow: var(--shadow); }
+.lib-card { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; text-align: start; cursor: pointer; font: inherit; color: var(--text); border: 1px solid var(--border); background: var(--surface); padding: 14px; border-radius: 14px; transition: border-color .15s, box-shadow .15s; }
+.lib-card:hover, .lib-card:focus-visible { border-color: var(--c); box-shadow: var(--shadow); background: var(--surface); }
+.lib-card { white-space: normal; height: auto; min-height: 0; justify-content: stretch; font-weight: 400; width: 100%; }
+.lib-card > span { min-width: 0; }
+.lib-card > .pill { grid-column: 2; justify-self: start; }
+.lib-card b { font-size: 1rem; }
 .lib-card.added { border-color: color-mix(in srgb, var(--c) 45%, var(--border)); }
 .lib-icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: var(--c); }
 .lib-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+/* The Excel wizard */
+.wizard-steps { flex-wrap: wrap; }
+.wizard-steps button { display: inline-flex; align-items: center; gap: 6px; }
+.dropzone { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 16px; border: 2px dashed var(--border); border-radius: 16px; cursor: pointer; text-align: center; color: var(--muted); transition: border-color .15s, background .15s; }
+.dropzone:hover { border-color: var(--primary); background: var(--primary-100); color: var(--text); }
+.dropzone.busy { opacity: .7; pointer-events: none; }
+.chip.strong { outline: 2px solid var(--primary); }
+.wiz-step.done { opacity: .78; }
+.migrate-easy { border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.migrate-easy:hover { box-shadow: var(--shadow); }
 .kcard.rotting { background: var(--danger-bg); }
 @media (max-width: 760px) { .cal-d { min-height: 60px; } .cal-ev { display: none; } .cal-d:has(.cal-ev) .cal-n { color: var(--primary); text-decoration: underline; } }
 

@@ -23,12 +23,12 @@ function matchColumns(header: string[]) {
   return m
 }
 
-export function LiveDocsImport({ side, onClose }: { side: LiveSide; onClose: () => void }) {
+export function LiveDocsImport({ side, onClose, preset, onDone }: { side: LiveSide; onClose: () => void; preset?: { fileName: string; rows: string[][] }; onDone?: (r: LiveResult) => void }) {
   const { ws, user, act } = useApp()
   const saved = ws.published as AppSchema
-  const [file, setFile] = useState('')
-  const [table, setTable] = useState<string[][] | null>(null)
-  const [map, setMap] = useState<Record<string, string>>({})
+  const [file, setFile] = useState(preset?.fileName ?? '')
+  const [table, setTable] = useState<string[][] | null>(preset && preset.rows.length > 1 ? preset.rows : null)
+  const [map, setMap] = useState<Record<string, string>>(() => (preset ? matchColumns(preset.rows[0] ?? []) : {}))
   const [post, setPost] = useState(true)
   const [check, setCheck] = useState<{ ok?: LiveResult; errors?: { row: number; message: string }[] } | null>(null)
   const [problem, setProblem] = useState('')
@@ -64,7 +64,7 @@ export function LiveDocsImport({ side, onClose }: { side: LiveSide; onClose: () 
   }
   function send() {
     const out = act<LiveResult>('docs.importLive', { side, rows, post }, undefined, side === 'sales' ? 'Imported invoices' : 'Imported bills')
-    if (out) setDone(out)
+    if (out) { setDone(out); onDone?.(out) }
   }
   const label = (c: (typeof LIVE_COLUMNS)[number]) => (c.key === 'party' ? (side === 'sales' ? tr('Customer') : tr('Supplier')) : tr(c.label))
   return (

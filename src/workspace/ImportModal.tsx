@@ -73,7 +73,7 @@ type Choice = { value: string; label: string; also: string[] }
 /** A file exported from Nasq360 carries each record's id: it updates exactly those records; else the old system's id. */
 const defaultMatch = (m: Record<string, string>) => (Object.values(m).includes('__id') ? '__id' : Object.values(m).includes('__legacy_id') ? '__legacy_id' : '')
 
-export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose: () => void; preset?: { fileName: string; sheet: Sheet } }) {
+export function ImportModal({ mod, onClose, preset, onDone }: { mod: ModuleDef; onClose: () => void; preset?: { fileName: string; sheet: Sheet }; onDone?: (created: number) => void }) {
   const { ws, user, act } = useApp()
   // The saved schema (English names), which the server imports with; mod is the one shown, in the chosen language.
   const saved = ws.published as AppSchema
@@ -277,6 +277,7 @@ export function ImportModal({ mod, onClose, preset }: { mod: ModuleDef; onClose:
       setProgress({ done: p + 1, total })
     }
     setResult({ ...sum, ...(sum.errors.length === 0 && !sum.stopped ? { totals: fileTotals() } : {}) })
+    if (!sum.stopped && sum.created + sum.updated > 0) onDone?.(sum.created)
     setProgress(null)
   }
 

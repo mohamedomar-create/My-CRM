@@ -28,7 +28,7 @@ function matchColumns(header: string[]) {
 
 type Check = { docs: HistoryDoc[]; errors: { row: number; message: string; column?: string }[] }
 
-export function HistoryImport({ side, preset, onClose }: { side: HistorySide; preset?: { fileName: string; sheet: Sheet }; onClose: () => void }) {
+export function HistoryImport({ side, preset, onClose, onDone }: { side: HistorySide; preset?: { fileName: string; sheet: Sheet }; onClose: () => void; onDone?: (added: number) => void }) {
   const { ws, user } = useApp()
   const saved = ws.published as AppSchema
   const [file, setFile] = useState(preset?.fileName ?? '')
@@ -77,6 +77,7 @@ export function HistoryImport({ side, preset, onClose }: { side: HistorySide; pr
         setProgress({ done: p + 1, total })
       }
       setResult({ batch, added, sent: preview.docs.length })
+      onDone?.(added)
     } catch (e) {
       setProblem(msg((e as Error).message))
       if (added) setResult({ batch, added, sent: preview.docs.length })

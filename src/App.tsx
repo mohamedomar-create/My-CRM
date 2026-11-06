@@ -22,6 +22,7 @@ const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
 const Accounting = lazy(loadScreen(() => import('./workspace/Accounting')))
 const Pos = lazy(loadScreen(() => import('./workspace/Pos')))
+const ExcelWizard = lazy(loadScreen(() => import('./workspace/ExcelWizard')))
 const Library = lazy(loadScreen(() => import('./workspace/Library')))
 const Connections = lazy(loadScreen(() => import('./workspace/Connections')))
 const Inbox = lazy(loadScreen(() => import('./workspace/Inbox')))
@@ -213,6 +214,7 @@ export default function App() {
         <Route path="approvals" element={<Approvals />} />
         <Route path="audit" element={<Audit />} />
         <Route path="migrate" element={<Migrate />} />
+        <Route path="excel" element={<ExcelWizard />} />
         <Route path="sales" element={<NeedsErp><SalesAnalysis /></NeedsErp>} />
         <Route path="plan" element={<NeedsErp><Plan /></NeedsErp>} />
         <Route path="billing" element={CHARGING ? <Billing /> : <Navigate to="/app" replace />} />
