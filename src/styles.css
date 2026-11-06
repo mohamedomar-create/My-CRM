@@ -1795,3 +1795,4 @@ a.card:hover, .card.clickable:hover, .kpi.clickable:hover, .area-step:hover { tr
   .docflow-steps li + li::before { width: 14px; margin-inline: 4px; }
   .docflow-steps li:not(.cur) > :not(.docflow-dot) { display: none; }
 }
+.chip.on .muted { color: inherit; opacity: .8; }

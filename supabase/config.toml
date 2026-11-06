@@ -32,3 +32,7 @@ verify_jwt = false
 [functions.ask]
 # The gateway checks the login token; the function then checks membership itself.
 verify_jwt = true
+
+[functions.shop]
+# The online store (Shopify) calls it without a login (checked by the app secret's signature); the app's requests check the login and admin right itself.
+verify_jwt = false

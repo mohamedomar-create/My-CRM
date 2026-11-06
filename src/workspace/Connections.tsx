@@ -9,6 +9,7 @@ import { API_BASE, deleteHook, listHooks, listKeys, makeKey, recentDeliveries, r
 import { EVENTS, isWebhookUrl } from '../lib/webhooks'
 import { callbackUrl, waConnect, waDisconnect, waStatus, type WaStatus } from '../lib/whatsappClient'
 import { MessageCircle } from 'lucide-react'
+import { ShopCard } from './ShopCard'
 
 const copy = (text: string) => { void navigator.clipboard?.writeText(text).then(() => showToast({ kind: 'ok', text: tr('Copied') })) }
 const when = (s: string | null) => (s ? new Date(s).toLocaleString(dateLocale()) : '—')
@@ -20,7 +21,8 @@ export default function Connections() {
   return (
     <div className="page stack">
       <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><Plug size={20} /></span>{tr('Connections')}</h1></div>
-      <p className="small muted" style={{ margin: 0 }}>{tr('Connect your web shop, bank, courier or reporting tool: they read and write through the API with a key, and webhooks tell them as soon as something happens.')}</p>
+      <p className="small muted" style={{ margin: 0 }}>{tr('Connect your online store, WhatsApp, bank, courier or reporting tool: a Shopify store and WhatsApp connect directly; any other system reads and writes through the API with a key, and webhooks tell it as soon as something happens.')}</p>
+      <ShopCard />
       <WhatsAppCard />
       <Keys ws={ws.id} />
       <Hooks ws={ws.id} />
