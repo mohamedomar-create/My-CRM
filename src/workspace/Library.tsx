@@ -20,24 +20,56 @@ export default function Library() {
   const saved = ws.published as AppSchema
   const admin = Boolean(schema.roles.find((r) => r.id === user.roleId)?.admin)
   const [cat, setCat] = useState<Category | ''>('')
+  const [q, setQ] = useState('')
+  const [all, setAll] = useState(false)
   const [open, setOpen] = useState<Blueprint | null>(null)
   if (!admin) return <div className="page">{tr('Only admins can add modules.')}</div>
-  const shown = BLUEPRINTS.filter((b) => !cat || b.category === cat)
-  const added = BLUEPRINTS.filter((b) => isInstalled(saved, b)).length
+  // Only what the company picks: its added modules first, then a few suggested for its industry; the rest on request.
+  const words = q.trim().toLowerCase()
+  const hit = (b: Blueprint) => !words || [b.name, tr(b.name), b.tagline, tr(b.tagline), b.alsoKnownAs].some((t) => t.toLowerCase().includes(words))
+  const mine = BLUEPRINTS.filter((b) => isInstalled(saved, b))
+  const suggested = BLUEPRINTS.filter((b) => !isInstalled(saved, b) && b.suggestedFor?.includes(saved.templateId))
+  const filtering = Boolean(words || cat)
+  const shown = BLUEPRINTS.filter((b) => (!cat || b.category === cat) && hit(b))
+  const added = mine.length
   return (
     <div className="page stack">
       <div className="page-head"><h1><span className="badge" style={{ background: 'var(--area-tint)' }}><LayoutGrid size={20} /></span>{tr('Add a module')}{added > 0 && <span className="pill gray">{tr('{n} added', { n: added })}</span>}</h1></div>
       <p className="small muted" style={{ margin: 0 }}>{tr('Ready modules for work the system doesn’t cover yet, built like the rest of it: lists with their pipeline, reminders, reports and rights, in Arabic and English. Where money is involved, a record makes its quotation, invoice or bill, which you post and collect as usual.')}</p>
-      <div className="chips">
-        <button type="button" className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>{tr('All')}</button>
-        {(Object.keys(CATEGORIES) as Category[]).map((c) => <button key={c} type="button" className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{tr(CATEGORIES[c])}</button>)}
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr('Search: fleet, rental, recruitment, Odoo…')} aria-label={tr('Search modules')} style={{ maxWidth: 320 }} />
+        <div className="chips">
+          <button type="button" className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>{tr('All')} <span className="muted">{BLUEPRINTS.length}</span></button>
+          {(Object.keys(CATEGORIES) as Category[]).map((c) => <button key={c} type="button" className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{tr(CATEGORIES[c])} <span className="muted">{BLUEPRINTS.filter((b) => b.category === c).length}</span></button>)}
+        </div>
       </div>
-      <div className="lib-grid">
-        {shown.map((b) => <Card key={b.id} bp={b} schema={saved} onOpen={() => setOpen(b)} />)}
-      </div>
+      {filtering ? (
+        <>
+          <div className="lib-grid">{shown.map((b) => <Card key={b.id} bp={b} schema={saved} onOpen={() => setOpen(b)} />)}</div>
+          {!shown.length && <p className="small muted">{tr('No module matches. Tell Nasq360 what you need: it can be added.')}</p>}
+        </>
+      ) : (
+        <>
+          {mine.length > 0 && <Group title={tr('Your modules')} items={mine} schema={saved} onOpen={setOpen} />}
+          {suggested.length > 0 && <Group title={tr('Suggested for your business')} note={tr('Picked for your industry. Add only what your team will use: you can add more any time.')} items={suggested} schema={saved} onOpen={setOpen} />}
+          {all
+            ? <Group title={tr('All modules')} items={BLUEPRINTS.filter((b) => !mine.includes(b) && !suggested.includes(b))} schema={saved} onOpen={setOpen} />
+            : <button type="button" className="secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setAll(true)}>{tr('Show all {n} modules', { n: BLUEPRINTS.length - mine.length - suggested.length })}</button>}
+        </>
+      )}
       <p className="small muted">{tr('Need a module that isn’t here (from Odoo or another system)? Tell Nasq360: it is added to the library to the same standard, then it is one click for you.')}</p>
       {open && <Details bp={open} onClose={() => setOpen(null)} />}
     </div>
+  )
+}
+
+function Group({ title, note, items, schema, onOpen }: { title: string; note?: string; items: Blueprint[]; schema: AppSchema; onOpen: (b: Blueprint) => void }) {
+  return (
+    <section className="stack" style={{ gap: 8 }}>
+      <h2 style={{ margin: 0 }}>{title}</h2>
+      {note && <p className="small muted" style={{ margin: 0 }}>{note}</p>}
+      <div className="lib-grid">{items.map((b) => <Card key={b.id} bp={b} schema={schema} onOpen={() => onOpen(b)} />)}</div>
+    </section>
   )
 }
 
