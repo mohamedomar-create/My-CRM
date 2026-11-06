@@ -654,6 +654,23 @@ select pg_temp.blocked('a stranger connects their own number', $q$select public.
 select pg_temp.check('a stranger counts no unread messages', public.whatsapp_unread('ws_test123456') = 0);
 reset role;
 
+-- The online store: only admins connect it, its token and secret never come back, and only the server reads them.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","email":"owner@test.dev","role":"authenticated"}', false);
+select pg_temp.allowed('an admin connects the online store', $q$select public.shop_connect('ws_test123456', 'nile-shop.myshopify.com', 'shpat_' || repeat('t', 32), repeat('s', 32), '{"post": true}')$q$);
+select pg_temp.check('the status never shows the token or the secret', (select not (s ? 'access_token') and not (s ? 'token') and not (s ? 'api_secret') and not (s ? 'secret') and (s ->> 'connected')::boolean and s ->> 'domain' = 'nile-shop.myshopify.com' from (select public.shop_status('ws_test123456') s) x));
+select pg_temp.allowed('an admin changes how orders come in', $q$select public.shop_settings('ws_test123456', '{"post": false}')$q$);
+select pg_temp.blocked('a store address that isn''t Shopify''s', $q$select public.shop_connect('ws_test123456', 'evil.example.com', 'shpat_' || repeat('t', 32), repeat('s', 32), '{}')$q$);
+select pg_temp.blocked('reading the store connection directly', $q$select access_token from public.shop_connections$q$);
+select pg_temp.blocked('getting the token from the app (server only)', $q$select public.shop_account_for('ws_test123456')$q$);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","email":"stranger@test.dev","role":"authenticated"}', false);
+select pg_temp.blocked('a stranger connects their own store', $q$select public.shop_connect('ws_test123456', 'other.myshopify.com', 'shpat_' || repeat('x', 32), repeat('y', 32), '{}')$q$);
+select pg_temp.blocked('a stranger sees the store', $q$select public.shop_status('ws_test123456')$q$);
+reset role;
+set role service_role;
+select pg_temp.check('the server reads the connection with the admin who connected it', (select a ->> 'email' = 'owner@test.dev' and a ->> 'token' like 'shpat_%' and (a -> 'settings' ->> 'post')::boolean = false from (select public.shop_account_for('ws_test123456') a) x));
+reset role;
+
 -- Customising the system: closed once live, asked for by an admin, opened only by Nasq360's own team, for a time.
 insert into private.platform_staff (email) values ('inventor@test.dev') on conflict do nothing;
 set role authenticated;

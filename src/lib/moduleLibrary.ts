@@ -25,6 +25,7 @@ export interface BField {
   link?: BLink
   help?: string
   min?: number
+  max?: number
   /** formula: arithmetic over this list's number fields */
   formula?: string
   /** rollup: count or add up the records of another list of the blueprint that link here */
@@ -97,6 +98,8 @@ export interface Blueprint {
   color: string
   /** the company's lists it works next to: people who add or change those get the same rights here */
   worksWith: ModuleRole[]
+  /** the industries (template ids) it is suggested to first; empty: shown with the rest */
+  suggestedFor?: string[]
   modules: BModule[]
   makes?: BMake[]
   automations?: BAutomation[]
@@ -141,7 +144,7 @@ export function checkBlueprint(bp: Blueprint, o: { arabic?: Record<string, strin
     if (!m.stages?.length && !m.fields.some((f) => f.type === 'select' && /status|state|result/i.test(f.label))) bad(at, 'needs stages or a status, so everyone sees where a record is')
     if (m.stages) {
       if (!m.stages.some((s) => s.type === 'open')) bad(at, 'a pipeline needs at least one open stage')
-      if (!m.stages.some((s) => s.type !== 'open')) bad(at, 'a pipeline needs a way to finish (a won or lost stage)')
+      if (m.stages.filter((s) => s.type === 'won').length !== 1 || m.stages.filter((s) => s.type === 'lost').length !== 1) bad(at, 'a pipeline needs exactly one won and one lost stage')
       const first = m.stages.findIndex((s) => s.type !== 'open')
       if (first >= 0 && m.stages.slice(first).some((s) => s.type === 'open')) bad(at, 'open stages come before the finished ones')
       for (const s of m.stages) {
@@ -259,6 +262,7 @@ export function installBlueprint(schema: AppSchema, bp: Blueprint, o: { access?:
       if (bf.inList) f.inList = true
       if (bf.help) f.help = bf.help
       if (bf.min !== undefined) f.min = bf.min
+      if (bf.max !== undefined) f.max = bf.max
       if (bf.options) f.options = opts(...bf.options)
       if (to) f.target = to
       if (bf.formula) f.formula = bf.formula
@@ -268,7 +272,8 @@ export function installBlueprint(schema: AppSchema, bp: Blueprint, o: { access?:
     const stages: Stage[] | undefined = m.stages?.map((s, j) => ({
       id: stageId(s.name), name: s.name, type: s.type, color: s.color ?? PALETTE[j % PALETTE.length],
       probability: s.probability ?? (s.type === 'won' ? 100 : s.type === 'lost' ? 0 : Math.round((100 * (j + 1)) / (m.stages!.length + 1))),
-      ...(s.requires?.length ? { requires: s.requires } : {}),
+      // a stage can only require fields this company's list has (a supplier field is left out without suppliers)
+      ...(s.requires?.some((k) => fields.some((f) => f.key === k)) ? { requires: s.requires.filter((k) => fields.some((f) => f.key === k)) } : {}),
     }))
     return { id: moduleIdOf(bp, m.key), role: 'custom', name: m.name, singular: m.singular, icon: m.icon, color: m.color ?? PALETTE[i % PALETTE.length], titleField: 'name', fields, ...(stages ? { stages } : {}), area: m.area, blueprint: bp.id }
   })

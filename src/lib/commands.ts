@@ -33,6 +33,7 @@ import { createPlan, deletePlan, savePlan } from './plan'
 import { addRole, removeRole, saveRole } from './access'
 import { installBlueprint, makeDocument, uninstallBlueprint } from './moduleLibrary'
 import { blueprintById } from './blueprints'
+import { addShopProducts, cancelShopOrder, importShopOrder, type ShopOrder, type ShopProduct, type ShopSettings } from './shopify'
 import {
   EngineError, list, needFinance, addComment, convertLead, createRecord, decideApproval, overrideApproval, deleteRecord, setProductImage, findRecord, importRows, undoImport, importActivities, handOver, userIsReferenced, moveStage, postDocument,
   quoteToInvoice, dealToQuote, registerPayment, removeSampleData, requestApproval, runScheduled, setLines, todayISO, setQuoteStatus, updateRecord, voidDocument,
@@ -92,6 +93,9 @@ export interface CommandArgs {
   'module.install': { id: string; access?: Record<string, Permission[]> }
   'module.uninstall': { id: string }
   'record.make': { id: string; make: string }
+  'shop.order': { order: ShopOrder; settings: ShopSettings }
+  'shop.cancel': { id: string | number; name: string }
+  'shop.products': { products: ShopProduct[] }
   'project.save': { id?: string; name: string; customer?: string; rate?: number; budgetHours?: number; budget?: number; start?: string }
   'project.status': { id: string; status: 'open' | 'done' }
   'project.bill': { id: string; upTo?: string }
@@ -448,6 +452,18 @@ export const COMMANDS: { [N in CommandName]: Def<N> } = {
     },
   },
   'record.make': { run: (ws, u, a) => ({ id: makeDocument(ctx(ws, u), String(a.id ?? ''), String(a.make ?? '')).id }) },
+  // The online store (Shopify), run by the server as the admin who connected it: orders become invoices, cancellations
+  // void them, and products come from the store.
+  'shop.order': {
+    run: (ws, u, a) => {
+      const c = ctx(ws, u)
+      needFinance(c, 'bring in online orders')
+      const st = a.settings ?? { post: true }
+      return importShopOrder(c, a.order, { post: Boolean(st.post), account: st.account ? String(st.account) : undefined })
+    },
+  },
+  'shop.cancel': { run: (ws, u, a) => { const c = ctx(ws, u); needFinance(c, 'cancel online orders'); return cancelShopOrder(c, a.id, String(a.name ?? '')) } },
+  'shop.products': { admin: true, run: (ws, u, a) => addShopProducts(ctx(ws, u), Array.isArray(a.products) ? a.products.slice(0, 5000) : []) },
   'setup.restoreVersion': {
     admin: true,
     run: (ws, _u, a) => {
