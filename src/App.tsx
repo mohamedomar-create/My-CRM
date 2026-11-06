@@ -22,6 +22,7 @@ const RecordPage = lazy(loadScreen(() => import('./workspace/RecordPage')))
 const Inventory = lazy(loadScreen(() => import('./workspace/Inventory')))
 const Accounting = lazy(loadScreen(() => import('./workspace/Accounting')))
 const Pos = lazy(loadScreen(() => import('./workspace/Pos')))
+const Library = lazy(loadScreen(() => import('./workspace/Library')))
 const Connections = lazy(loadScreen(() => import('./workspace/Connections')))
 const Inbox = lazy(loadScreen(() => import('./workspace/Inbox')))
 const Payroll = lazy(loadScreen(() => import('./workspace/Payroll')))
@@ -198,6 +199,7 @@ export default function App() {
         <Route path="accounting" element={<NeedsErp><Accounting /></NeedsErp>} />
         <Route path="pos" element={<NeedsErp><Pos /></NeedsErp>} />
         <Route path="connections" element={<Connections />} />
+        <Route path="library" element={<Library />} />
         <Route path="inbox" element={<Inbox />} />
         <Route path="payroll" element={<NeedsErp><Payroll /></NeedsErp>} />
         <Route path="setup-session" element={<SetupSession />} />

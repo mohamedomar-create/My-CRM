@@ -104,6 +104,38 @@ export interface ModuleDef {
   rules?: ValidationRule[]
   /** lead/deal scoring: points added when a condition matches */
   scoring?: ScoreRule[]
+  /** the area whose menu holds it (a module from the library says; others are placed by what they link to) */
+  area?: 'ops' | 'crm'
+  /** the library module it was installed from (moduleLibrary.ts) */
+  blueprint?: string
+  /** documents a record can make: a repair's quotation, a rental's invoice, a vehicle service's bill */
+  makes?: MakeDef[]
+}
+
+/**
+ * A record of a module makes a draft document from what it holds: the customer or supplier, and one line (text, quantity,
+ * price, product). The document then goes the usual way (checked, posted, paid), so the books are kept as for any other.
+ */
+export interface MakeDef {
+  id: string
+  label: string
+  /** the kind of document made */
+  target: 'quotes' | 'invoices' | 'purchases'
+  /** the field holding the customer (quotations, invoices) or the supplier (purchase bills) */
+  party: string
+  line: {
+    /** the line's text, with {field} replaced by the record's values */
+    text: string
+    /** number fields giving the quantity (1 when empty) and the price (the product's when empty) */
+    qty?: string
+    price?: string
+    /** a link to a product: the line is for that product (its VAT, its stock) */
+    product?: string
+  }
+  /** offered only in these stages (ids); empty: in any */
+  stages?: string[]
+  /** more than one document may be made (a contract invoiced every month); otherwise once */
+  repeat?: boolean
 }
 
 export interface ValidationRule {

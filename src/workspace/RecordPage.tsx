@@ -48,6 +48,7 @@ import { ProductPhotoCard } from './ProductPhoto'
 import { PRODUCT_PHOTOS } from '../lib/config'
 import { poProgress } from '../lib/purchasing'
 import { FieldInput, QuickCreate } from './Fields'
+import { makesFor } from '../lib/moduleLibrary'
 
 export default function RecordPage() {
   const { id, moduleId } = useParams()
@@ -196,6 +197,10 @@ function Editor({ mod, rec, ws, schema }: { mod: ModuleDef; rec?: Rec; ws: Works
           {mod.role === 'leads' && rec && rec.stage !== mod.stages?.find((s) => s.type === 'won')?.id && (
             <button className="success" onClick={() => { const d = act<{ id: string }>('lead.convert', { id: rec.id }, tr('Lead converted: customer, contact and deal created')); if (d) nav(`/app/r/${d.id}`) }}><UserPlus size={16} /> {tr('Convert to customer')}</button>
           )}
+          {/* a library module's record makes its quotation, invoice or bill (offered by stage, once unless it repeats) */}
+          {rec && mod.makes?.length ? makesFor(ws, schema, rec).filter((x) => x.target && can({ schema, user }, x.target.id, 'create')).map((x) => x.done
+            ? <Link key={x.make.id} to={`/app/r/${x.made[0].id}`} className="btn secondary"><FileCheck2 size={15} /> {x.made[0].number ?? msg(x.target!.singular)}</Link>
+            : <button key={x.make.id} className="secondary" onClick={() => { if (!savedFirst()) return; const d = act<{ id: string }>('record.make', { id: rec.id, make: x.make.id }, tr('{what} draft made: check it, then post it', { what: msg(x.target!.singular) })); if (d) nav(`/app/r/${d.id}`) }}><FileText size={15} /> {msg(x.make.label)}</button>) : null}
           {mod.role === 'deals' && rec && moduleByRole(schema, 'quotes') && can({ schema, user }, moduleByRole(schema, 'quotes')!.id, 'create') && (
             <button className="secondary" onClick={() => { if (!savedFirst()) return; const q = act<{ id: string }>('deal.toQuote', { id: rec.id }, tr('Quotation draft created for the deal')); if (q) nav(`/app/r/${q.id}`) }}><FileText size={15} /> {tr('Make a quotation')}</button>
           )}

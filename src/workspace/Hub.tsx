@@ -35,6 +35,7 @@ const PAGE_TEXT: Record<string, string> = {
   session: N_('Settle every setup decision with your team, and print the minutes'),
   customise: N_('The dashboard, reports and the look; the backup; changes to the system itself on request'),
   connections: N_('API keys and webhooks for your shop, bank, courier or reports'),
+  library: N_('Ready modules (fleet, rental, repairs, recruitment…) added in one step'),
 }
 
 /** The big icon of an area, in its colour. */
@@ -223,9 +224,13 @@ export function AreaHome() {
   if (a === 'setup') {
     flows = [
       { title: tr('Getting set up'), steps: pick('session', 'migrate', 'team', 'access'), note: tr('Settle the decisions with your team, bring your data in, invite the team, then choose what each role can see and do. The dashboard and the look are yours to change; lists and fields are changed on request (Customise).') },
+      { title: tr('Growing the system'), steps: pick('library', 'customise', 'connections'), arrows: false },
       { title: tr('Running the account'), steps: pick('billing', 'audit'), arrows: false },
     ]
   }
+  // modules added from the library get their own group in their area
+  const library = items.filter((x) => x.kind === 'module' && x.module.blueprint && !used.has(x.key))
+  if (library.length) { for (const x of library) used.add(x.key); flows.push({ title: tr('Added modules'), steps: library, arrows: false }) }
   const rest = items.filter((x) => !used.has(x.key))
   if (rest.length) flows.push({ title: tr('More'), steps: rest, arrows: false })
   return (
